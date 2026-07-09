@@ -6,6 +6,8 @@ node_modules/
 # Build output
 dist/
 build/
+out/
+dist-electron/
 
 # Environment variables
 .env
@@ -34,3 +36,7 @@ yarn-error.log*
 
 # Supabase
 supabase/.temp/
+
+# SQLite
+*.db
+*.db-journal
