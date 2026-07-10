@@ -5,6 +5,7 @@ export default function Login() {
   const { login, signup, loading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [isSignup, setIsSignup] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -15,7 +16,7 @@ export default function Login() {
     setSubmitting(true);
     try {
       const err = isSignup
-        ? await signup(email, password)
+        ? await signup(email, password, name)
         : await login(email, password);
       if (err) {
         setError(err);
@@ -52,6 +53,18 @@ export default function Login() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {isSignup && (
+            <div>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Full name"
+                className="w-full h-12 rounded-lg border border-input bg-background px-3 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                required
+              />
+            </div>
+          )}
           <div>
             <input
               type="email"
@@ -59,7 +72,7 @@ export default function Login() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Email address"
               className="w-full h-12 rounded-lg border border-input bg-background px-3 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              autoFocus
+              autoFocus={!isSignup}
               required
             />
           </div>
@@ -82,7 +95,7 @@ export default function Login() {
 
           <button
             type="submit"
-            disabled={!email || !password || submitting}
+            disabled={!email || !password || (isSignup && !name) || submitting}
             className="w-full h-12 rounded-lg bg-primary text-primary-foreground font-medium text-base hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
             {submitting ? 'Please wait...' : isSignup ? 'Create Account' : 'Sign In'}

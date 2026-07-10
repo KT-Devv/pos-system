@@ -25,7 +25,7 @@ const navItems = [
 
 export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { user, logout } = useAuth();
+  const { profile, logout } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -72,9 +72,10 @@ export default function Layout() {
         </nav>
 
         <div className="p-4 border-t border-primary-foreground/20 space-y-2">
-          {user && (
+          {profile && (
             <div className="px-3 text-sm text-primary-foreground/70">
-              <p className="font-medium truncate">{user.email}</p>
+              <p className="font-medium truncate">{profile.name}</p>
+              <p className="text-xs opacity-60 capitalize">{profile.role}</p>
             </div>
           )}
           <button
