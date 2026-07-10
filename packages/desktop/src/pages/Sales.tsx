@@ -55,6 +55,15 @@ export default function Sales() {
   };
 
   const addToCart = (product: Product) => {
+    if (product.stock <= 0) {
+      alert('This product is out of stock');
+      return;
+    }
+    const inCart = cart.find((item) => item.product.id === product.id)?.quantity || 0;
+    if (inCart >= product.stock) {
+      alert('Cannot add more than available stock');
+      return;
+    }
     const existing = cart.find((item) => item.product.id === product.id);
     if (existing) {
       setCart(
@@ -74,11 +83,16 @@ export default function Sales() {
   const updateQuantity = (productId: string, change: number) => {
     setCart(
       cart
-        .map((item) =>
-          item.product.id === productId
-            ? { ...item, quantity: item.quantity + change }
-            : item
-        )
+        .map((item) => {
+          if (item.product.id !== productId) return item;
+          const newQty = item.quantity + change;
+          if (newQty <= 0) return item;
+          if (newQty > item.product.stock) {
+            alert(`Only ${item.product.stock} units available`);
+            return item;
+          }
+          return { ...item, quantity: newQty };
+        })
         .filter((item) => item.quantity > 0)
     );
   };
@@ -91,16 +105,17 @@ export default function Sales() {
     (sum, item) => sum + item.product.selling_price * item.quantity,
     0
   );
-  const total = subtotal - discount;
+  const clampedDiscount = Math.max(0, Math.min(discount, subtotal));
+  const total = subtotal - clampedDiscount;
 
   const completeSale = async () => {
-    if (cart.length === 0) return;
+    if (cart.length === 0 || !user) return;
 
     try {
       const sale = await api.sales.create({
-        cashier_id: user?.id || 'admin',
+        cashier_id: user.id,
         total,
-        discount,
+        discount: clampedDiscount,
         payment_method: paymentMethod,
         items: cart.map((item) => ({
           product_id: item.product.id,
@@ -110,23 +125,27 @@ export default function Sales() {
         })),
       });
 
-      const settings = await api.settings.get();
-      const saleData = sale as any;
+      const settings = await api.settings.get() as Record<string, string>;
+      const saleData = sale as { id: string };
 
       setReceiptData({
         shopName: settings.shop_name || "Mom's Shop",
         shopPhone: settings.shop_phone || '',
         shopAddress: settings.shop_address || '',
+        receiptHeader: settings.receipt_header,
+        receiptFooter: settings.receipt_footer,
+        receiptNote: settings.receipt_note,
+        currency: settings.currency || 'GHS',
         items: cart.map((item) => ({
           name: item.product.name,
           quantity: item.quantity,
           price: item.product.selling_price * item.quantity,
         })),
         subtotal,
-        discount,
+        discount: clampedDiscount,
         total,
         paymentMethod,
-        cashierName: user?.name || 'Admin',
+        cashierName: user.name,
         date: new Date().toLocaleString(),
         saleId: saleData.id,
       });
@@ -302,7 +321,7 @@ export default function Sales() {
               <div className="flex justify-between items-center">
                 <Label htmlFor="discount" className="text-muted-foreground">Discount:</Label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">GHS</span>
                   <Input
                     id="discount"
                     type="number"

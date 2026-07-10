@@ -1,109 +1,141 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
+let sessionToken: string | null = null;
+
+function invoke(channel: string, ...args: unknown[]) {
+  return ipcRenderer.invoke(channel, sessionToken, ...args);
+}
+
+function invokePublic(channel: string, ...args: unknown[]) {
+  return ipcRenderer.invoke(channel, ...args);
+}
+
 export interface ElectronAPI {
   auth: {
-    login: (pin: string) => Promise<any>;
+    login: (pin: string) => Promise<{ id: string; name: string; role: string } | null>;
+    logout: () => Promise<void>;
   };
   products: {
-    list: (search?: string) => Promise<any[]>;
-    get: (id: string) => Promise<any>;
-    getByBarcode: (barcode: string) => Promise<any>;
-    create: (product: any) => Promise<any>;
-    update: (id: string, product: any) => Promise<any>;
-    delete: (id: string) => Promise<any>;
+    list: (search?: string) => Promise<unknown[]>;
+    get: (id: string) => Promise<unknown>;
+    getByBarcode: (barcode: string) => Promise<unknown>;
+    create: (product: unknown) => Promise<unknown>;
+    update: (id: string, product: unknown) => Promise<unknown>;
+    delete: (id: string) => Promise<unknown>;
     stats: () => Promise<{ total: number; lowStock: number; outOfStock: number }>;
   };
   sales: {
-    create: (sale: any) => Promise<any>;
-    list: (filters?: any) => Promise<any[]>;
-    getWithItems: (saleId: string) => Promise<any>;
-    todayStats: () => Promise<any>;
-    stats: (period: string) => Promise<any[]>;
+    create: (sale: unknown) => Promise<unknown>;
+    list: (filters?: unknown) => Promise<unknown[]>;
+    getWithItems: (saleId: string) => Promise<unknown>;
+    todayStats: () => Promise<unknown>;
+    stats: (period: string) => Promise<unknown[]>;
   };
   inventory: {
-    stockIn: (entry: any) => Promise<any>;
-    stockOut: (entry: any) => Promise<any>;
-    adjust: (entry: any) => Promise<any>;
-    history: (filters?: any) => Promise<any[]>;
-    lowStock: () => Promise<any[]>;
+    stockIn: (entry: unknown) => Promise<unknown>;
+    stockOut: (entry: unknown) => Promise<unknown>;
+    adjust: (entry: unknown) => Promise<unknown>;
+    history: (filters?: unknown) => Promise<unknown[]>;
+    lowStock: () => Promise<unknown[]>;
   };
   customers: {
-    list: (search?: string) => Promise<any[]>;
-    get: (id: string) => Promise<any>;
-    create: (customer: any) => Promise<any>;
-    update: (id: string, customer: any) => Promise<any>;
-    delete: (id: string) => Promise<any>;
+    list: (search?: string) => Promise<unknown[]>;
+    get: (id: string) => Promise<unknown>;
+    create: (customer: unknown) => Promise<unknown>;
+    update: (id: string, customer: unknown) => Promise<unknown>;
+    delete: (id: string) => Promise<unknown>;
   };
   settings: {
-    get: (key?: string) => Promise<any>;
-    set: (key: string, value: string) => Promise<any>;
-    setup: (setup: any) => Promise<any>;
+    get: (key?: string) => Promise<unknown>;
+    set: (key: string, value: string) => Promise<unknown>;
+    setup: (setup: unknown) => Promise<unknown>;
+    isSetupComplete: () => Promise<boolean>;
   };
   categories: {
-    list: () => Promise<any[]>;
-    create: (name: string) => Promise<any>;
-    delete: (id: string) => Promise<any>;
+    list: () => Promise<unknown[]>;
+    create: (name: string) => Promise<unknown>;
+    delete: (id: string) => Promise<unknown>;
   };
   suppliers: {
-    list: () => Promise<any[]>;
-    create: (supplier: any) => Promise<any>;
+    list: () => Promise<unknown[]>;
+    create: (supplier: unknown) => Promise<unknown>;
+  };
+  users: {
+    list: () => Promise<unknown[]>;
+    create: (user: unknown) => Promise<unknown>;
   };
   receipt: {
-    print: (data: any) => Promise<any>;
-    testPrint: () => Promise<any>;
+    print: (data: unknown) => Promise<unknown>;
+    testPrint: () => Promise<unknown>;
   };
 }
 
 contextBridge.exposeInMainWorld('electronAPI', {
   auth: {
-    login: (pin: string) => ipcRenderer.invoke('auth:login', pin),
+    login: async (pin: string) => {
+      const result = await invokePublic('auth:login', pin) as { user: { id: string; name: string; role: string }; sessionToken: string } | null;
+      if (result?.sessionToken) {
+        sessionToken = result.sessionToken;
+        return result.user;
+      }
+      return null;
+    },
+    logout: async () => {
+      if (sessionToken) await invokePublic('auth:logout', sessionToken);
+      sessionToken = null;
+    },
   },
   products: {
-    list: (search?: string) => ipcRenderer.invoke('products:list', search),
-    get: (id: string) => ipcRenderer.invoke('products:get', id),
-    getByBarcode: (barcode: string) => ipcRenderer.invoke('products:getByBarcode', barcode),
-    create: (product: any) => ipcRenderer.invoke('products:create', product),
-    update: (id: string, product: any) => ipcRenderer.invoke('products:update', id, product),
-    delete: (id: string) => ipcRenderer.invoke('products:delete', id),
-    stats: () => ipcRenderer.invoke('products:stats'),
+    list: (search?: string) => invoke('products:list', search),
+    get: (id: string) => invoke('products:get', id),
+    getByBarcode: (barcode: string) => invoke('products:getByBarcode', barcode),
+    create: (product: unknown) => invoke('products:create', product),
+    update: (id: string, product: unknown) => invoke('products:update', id, product),
+    delete: (id: string) => invoke('products:delete', id),
+    stats: () => invoke('products:stats'),
   },
   sales: {
-    create: (sale: any) => ipcRenderer.invoke('sales:create', sale),
-    list: (filters?: any) => ipcRenderer.invoke('sales:list', filters),
-    getWithItems: (saleId: string) => ipcRenderer.invoke('sales:getWithItems', saleId),
-    todayStats: () => ipcRenderer.invoke('sales:todayStats'),
-    stats: (period: string) => ipcRenderer.invoke('sales:stats', period),
+    create: (sale: unknown) => invoke('sales:create', sale),
+    list: (filters?: unknown) => invoke('sales:list', filters),
+    getWithItems: (saleId: string) => invoke('sales:getWithItems', saleId),
+    todayStats: () => invoke('sales:todayStats'),
+    stats: (period: string) => invoke('sales:stats', period),
   },
   inventory: {
-    stockIn: (entry: any) => ipcRenderer.invoke('inventory:stockIn', entry),
-    stockOut: (entry: any) => ipcRenderer.invoke('inventory:stockOut', entry),
-    adjust: (entry: any) => ipcRenderer.invoke('inventory:adjust', entry),
-    history: (filters?: any) => ipcRenderer.invoke('inventory:history', filters),
-    lowStock: () => ipcRenderer.invoke('inventory:lowStock'),
+    stockIn: (entry: unknown) => invoke('inventory:stockIn', entry),
+    stockOut: (entry: unknown) => invoke('inventory:stockOut', entry),
+    adjust: (entry: unknown) => invoke('inventory:adjust', entry),
+    history: (filters?: unknown) => invoke('inventory:history', filters),
+    lowStock: () => invoke('inventory:lowStock'),
   },
   customers: {
-    list: (search?: string) => ipcRenderer.invoke('customers:list', search),
-    get: (id: string) => ipcRenderer.invoke('customers:get', id),
-    create: (customer: any) => ipcRenderer.invoke('customers:create', customer),
-    update: (id: string, customer: any) => ipcRenderer.invoke('customers:update', id, customer),
-    delete: (id: string) => ipcRenderer.invoke('customers:delete', id),
+    list: (search?: string) => invoke('customers:list', search),
+    get: (id: string) => invoke('customers:get', id),
+    create: (customer: unknown) => invoke('customers:create', customer),
+    update: (id: string, customer: unknown) => invoke('customers:update', id, customer),
+    delete: (id: string) => invoke('customers:delete', id),
   },
   settings: {
-    get: (key?: string) => ipcRenderer.invoke('settings:get', key),
-    set: (key: string, value: string) => ipcRenderer.invoke('settings:set', key, value),
-    setup: (setup: any) => ipcRenderer.invoke('settings:setup', setup),
+    get: (key?: string) => invoke('settings:get', key),
+    set: (key: string, value: string) => invoke('settings:set', key, value),
+    setup: (setup: unknown) => invokePublic('settings:setup', setup),
+    isSetupComplete: () => invokePublic('settings:isSetupComplete'),
   },
   categories: {
-    list: () => ipcRenderer.invoke('categories:list'),
-    create: (name: string) => ipcRenderer.invoke('categories:create', name),
-    delete: (id: string) => ipcRenderer.invoke('categories:delete', id),
+    list: () => invoke('categories:list'),
+    create: (name: string) => invoke('categories:create', name),
+    delete: (id: string) => invoke('categories:delete', id),
   },
   suppliers: {
-    list: () => ipcRenderer.invoke('suppliers:list'),
-    create: (supplier: any) => ipcRenderer.invoke('suppliers:create', supplier),
+    list: () => invoke('suppliers:list'),
+    create: (supplier: unknown) => invoke('suppliers:create', supplier),
+  },
+  users: {
+    list: () => invoke('users:list'),
+    create: (user: unknown) => invoke('users:create', user),
   },
   receipt: {
-    print: (data: any) => ipcRenderer.invoke('receipt:print', data),
-    testPrint: () => ipcRenderer.invoke('receipt:testPrint'),
+    print: (data: unknown) => invoke('receipt:print', data),
+    testPrint: () => invoke('receipt:testPrint'),
   },
 } satisfies ElectronAPI);

@@ -46,8 +46,8 @@ export default function App() {
 
   const checkSetup = async () => {
     try {
-      const result = await api.settings.get('setup_complete');
-      setSetupComplete(result === 'true');
+      const complete = await api.settings.isSetupComplete();
+      setSetupComplete(complete);
     } catch {
       setSetupComplete(false);
     }

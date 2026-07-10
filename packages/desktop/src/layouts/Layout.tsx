@@ -12,18 +12,19 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { cn } from '@pos/shared/lib/utils';
 
-const navItems = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/sales', icon: ShoppingCart, label: 'Sales' },
-  { to: '/products', icon: Package, label: 'Products' },
-  { to: '/inventory', icon: Warehouse, label: 'Inventory' },
-  { to: '/customers', icon: Users, label: 'Customers' },
-  { to: '/reports', icon: BarChart3, label: 'Reports' },
-  { to: '/settings', icon: Settings, label: 'Settings' },
+const allNavItems = [
+  { to: '/', icon: LayoutDashboard, label: 'Dashboard', adminOnly: false },
+  { to: '/sales', icon: ShoppingCart, label: 'Sales', adminOnly: false },
+  { to: '/products', icon: Package, label: 'Products', adminOnly: true },
+  { to: '/inventory', icon: Warehouse, label: 'Inventory', adminOnly: true },
+  { to: '/customers', icon: Users, label: 'Customers', adminOnly: false },
+  { to: '/reports', icon: BarChart3, label: 'Reports', adminOnly: true },
+  { to: '/settings', icon: Settings, label: 'Settings', adminOnly: true },
 ];
 
 export default function Layout() {
-  const { user, logout } = useAuth();
+  const { user, logout, isAdmin } = useAuth();
+  const navItems = allNavItems.filter((item) => !item.adminOnly || isAdmin);
 
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden">

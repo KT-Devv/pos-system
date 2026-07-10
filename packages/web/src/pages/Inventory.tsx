@@ -33,7 +33,7 @@ export default function Inventory() {
   const { stockHistory, loading: historyLoading, refetch: refetchHistory } = useStockHistory();
   const { suppliers } = useSuppliers();
   const { stats } = useInventoryStats();
-  const { createStockEntry, creating } = useCreateStockEntry();
+  const { createStockEntry, creating, error: stockError } = useCreateStockEntry();
 
   const [search, setSearch] = useState("");
   const [isStockInDialogOpen, setIsStockInDialogOpen] = useState(false);
@@ -62,19 +62,21 @@ export default function Inventory() {
   );
 
   const handleStockEntry = async () => {
-    if (newStockEntry.product_id && newStockEntry.quantity > 0) {
-      const ok = await createStockEntry({
-        product_id: newStockEntry.product_id,
-        type: newStockEntry.type,
-        quantity: newStockEntry.type === "out" ? -newStockEntry.quantity : newStockEntry.quantity,
-        supplier_id: newStockEntry.supplier_id || null,
-        notes: newStockEntry.notes || null,
-      });
-      if (ok) {
-        setNewStockEntry({ product_id: "", type: "in", quantity: 0, supplier_id: "", notes: "" });
-        setIsStockInDialogOpen(false);
-        refetchHistory();
-      }
+    const qty = newStockEntry.quantity;
+    if (!newStockEntry.product_id || qty === 0) return;
+    if (newStockEntry.type !== "adjustment" && qty <= 0) return;
+
+    const ok = await createStockEntry({
+      product_id: newStockEntry.product_id,
+      type: newStockEntry.type,
+      quantity: Math.abs(qty),
+      supplier_id: newStockEntry.supplier_id || null,
+      notes: newStockEntry.notes || null,
+    });
+    if (ok) {
+      setNewStockEntry({ product_id: "", type: "in", quantity: 0, supplier_id: "", notes: "" });
+      setIsStockInDialogOpen(false);
+      refetchHistory();
     }
   };
 
@@ -90,6 +92,8 @@ export default function Inventory() {
           Stock Entry
         </Button>
       </div>
+
+      {stockError && <p className="text-red-500 mb-4">{stockError}</p>}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
         <Card>

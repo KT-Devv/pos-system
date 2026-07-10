@@ -9,9 +9,9 @@ export default function Login() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    const success = await login(pin);
-    if (!success) {
-      setError('Invalid PIN. Please try again.');
+    const err = await login(pin);
+    if (err) {
+      setError(err);
       setPin('');
     }
   };

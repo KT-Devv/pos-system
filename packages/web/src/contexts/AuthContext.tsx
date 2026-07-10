@@ -13,6 +13,7 @@ interface AuthContextType {
   user: User | null;
   profile: UserProfile | null;
   loading: boolean;
+  isAdmin: boolean;
   login: (email: string, password: string) => Promise<string | null>;
   signup: (email: string, password: string, name: string) => Promise<string | null>;
   logout: () => Promise<void>;
@@ -38,11 +39,10 @@ async function ensureProfile(user: User, name?: string): Promise<UserProfile | n
       id: user.id,
       name: displayName,
       email: user.email || '',
-      role: 'admin',
+      role: 'cashier',
     });
-    if (!error) {
-      profile = await fetchProfile(user.id);
-    }
+    if (error) throw new Error(error.message);
+    profile = await fetchProfile(user.id);
   }
   return profile;
 }
@@ -55,7 +55,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let isMounted = true;
 
-    // Helper to load profile and update state
     async function handleSession(session: Session | null) {
       const authUser = session?.user ?? null;
       if (!isMounted) return;
@@ -76,11 +75,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (isMounted) setLoading(false);
     }
 
-    // 1. Get the current session first
     supabase.auth.getSession()
-      .then(({ data: { session } }) => {
-        handleSession(session);
-      })
+      .then(({ data: { session } }) => handleSession(session))
       .catch(() => {
         if (isMounted) {
           setUser(null);
@@ -89,7 +85,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       });
 
-    // 2. Listen for auth state changes (login, logout, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         handleSession(session).catch(() => {});
@@ -105,12 +100,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string): Promise<string | null> => {
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) return error.message;
-      // onAuthStateChange will handle setting user/profile
-      return null;
+      return error?.message ?? null;
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'An unexpected error occurred';
-      return msg;
+      return e instanceof Error ? e.message : 'An unexpected error occurred';
     }
   };
 
@@ -119,37 +111,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: {
-          data: { display_name: name },
-        },
+        options: { data: { display_name: name } },
       });
       if (error) return error.message;
-
-      // If email confirmation is required, user won't have a session yet
-      if (data.user && !data.session) {
-        return '__confirm_email__';
-      }
-
-      // If auto-confirmed, ensure profile is created
+      if (data.user && !data.session) return '__confirm_email__';
       if (data.user && data.session) {
-        await ensureProfile(data.user, name).catch(() => {});
+        try {
+          await ensureProfile(data.user, name);
+        } catch (e) {
+          return e instanceof Error ? e.message : 'Failed to create profile';
+        }
       }
-
       return null;
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'An unexpected error occurred';
-      return msg;
+      return e instanceof Error ? e.message : 'An unexpected error occurred';
     }
   };
 
   const logout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    setProfile(null);
+    const { error } = await supabase.auth.signOut();
+    if (!error) {
+      setUser(null);
+      setProfile(null);
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, login, signup, logout }}>
+    <AuthContext.Provider value={{
+      user,
+      profile,
+      loading,
+      isAdmin: profile?.role === 'admin',
+      login,
+      signup,
+      logout,
+    }}>
       {children}
     </AuthContext.Provider>
   );

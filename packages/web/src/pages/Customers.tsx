@@ -16,7 +16,7 @@ import { Label } from "@pos/shared/components/label";
 import { useCustomers } from "../hooks/useCustomers";
 
 export default function Customers() {
-  const { customers, loading, addCustomer } = useCustomers();
+  const { customers, loading, error, addCustomer } = useCustomers();
   const [search, setSearch] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newCustomer, setNewCustomer] = useState({
@@ -56,6 +56,8 @@ export default function Customers() {
           Add Customer
         </Button>
       </div>
+
+      {error && <p className="text-red-500 mb-4">{error}</p>}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
         <Card>

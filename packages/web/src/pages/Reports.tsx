@@ -15,7 +15,26 @@ import { useReports } from "../hooks/useReports";
 
 export default function Reports() {
   const [period, setPeriod] = useState("daily");
-  const { periodData, topProducts, dailySales, paymentMethods, loading } = useReports(period as "daily" | "weekly" | "monthly");
+  const { periodData, topProducts, dailySales, paymentMethods, loading, error } = useReports(period as "daily" | "weekly" | "monthly");
+
+  const handleExport = () => {
+    const rows = [
+      ["Metric", "Value"],
+      ["Total Sales", periodData.sales],
+      ["Total Profit", periodData.profit],
+      ["Transactions", periodData.transactions],
+      ["Average Sale", periodData.averageSale],
+      ...topProducts.map((p) => [`Top: ${p.name}`, p.revenue]),
+    ];
+    const csv = rows.map((r) => r.join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `report-${period}-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="p-6">
@@ -35,12 +54,14 @@ export default function Reports() {
               <SelectItem value="monthly">Monthly</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" disabled>
+          <Button variant="outline" onClick={handleExport}>
             <Download className="h-4 w-4 mr-2" />
             Export
           </Button>
         </div>
       </div>
+
+      {error && <p className="text-red-500 mb-4">{error}</p>}
 
       {loading ? (
         <p className="text-muted-foreground">Loading reports...</p>

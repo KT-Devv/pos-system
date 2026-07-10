@@ -25,8 +25,15 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
   const [cloudSync, setCloudSync] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const [setupError, setSetupError] = useState<string | null>(null);
+
   const handleComplete = async () => {
+    if (adminPin.length < 4) {
+      setSetupError('PIN must be at least 4 digits');
+      return;
+    }
     setLoading(true);
+    setSetupError(null);
     try {
       await api.settings.setup({
         shop_name: shopName,
@@ -38,7 +45,9 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
         printer_type: printerType,
         printer_paper_size: paperSize,
       });
-      onComplete();
+      setStep('complete');
+    } catch (e) {
+      setSetupError(e instanceof Error ? e.message : 'Setup failed');
     } finally {
       setLoading(false);
     }
@@ -190,6 +199,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                   </div>
                 </label>
               </div>
+              {setupError && <p className="text-sm text-red-500">{setupError}</p>}
               <Button className="w-full" onClick={handleComplete} disabled={loading}>
                 {loading ? 'Setting up...' : 'Complete Setup'}
               </Button>

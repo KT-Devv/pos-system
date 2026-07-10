@@ -45,9 +45,11 @@ export default function Products() {
   const handleAddProduct = async () => {
     if (!newProduct.name || !newProduct.selling_price) return;
 
-    const qrData = await QRCode.toDataURL(newProduct.name, { width: 200 });
+    const barcode = newProduct.barcode || crypto.randomUUID().slice(0, 8);
+    const qrData = await QRCode.toDataURL(barcode, { width: 200 });
     await api.products.create({
       ...newProduct,
+      barcode,
       qr_code: qrData,
     });
 

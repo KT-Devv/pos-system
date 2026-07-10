@@ -27,13 +27,16 @@ import {
   SelectValue,
 } from "@pos/shared/components/select";
 import { formatCurrency } from "@pos/shared/lib/utils";
-import { useProducts } from "../hooks/useProducts";
+import { useProducts, type ProductRow } from "../hooks/useProducts";
 
 export default function Products() {
-  const { products, categories, loading, error, addProduct, deleteProduct } = useProducts();
+  const { products, categories, loading, error, lowStockThreshold, addProduct, updateProduct, deleteProduct } = useProducts();
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<ProductRow | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [newProduct, setNewProduct] = useState({
     name: "",
     category_id: "",
@@ -68,7 +71,25 @@ export default function Products() {
   };
 
   const handleDeleteProduct = async (id: string) => {
-    await deleteProduct(id);
+    if (!confirm("Delete this product? Products referenced in past sales cannot be deleted.")) return;
+    setDeleteError(null);
+    const ok = await deleteProduct(id);
+    if (!ok) setDeleteError(error || "Failed to delete product");
+  };
+
+  const handleEditProduct = async () => {
+    if (!editingProduct) return;
+    const ok = await updateProduct(editingProduct.id, {
+      name: editingProduct.name,
+      category_id: editingProduct.category_id,
+      cost_price: editingProduct.cost_price,
+      selling_price: editingProduct.selling_price,
+      stock: editingProduct.stock,
+    });
+    if (ok) {
+      setIsEditDialogOpen(false);
+      setEditingProduct(null);
+    }
   };
 
   return (
@@ -122,7 +143,7 @@ export default function Products() {
                     <Package className="h-5 w-5 text-muted-foreground" />
                     <CardTitle className="text-lg">{product.name}</CardTitle>
                   </div>
-                  <Badge variant={product.stock < 10 ? "destructive" : "secondary"}>
+                  <Badge variant={product.stock <= lowStockThreshold ? "destructive" : "secondary"}>
                     {product.stock} in stock
                   </Badge>
                 </div>
@@ -149,7 +170,7 @@ export default function Products() {
                   </div>
                 </div>
                 <div className="flex gap-2 mt-4">
-                  <Button variant="outline" size="sm" className="flex-1">
+                  <Button variant="outline" size="sm" className="flex-1" onClick={() => { setEditingProduct(product); setIsEditDialogOpen(true); }}>
                     <Edit className="h-4 w-4 mr-1" />
                     Edit
                   </Button>
@@ -167,96 +188,90 @@ export default function Products() {
         </div>
       )}
 
+      {deleteError && <p className="text-red-500 mt-4">{deleteError}</p>}
+
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add New Product</DialogTitle>
-            <DialogDescription>
-              Add a new product to your inventory.
-            </DialogDescription>
+            <DialogDescription>Add a new product to your inventory.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label htmlFor="name">Product Name</Label>
-              <Input
-                id="name"
-                value={newProduct.name}
-                onChange={(e) =>
-                  setNewProduct({ ...newProduct, name: e.target.value })
-                }
-                placeholder="Enter product name"
-              />
+              <Input id="name" value={newProduct.name} onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })} placeholder="Enter product name" />
             </div>
             <div className="grid gap-2">
               <Label>Category</Label>
-              <Select
-                value={newProduct.category_id}
-                onValueChange={(value) =>
-                  setNewProduct({ ...newProduct, category_id: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
+              <Select value={newProduct.category_id} onValueChange={(value) => setNewProduct({ ...newProduct, category_id: value })}>
+                <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
                 <SelectContent>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
+                  {categories.map((cat) => (<SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>))}
                 </SelectContent>
               </Select>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="cost">Cost Price (GHS)</Label>
-                <Input
-                  id="cost"
-                  type="number"
-                  value={newProduct.cost_price || ""}
-                  onChange={(e) =>
-                    setNewProduct({
-                      ...newProduct,
-                      cost_price: Number(e.target.value),
-                    })
-                  }
-                  placeholder="0.00"
-                />
+                <Input id="cost" type="number" value={newProduct.cost_price || ""} onChange={(e) => setNewProduct({ ...newProduct, cost_price: Number(e.target.value) })} />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="selling">Selling Price (GHS)</Label>
-                <Input
-                  id="selling"
-                  type="number"
-                  value={newProduct.selling_price || ""}
-                  onChange={(e) =>
-                    setNewProduct({
-                      ...newProduct,
-                      selling_price: Number(e.target.value),
-                    })
-                  }
-                  placeholder="0.00"
-                />
+                <Input id="selling" type="number" value={newProduct.selling_price || ""} onChange={(e) => setNewProduct({ ...newProduct, selling_price: Number(e.target.value) })} />
               </div>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="stock">Initial Stock</Label>
-              <Input
-                id="stock"
-                type="number"
-                value={newProduct.stock || ""}
-                onChange={(e) =>
-                  setNewProduct({ ...newProduct, stock: Number(e.target.value) })
-                }
-                placeholder="0"
-              />
+              <Input id="stock" type="number" value={newProduct.stock || ""} onChange={(e) => setNewProduct({ ...newProduct, stock: Number(e.target.value) })} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
-              Cancel
-            </Button>
+            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleAddProduct}>Add Product</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Product</DialogTitle>
+            <DialogDescription>Update product details.</DialogDescription>
+          </DialogHeader>
+          {editingProduct && (
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label>Product Name</Label>
+                <Input value={editingProduct.name} onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })} />
+              </div>
+              <div className="grid gap-2">
+                <Label>Category</Label>
+                <Select value={editingProduct.category_id || ""} onValueChange={(value) => setEditingProduct({ ...editingProduct, category_id: value })}>
+                  <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
+                  <SelectContent>
+                    {categories.map((cat) => (<SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Cost Price (GHS)</Label>
+                  <Input type="number" value={editingProduct.cost_price} onChange={(e) => setEditingProduct({ ...editingProduct, cost_price: Number(e.target.value) })} />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Selling Price (GHS)</Label>
+                  <Input type="number" value={editingProduct.selling_price} onChange={(e) => setEditingProduct({ ...editingProduct, selling_price: Number(e.target.value) })} />
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label>Stock</Label>
+                <Input type="number" value={editingProduct.stock} onChange={(e) => setEditingProduct({ ...editingProduct, stock: Number(e.target.value) })} />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleEditProduct}>Save Changes</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

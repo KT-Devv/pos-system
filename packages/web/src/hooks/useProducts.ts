@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabase";
+import { getLowStockThreshold } from "../lib/settings";
 
 export interface ProductRow {
   id: string;
@@ -26,31 +27,18 @@ export function useProducts() {
   const [error, setError] = useState<string | null>(null);
 
   const fetchProducts = useCallback(async () => {
-    try {
-      const { data, error } = await supabase
-        .from("products")
-        .select("*, categories(id, name)")
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      setProducts(data || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch products");
-    }
+    const { data, error } = await supabase
+      .from("products")
+      .select("*, categories(id, name)")
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    setProducts(data || []);
   }, []);
 
   const fetchCategories = useCallback(async () => {
-    try {
-      const { data, error } = await supabase
-        .from("categories")
-        .select("*")
-        .order("name");
-
-      if (error) throw error;
-      setCategories(data || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch categories");
-    }
+    const { data, error } = await supabase.from("categories").select("*").order("name");
+    if (error) throw new Error(error.message);
+    setCategories(data || []);
   }, []);
 
   const addProduct = useCallback(async (product: {
@@ -61,37 +49,69 @@ export function useProducts() {
     stock?: number;
     barcode?: string | null;
   }) => {
-    try {
-      const { error } = await supabase.from("products").insert(product);
-      if (error) throw error;
-      await fetchProducts();
-      return true;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add product");
+    setError(null);
+    const { error } = await supabase.from("products").insert(product);
+    if (error) {
+      setError(error.message);
       return false;
     }
+    await fetchProducts();
+    return true;
+  }, [fetchProducts]);
+
+  const updateProduct = useCallback(async (id: string, product: Partial<ProductRow>) => {
+    setError(null);
+    const { error } = await supabase.from("products").update({
+      name: product.name,
+      category_id: product.category_id,
+      cost_price: product.cost_price,
+      selling_price: product.selling_price,
+      stock: product.stock,
+      barcode: product.barcode,
+    }).eq("id", id);
+    if (error) {
+      setError(error.message);
+      return false;
+    }
+    await fetchProducts();
+    return true;
   }, [fetchProducts]);
 
   const deleteProduct = useCallback(async (id: string) => {
-    try {
-      const { error } = await supabase.from("products").delete().eq("id", id);
-      if (error) throw error;
-      setProducts((prev) => prev.filter((p) => p.id !== id));
-      return true;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete product");
+    setError(null);
+    const { error } = await supabase.from("products").delete().eq("id", id);
+    if (error) {
+      setError(error.message);
       return false;
     }
+    setProducts((prev) => prev.filter((p) => p.id !== id));
+    return true;
   }, []);
 
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      await Promise.all([fetchProducts(), fetchCategories()]);
-      setLoading(false);
+      setError(null);
+      try {
+        await Promise.all([fetchProducts(), fetchCategories()]);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load products");
+      } finally {
+        setLoading(false);
+      }
     };
     init();
   }, [fetchProducts, fetchCategories]);
 
-  return { products, categories, loading, error, addProduct, deleteProduct, refetch: fetchProducts };
+  return {
+    products,
+    categories,
+    loading,
+    error,
+    lowStockThreshold: getLowStockThreshold(),
+    addProduct,
+    updateProduct,
+    deleteProduct,
+    refetch: fetchProducts,
+  };
 }

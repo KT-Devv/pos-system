@@ -7,10 +7,21 @@ import { registerCustomerHandlers } from './ipc/customers.js';
 import { registerSettingsHandlers } from './ipc/settings.js';
 import { registerAuthHandlers } from './ipc/auth.js';
 import { closeDatabase } from './db/index.js';
-
 import { registerReceiptHandlers } from './services/receipt.js';
 
 let mainWindow: BrowserWindow | null = null;
+
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -23,7 +34,7 @@ function createWindow(): void {
       preload: path.join(__dirname, '../preload/preload.mjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
     icon: path.join(__dirname, '../public/icon.png'),
     show: false,
