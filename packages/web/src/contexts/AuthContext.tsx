@@ -56,18 +56,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const u = session?.user ?? null;
       setUser(u);
       if (u) {
-        const p = await ensureProfile(u);
+        const p = await ensureProfile(u).catch(() => null);
         setProfile(p);
       }
       setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event: AuthChangeEvent, session: Session | null) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       const u = session?.user ?? null;
       setUser(u);
       if (u) {
-        const p = await ensureProfile(u);
-        setProfile(p);
+        ensureProfile(u).then(setProfile).catch(() => setProfile(null));
       } else {
         setProfile(null);
       }
@@ -77,17 +76,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string): Promise<string | null> => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return error?.message ?? null;
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      return error?.message ?? null;
+    } catch (e: any) {
+      return e?.message || 'An unexpected error occurred';
+    }
   };
 
   const signup = async (email: string, password: string, name: string): Promise<string | null> => {
-    const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error) return error.message;
-    if (data.user) {
-      await ensureProfile(data.user, name);
+    try {
+      const { data, error } = await supabase.auth.signUp({ email, password });
+      if (error) return error.message;
+      if (data.user) {
+        await ensureProfile(data.user, name).catch(() => {});
+      }
+      return null;
+    } catch (e: any) {
+      return e?.message || 'An unexpected error occurred';
     }
-    return null;
   };
 
   const logout = async () => {
