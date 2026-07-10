@@ -7,7 +7,9 @@ import {
   BarChart3,
   Settings,
   Users,
+  LogOut,
 } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 import { cn } from '@pos/shared/lib/utils';
 
 const navItems = [
@@ -21,13 +23,15 @@ const navItems = [
 ];
 
 export default function Layout() {
+  const { user, logout } = useAuth();
+
   return (
     <div className="flex h-screen bg-gray-100">
       {/* Sidebar */}
       <aside className="w-64 bg-primary text-primary-foreground flex flex-col drag-region">
         <div className="p-6 border-b border-primary-foreground/20 no-drag">
           <h1 className="text-xl font-bold">POS System</h1>
-          <p className="text-sm opacity-70">Mom's Shop</p>
+          <p className="text-sm opacity-70">Welcome, {user?.name || 'User'}</p>
         </div>
 
         <nav className="flex-1 p-4 space-y-1 no-drag">
@@ -50,6 +54,22 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
+
+        <div className="p-4 border-t border-primary-foreground/20 no-drag">
+          <div className="flex items-center justify-between">
+            <div className="text-sm">
+              <p className="font-medium">{user?.name || 'User'}</p>
+              <p className="text-xs opacity-60 capitalize">{user?.role || ''}</p>
+            </div>
+            <button
+              onClick={logout}
+              className="p-2 rounded-md hover:bg-primary-foreground/10 transition-colors"
+              title="Sign out"
+            >
+              <LogOut className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
       </aside>
 
       {/* Main Content */}

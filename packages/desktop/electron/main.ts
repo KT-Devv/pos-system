@@ -5,6 +5,7 @@ import { registerSalesHandlers } from './ipc/sales.js';
 import { registerInventoryHandlers } from './ipc/inventory.js';
 import { registerCustomerHandlers } from './ipc/customers.js';
 import { registerSettingsHandlers } from './ipc/settings.js';
+import { registerAuthHandlers } from './ipc/auth.js';
 import { closeDatabase } from './db/index.js';
 
 import { registerReceiptHandlers } from './services/receipt.js';
@@ -57,6 +58,7 @@ app.whenReady().then(() => {
   registerInventoryHandlers();
   registerCustomerHandlers();
   registerSettingsHandlers();
+  registerAuthHandlers();
   registerReceiptHandlers();
 
   createWindow();

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route } from 'react-router-dom';
 import { api } from './lib/ipc';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Layout from './layouts/Layout';
 import Dashboard from './pages/Dashboard';
 import Sales from './pages/Sales';
@@ -9,7 +10,32 @@ import Inventory from './pages/Inventory';
 import Customers from './pages/Customers';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
+import Login from './pages/Login';
 import SetupWizard from './components/SetupWizard';
+
+function AppContent() {
+  const { user } = useAuth();
+
+  if (!user) {
+    return <Login />;
+  }
+
+  return (
+    <HashRouter>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/sales" element={<Sales />} />
+          <Route path="/products" element={<Products />} />
+          <Route path="/inventory" element={<Inventory />} />
+          <Route path="/customers" element={<Customers />} />
+          <Route path="/reports" element={<Reports />} />
+          <Route path="/settings" element={<Settings />} />
+        </Route>
+      </Routes>
+    </HashRouter>
+  );
+}
 
 export default function App() {
   const [setupComplete, setSetupComplete] = useState<boolean | null>(null);
@@ -43,18 +69,8 @@ export default function App() {
   }
 
   return (
-    <HashRouter>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/sales" element={<Sales />} />
-          <Route path="/products" element={<Products />} />
-          <Route path="/inventory" element={<Inventory />} />
-          <Route path="/customers" element={<Customers />} />
-          <Route path="/reports" element={<Reports />} />
-          <Route path="/settings" element={<Settings />} />
-        </Route>
-      </Routes>
-    </HashRouter>
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
