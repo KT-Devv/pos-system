@@ -19,10 +19,13 @@ import { formatCurrency } from "@pos/shared/lib/utils";
 import type { CartItem, Product } from "@pos/shared/types";
 import { supabase } from "../lib/supabase";
 import { useCreateSale } from "../hooks/useSales";
+import { useAuth } from "../contexts/AuthContext";
 
 type PaymentMethod = "cash" | "momo" | "card";
 
 export default function Sales() {
+  const { profile } = useAuth();
+  const cashierId = profile?.id || null;
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -30,21 +33,7 @@ export default function Sales() {
   const [discount, setDiscount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [showReceipt, setShowReceipt] = useState(false);
-  const [cashierId, setCashierId] = useState<string | null>(null);
   const { createSale, creating } = useCreateSale();
-
-  useEffect(() => {
-    const init = async () => {
-      const { data: users } = await supabase
-        .from("users")
-        .select("id")
-        .limit(1);
-      if (users && users.length > 0) {
-        setCashierId(users[0].id);
-      }
-    };
-    init();
-  }, []);
 
   useEffect(() => {
     const fetchProducts = async () => {

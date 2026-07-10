@@ -16,14 +16,16 @@ import { Input } from '@pos/shared/components/input';
 import { Card, CardContent } from '@pos/shared/components/card';
 import { Badge } from '@pos/shared/components/badge';
 import { Label } from '@pos/shared/components/label';
-import { formatCurrency } from '@pos/shared/lib/utils';
+import { formatCurrency, cn } from '@pos/shared/lib/utils';
 import { api } from '../lib/ipc';
 import type { CartItem, Product } from '@pos/shared/types';
 import QRScanner from '../components/QRScanner';
 import ReceiptPreview from '../components/ReceiptPreview';
 import type { ReceiptData } from '../hooks/useReceipt';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Sales() {
+  const { user } = useAuth();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [search, setSearch] = useState('');
   const [products, setProducts] = useState<Product[]>([]);
@@ -96,7 +98,7 @@ export default function Sales() {
 
     try {
       const sale = await api.sales.create({
-        cashier_id: 'admin',
+        cashier_id: user?.id || 'admin',
         total,
         discount,
         payment_method: paymentMethod,
@@ -124,7 +126,7 @@ export default function Sales() {
         discount,
         total,
         paymentMethod,
-        cashierName: 'Admin',
+        cashierName: user?.name || 'Admin',
         date: new Date().toLocaleString(),
         saleId: saleData.id,
       });
@@ -145,39 +147,42 @@ export default function Sales() {
   };
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full animate-in fade-in duration-500 relative">
       {/* Products Section */}
-      <div className="flex-1 p-6 overflow-auto">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold">Point of Sale</h1>
+      <div className="flex-1 p-8 overflow-auto">
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60 mb-2">Point of Sale</h1>
           <p className="text-muted-foreground">Select products or scan barcode to add to cart</p>
         </div>
 
-        <div className="flex gap-2 mb-6">
+        <div className="flex gap-3 mb-8">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground" />
             <Input
               placeholder="Search products..."
               value={search}
               onChange={(e) => handleSearch(e.target.value)}
-              className="pl-10"
+              className="pl-12 h-14 text-lg bg-black/20 border-white/10 focus-visible:ring-primary/50 rounded-xl shadow-inner"
             />
           </div>
-          <Button onClick={() => setShowScanner(true)} variant="outline">
-            <ScanBarcode className="h-4 w-4 mr-2" />
+          <Button onClick={() => setShowScanner(true)} variant="outline" className="h-14 px-6 rounded-xl border-white/10 hover:bg-white/10 hover:text-white transition-all">
+            <ScanBarcode className="h-5 w-5 mr-2" />
             Scan
           </Button>
         </div>
 
         {/* Search Results */}
         {products.length > 0 && (
-          <div className="mb-6">
-            <h3 className="text-sm font-medium text-muted-foreground mb-2">Search Results</h3>
+          <div className="mb-8">
+            <h3 className="text-sm font-semibold text-primary uppercase tracking-wider mb-4 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+              Search Results
+            </h3>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {products.map((product) => (
-                <Card
+                <div
                   key={product.id}
-                  className="cursor-pointer hover:shadow-md transition-shadow border-primary"
+                  className="glass-card cursor-pointer rounded-2xl overflow-hidden group border-primary/40 shadow-[0_0_15px_rgba(99,102,241,0.1)]"
                   role="button"
                   tabIndex={0}
                   aria-label={`Add ${product.name} to cart`}
@@ -189,53 +194,57 @@ export default function Sales() {
                     }
                   }}
                 >
-                  <CardContent className="p-4 text-center">
-                    <h3 className="font-medium">{product.name}</h3>
-                    <p className="text-lg font-bold text-primary mt-1">
+                  <div className="p-5 text-center">
+                    <h3 className="font-semibold text-white mb-2">{product.name}</h3>
+                    <p className="text-xl font-bold text-primary mb-3">
                       {formatCurrency(product.selling_price)}
                     </p>
-                    <Badge variant={product.stock < 10 ? 'destructive' : 'secondary'} className="mt-2">
+                    <Badge variant={product.stock < 10 ? 'destructive' : 'outline'} className={cn("mt-2", product.stock >= 10 && "bg-white/5 border-white/10 text-muted-foreground")}>
                       {product.stock} in stock
                     </Badge>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               ))}
             </div>
           </div>
         )}
 
         {/* Quick Product Grid */}
-        <h3 className="text-sm font-medium text-muted-foreground mb-2">All Products</h3>
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">All Products</h3>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           <QuickProducts onSelect={addToCart} />
         </div>
       </div>
 
       {/* Cart Section */}
-      <div className="w-96 bg-background border-l p-6 flex flex-col">
-        <div className="mb-4">
-          <h2 className="text-xl font-bold flex items-center gap-2">
-            <ShoppingCart className="h-5 w-5" />
-            Cart
+      <div className="w-[400px] glass-panel border-l-0 border-r-0 border-y-0 md:border-l border-white/10 p-6 flex flex-col relative z-10 shadow-[-10px_0_30px_rgba(0,0,0,0.2)]">
+        <div className="mb-6 pb-4 border-b border-white/10">
+          <h2 className="text-2xl font-bold flex items-center gap-3 text-white">
+            <div className="p-2 rounded-lg bg-primary/20 text-primary">
+              <ShoppingCart className="h-6 w-6" />
+            </div>
+            Current Order
           </h2>
-          <p className="text-sm text-muted-foreground">{cart.length} item(s)</p>
+          <p className="text-sm text-muted-foreground mt-2">{cart.length} item(s) in cart</p>
         </div>
 
-        <div className="flex-1 overflow-auto space-y-3 mb-4">
+        <div className="flex-1 overflow-auto space-y-3 mb-6 pr-2">
           {cart.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <ShoppingCart className="h-12 w-12 mx-auto mb-2 opacity-50" />
-              <p>Cart is empty</p>
+            <div className="h-full flex flex-col items-center justify-center text-center text-muted-foreground opacity-50">
+              <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center mb-4">
+                <ShoppingCart className="h-10 w-10" />
+              </div>
+              <p className="text-lg font-medium">Cart is empty</p>
               <p className="text-sm">Click products or scan barcode</p>
             </div>
           ) : (
             cart.map((item) => (
-              <div key={item.product.id} className="border rounded-lg p-3">
-                <div className="flex justify-between items-start mb-2">
-                  <div>
-                    <h4 className="font-medium">{item.product.name}</h4>
-                    <p className="text-sm text-muted-foreground">
-                      {formatCurrency(item.product.selling_price)} each
+              <div key={item.product.id} className="bg-black/20 rounded-xl p-4 border border-white/5 hover:border-white/10 transition-colors">
+                <div className="flex justify-between items-start mb-3">
+                  <div className="flex-1 pr-4">
+                    <h4 className="font-semibold text-white leading-tight mb-1">{item.product.name}</h4>
+                    <p className="text-sm text-primary font-medium">
+                      {formatCurrency(item.product.selling_price)}
                     </p>
                   </div>
                   <Button
@@ -243,7 +252,7 @@ export default function Sales() {
                     aria-label={`Remove ${item.product.name} from cart`}
                     variant="ghost"
                     size="icon"
-                    className="h-6 w-6"
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                     onClick={() => removeFromCart(item.product.id)}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -284,68 +293,83 @@ export default function Sales() {
 
         {/* Cart Summary */}
         {cart.length > 0 && (
-          <div className="border-t pt-4 space-y-4">
-            <div className="space-y-2">
-              <div className="flex justify-between">
+          <div className="border-t border-white/10 pt-6 space-y-5">
+            <div className="space-y-3 bg-black/20 p-4 rounded-xl border border-white/5">
+              <div className="flex justify-between text-muted-foreground">
                 <span>Subtotal:</span>
-                <span>{formatCurrency(subtotal)}</span>
+                <span className="text-white">{formatCurrency(subtotal)}</span>
               </div>
               <div className="flex justify-between items-center">
-                <Label htmlFor="discount">Discount:</Label>
-                <Input
-                  id="discount"
-                  type="number"
-                  value={discount || ''}
-                  onChange={(e) => setDiscount(Number(e.target.value))}
-                  className="w-24 text-right"
-                  placeholder="0"
-                />
+                <Label htmlFor="discount" className="text-muted-foreground">Discount:</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                  <Input
+                    id="discount"
+                    type="number"
+                    value={discount || ''}
+                    onChange={(e) => setDiscount(Number(e.target.value))}
+                    className="w-28 text-right pl-8 bg-black/40 border-white/10 focus-visible:ring-primary/50"
+                    placeholder="0.00"
+                  />
+                </div>
               </div>
-              <div className="flex justify-between text-lg font-bold border-t pt-2">
-                <span>Total:</span>
-                <span>{formatCurrency(total)}</span>
+              <div className="flex justify-between items-center text-xl font-bold border-t border-white/10 pt-3 mt-3">
+                <span className="text-white">Total:</span>
+                <span className="text-primary text-2xl">{formatCurrency(total)}</span>
               </div>
             </div>
 
             {/* Payment Method */}
-            <div>
-              <Label className="mb-2 block text-sm font-medium">Payment Method</Label>
-              <div className="grid grid-cols-3 gap-2">
+            <div className="space-y-3">
+              <Label className="text-sm font-medium text-white uppercase tracking-wider">Payment Method</Label>
+              <div className="grid grid-cols-3 gap-3">
                 <Button
                   variant={paymentMethod === 'cash' ? 'default' : 'outline'}
                   onClick={() => setPaymentMethod('cash')}
-                  className={`flex flex-col h-auto py-3 transition-all ${
-                    paymentMethod === 'cash' ? 'ring-2 ring-primary/20' : ''
-                  }`}
+                  className={cn(
+                    "flex flex-col h-auto py-4 transition-all border-white/10 group shadow-lg",
+                    paymentMethod === 'cash' 
+                      ? "bg-primary text-white border-primary shadow-[0_0_15px_rgba(99,102,241,0.3)]" 
+                      : "bg-black/20 text-muted-foreground hover:bg-white/5 hover:text-white hover:border-white/20"
+                  )}
                 >
-                  <Banknote className="h-5 w-5 mb-1" />
-                  <span className="text-xs">Cash</span>
+                  <Banknote className={cn("h-6 w-6 mb-2 transition-transform", paymentMethod === 'cash' ? "scale-110" : "group-hover:scale-110")} />
+                  <span className="text-xs font-semibold tracking-wide">Cash</span>
                 </Button>
                 <Button
                   variant={paymentMethod === 'momo' ? 'default' : 'outline'}
                   onClick={() => setPaymentMethod('momo')}
-                  className={`flex flex-col h-auto py-3 transition-all ${
-                    paymentMethod === 'momo' ? 'ring-2 ring-primary/20' : ''
-                  }`}
+                  className={cn(
+                    "flex flex-col h-auto py-4 transition-all border-white/10 group shadow-lg",
+                    paymentMethod === 'momo' 
+                      ? "bg-[#d82d8b] text-white border-[#d82d8b] shadow-[0_0_15px_rgba(216,45,139,0.3)]" 
+                      : "bg-black/20 text-muted-foreground hover:bg-white/5 hover:text-white hover:border-white/20"
+                  )}
                 >
-                  <Smartphone className="h-5 w-5 mb-1" />
-                  <span className="text-xs">MoMo</span>
+                  <Smartphone className={cn("h-6 w-6 mb-2 transition-transform", paymentMethod === 'momo' ? "scale-110" : "group-hover:scale-110")} />
+                  <span className="text-xs font-semibold tracking-wide">MoMo</span>
                 </Button>
                 <Button
                   variant={paymentMethod === 'card' ? 'default' : 'outline'}
                   onClick={() => setPaymentMethod('card')}
-                  className={`flex flex-col h-auto py-3 transition-all ${
-                    paymentMethod === 'card' ? 'ring-2 ring-primary/20' : ''
-                  }`}
+                  className={cn(
+                    "flex flex-col h-auto py-4 transition-all border-white/10 group shadow-lg",
+                    paymentMethod === 'card' 
+                      ? "bg-info text-white border-info shadow-[0_0_15px_rgba(59,130,246,0.3)]" 
+                      : "bg-black/20 text-muted-foreground hover:bg-white/5 hover:text-white hover:border-white/20"
+                  )}
                 >
-                  <CreditCard className="h-5 w-5 mb-1" />
-                  <span className="text-xs">Card</span>
+                  <CreditCard className={cn("h-6 w-6 mb-2 transition-transform", paymentMethod === 'card' ? "scale-110" : "group-hover:scale-110")} />
+                  <span className="text-xs font-semibold tracking-wide">Card</span>
                 </Button>
               </div>
             </div>
 
-            <Button className="w-full" size="lg" onClick={completeSale}>
-              <Receipt className="h-5 w-5 mr-2" />
+            <Button 
+              className="w-full h-14 text-lg font-bold shadow-[0_0_20px_rgba(99,102,241,0.2)] hover:shadow-[0_0_25px_rgba(99,102,241,0.4)] transition-all bg-gradient-to-r from-primary to-purple-600 border-0" 
+              onClick={completeSale}
+            >
+              <Receipt className="h-5 w-5 mr-2 animate-pulse" />
               Complete Sale
             </Button>
           </div>
@@ -376,9 +400,9 @@ function QuickProducts({ onSelect }: { onSelect: (product: Product) => void }) {
   return (
     <>
       {products.map((product) => (
-        <Card
+        <div
           key={product.id}
-          className="cursor-pointer hover:shadow-md transition-shadow"
+          className="glass-card cursor-pointer rounded-2xl overflow-hidden group border-white/5 hover:border-primary/40 shadow-lg"
           role="button"
           tabIndex={0}
           aria-label={`Add ${product.name} to cart`}
@@ -390,21 +414,16 @@ function QuickProducts({ onSelect }: { onSelect: (product: Product) => void }) {
             }
           }}
         >
-          <CardContent className="p-4">
+          <div className="p-5">
             <div className="text-center">
-              <div className="w-16 h-16 bg-muted rounded-lg mx-auto mb-3 flex items-center justify-center">
-                <span className="text-2xl">📦</span>
+              <div className="w-16 h-16 bg-white/5 border border-white/10 rounded-xl mx-auto mb-4 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                <span className="text-2xl group-hover:scale-110 transition-transform">📦</span>
               </div>
-              <h3 className="font-medium">{product.name}</h3>
-              <p className="text-lg font-bold text-primary mt-1">
-                {formatCurrency(product.selling_price)}
-              </p>
-              <Badge variant={product.stock < 10 ? 'destructive' : 'secondary'} className="mt-2">
-                {product.stock} in stock
-              </Badge>
+              <h3 className="font-semibold text-white mb-1 line-clamp-1">{product.name}</h3>
+              <p className="text-primary font-bold">{formatCurrency(product.selling_price)}</p>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       ))}
     </>
   );

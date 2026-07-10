@@ -1,32 +1,58 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Login() {
-  const { login, signup, loading } = useAuth();
+  const { login, signup, user, loading } = useAuth();
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
   const [isSignup, setIsSignup] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (!loading && user) {
+      navigate('/', { replace: true });
+    }
+  }, [user, loading, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccessMsg('');
     setSubmitting(true);
+
     try {
-      const err = isSignup
-        ? await signup(email, password, name)
-        : await login(email, password);
-      if (err) {
-        setError(err);
-      } else if (isSignup) {
-        setError('Account created! Check your email to confirm.');
-        setIsSignup(false);
+      if (isSignup) {
+        const result = await signup(email, password, name);
+        if (result === '__confirm_email__') {
+          setSuccessMsg('Account created! Check your email to confirm, then sign in.');
+          setIsSignup(false);
+          setPassword('');
+        } else if (result) {
+          setError(result);
+        }
+        // If null and no sentinel, onAuthStateChange will redirect via the useEffect
+      } else {
+        const result = await login(email, password);
+        if (result) {
+          setError(result);
+        }
+        // If null, onAuthStateChange will update user and the useEffect will redirect
       }
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const toggleMode = () => {
+    setIsSignup(!isSignup);
+    setError('');
+    setSuccessMsg('');
   };
 
   if (loading) {
@@ -84,13 +110,16 @@ export default function Login() {
               placeholder="Password"
               className="w-full h-12 rounded-lg border border-input bg-background px-3 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               required
+              minLength={6}
             />
           </div>
 
           {error && (
-            <p className={`text-sm text-center ${error.includes('Check your email') ? 'text-green-600' : 'text-red-500'}`}>
-              {error}
-            </p>
+            <p className="text-sm text-center text-red-500">{error}</p>
+          )}
+
+          {successMsg && (
+            <p className="text-sm text-center text-green-600">{successMsg}</p>
           )}
 
           <button
@@ -105,7 +134,7 @@ export default function Login() {
         <p className="text-center text-sm text-muted-foreground mt-6">
           {isSignup ? 'Already have an account?' : "Don't have an account?"}{' '}
           <button
-            onClick={() => { setIsSignup(!isSignup); setError(''); }}
+            onClick={toggleMode}
             className="text-primary font-medium hover:underline"
           >
             {isSignup ? 'Sign in' : 'Create one'}

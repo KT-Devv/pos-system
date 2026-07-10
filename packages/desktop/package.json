@@ -19,6 +19,7 @@
     "jspdf": "^2.5.2",
     "node-thermal-printer": "^4.6.0",
     "qrcode": "^1.5.4",
+    "lucide-react": "^1.24.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.1",

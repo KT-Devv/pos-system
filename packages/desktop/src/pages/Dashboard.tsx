@@ -28,176 +28,220 @@ export default function Dashboard() {
   }, []);
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold">Dashboard</h1>
-        <p className="text-muted-foreground">Welcome back! Here's your shop overview.</p>
+    <div className="p-8 h-full overflow-auto animate-in slide-in-from-bottom-4 duration-500">
+      <div className="mb-8 flex items-center justify-between">
+        <div>
+          <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60 mb-2">Dashboard</h1>
+          <p className="text-muted-foreground">Welcome back! Here's your shop overview.</p>
+        </div>
+        <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 shadow-[0_0_20px_rgba(99,102,241,0.15)]">
+          <TrendingUp className="h-6 w-6 text-primary" />
+        </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Today's Sales</CardTitle>
-            <ShoppingCart className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(stats.totalSales)}</div>
-            <p className="text-xs text-muted-foreground">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="glass-card rounded-2xl p-6 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+            <ShoppingCart className="h-16 w-16" />
+          </div>
+          <div className="flex flex-row items-center justify-between space-y-0 pb-4">
+            <h3 className="text-sm font-medium text-muted-foreground">Today's Sales</h3>
+            <div className="p-2 bg-primary/10 rounded-lg border border-primary/20">
+              <ShoppingCart className="h-4 w-4 text-primary" />
+            </div>
+          </div>
+          <div>
+            <div className="text-3xl font-bold text-white mb-1">{formatCurrency(stats.totalSales)}</div>
+            <p className="text-xs text-muted-foreground flex items-center gap-1">
+              <span className="inline-block w-2 h-2 rounded-full bg-primary animate-pulse"></span>
               {stats.transactionCount} transactions today
             </p>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Today's Profit</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(stats.profit)}</div>
-            <p className="text-xs text-muted-foreground">
-              <span className="text-green-600">Gross profit</span> today
+        <div className="glass-card rounded-2xl p-6 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+            <TrendingUp className="h-16 w-16" />
+          </div>
+          <div className="flex flex-row items-center justify-between space-y-0 pb-4">
+            <h3 className="text-sm font-medium text-muted-foreground">Today's Profit</h3>
+            <div className="p-2 bg-success/10 rounded-lg border border-success/20">
+              <TrendingUp className="h-4 w-4 text-success" />
+            </div>
+          </div>
+          <div>
+            <div className="text-3xl font-bold text-white mb-1">{formatCurrency(stats.profit)}</div>
+            <p className="text-xs text-success flex items-center gap-1">
+              Gross profit today
             </p>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Products</CardTitle>
-            <Package className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{products.length}</div>
+        <div className="glass-card rounded-2xl p-6 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+            <Package className="h-16 w-16" />
+          </div>
+          <div className="flex flex-row items-center justify-between space-y-0 pb-4">
+            <h3 className="text-sm font-medium text-muted-foreground">Products</h3>
+            <div className="p-2 bg-info/10 rounded-lg border border-info/20">
+              <Package className="h-4 w-4 text-info" />
+            </div>
+          </div>
+          <div>
+            <div className="text-3xl font-bold text-white mb-1">{products.length}</div>
             <p className="text-xs text-muted-foreground">Total products</p>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Low Stock</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">{lowStock.length}</div>
+        <div className="glass-card rounded-2xl p-6 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+            <AlertTriangle className="h-16 w-16" />
+          </div>
+          <div className="flex flex-row items-center justify-between space-y-0 pb-4">
+            <h3 className="text-sm font-medium text-muted-foreground">Low Stock</h3>
+            <div className="p-2 bg-warning/10 rounded-lg border border-warning/20">
+              <AlertTriangle className="h-4 w-4 text-warning" />
+            </div>
+          </div>
+          <div>
+            <div className="text-3xl font-bold text-warning mb-1">{lowStock.length}</div>
             <p className="text-xs text-muted-foreground">Items need restocking</p>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Recent Transactions */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Transactions</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <div className="glass-card rounded-2xl flex flex-col">
+          <div className="p-6 border-b border-white/5">
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-primary" />
+              Recent Transactions
+            </h3>
+          </div>
+          <div className="p-6 flex-1">
             <div className="space-y-4">
               {recentSales.length === 0 ? (
-                <p className="text-muted-foreground text-center py-4">No transactions yet</p>
+                <div className="flex flex-col items-center justify-center py-8 text-muted-foreground opacity-50">
+                  <ShoppingCart className="h-12 w-12 mb-2" />
+                  <p>No transactions yet</p>
+                </div>
               ) : (
                 recentSales.map((sale: any) => (
                   <div
                     key={sale.id}
-                    className="flex items-center justify-between border-b pb-2 last:border-0"
+                    className="flex items-center justify-between p-3 rounded-xl hover:bg-white/5 transition-colors border border-transparent hover:border-white/5"
                   >
-                    <div>
-                      <p className="font-medium">{sale.cashier_name || 'Cashier'}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {new Date(sale.created_at).toLocaleString()}
-                      </p>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-medium border border-primary/20">
+                        {sale.cashier_name?.charAt(0).toUpperCase() || 'C'}
+                      </div>
+                      <div>
+                        <p className="font-medium text-white">{sale.cashier_name || 'Cashier'}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(sale.created_at).toLocaleString()}
+                        </p>
+                      </div>
                     </div>
                     <div className="text-right">
-                      <p className="font-bold">{formatCurrency(sale.total)}</p>
-                      <Badge variant="outline">{sale.payment_method}</Badge>
+                      <p className="font-bold text-white mb-1">{formatCurrency(sale.total)}</p>
+                      <Badge variant="outline" className="text-[10px] uppercase tracking-wider bg-white/5 border-white/10">{sale.payment_method}</Badge>
                     </div>
                   </div>
                 ))
               )}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        {/* Low Stock Alert */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-yellow-500" />
-              Low Stock Alerts
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {lowStock.length === 0 ? (
-                <p className="text-muted-foreground text-center py-4">All stock levels are good!</p>
-              ) : (
-                lowStock.map((item: any) => (
-                  <div
-                    key={item.id}
-                    className="flex items-center justify-between border-b pb-2 last:border-0"
-                  >
-                    <div>
-                      <p className="font-medium">{item.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {item.category_name || 'No category'}
-                      </p>
+        <div className="space-y-8">
+          {/* Low Stock Alert */}
+          <div className="glass-card rounded-2xl flex flex-col">
+            <div className="p-6 border-b border-warning/10 bg-warning/5 rounded-t-2xl">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-warning" />
+                Low Stock Alerts
+              </h3>
+            </div>
+            <div className="p-6">
+              <div className="space-y-3">
+                {lowStock.length === 0 ? (
+                  <p className="text-muted-foreground text-center py-4">All stock levels are good!</p>
+                ) : (
+                  lowStock.slice(0, 3).map((item: any) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between p-3 rounded-xl bg-black/20 border border-white/5"
+                    >
+                      <div>
+                        <p className="font-medium text-white">{item.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {item.category_name || 'No category'}
+                        </p>
+                      </div>
+                      <Badge variant={item.stock < 5 ? 'destructive' : 'warning'} className="shadow-lg">
+                        {item.stock} left
+                      </Badge>
                     </div>
-                    <Badge variant={item.stock < 5 ? 'destructive' : 'warning'}>
-                      {item.stock} left
-                    </Badge>
-                  </div>
-                ))
-              )}
+                  ))
+                )}
+              </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
 
-        {/* Quick Actions */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <Button
-                variant="outline"
-                className="flex-col h-auto py-6 gap-2 hover:border-primary/30 hover:shadow-sm"
-                onClick={() => navigate('/sales')}
-              >
-                <ShoppingCart className="h-8 w-8 text-primary" />
-                <span className="font-medium text-sm">New Sale</span>
-                <span className="text-xs text-muted-foreground">Start a new transaction</span>
-              </Button>
-              <Button
-                variant="outline"
-                className="flex-col h-auto py-6 gap-2 hover:border-primary/30 hover:shadow-sm"
-                onClick={() => navigate('/products')}
-              >
-                <Package className="h-8 w-8 text-primary" />
-                <span className="font-medium text-sm">Add Product</span>
-                <span className="text-xs text-muted-foreground">Add to inventory</span>
-              </Button>
-              <Button
-                variant="outline"
-                className="flex-col h-auto py-6 gap-2 hover:border-primary/30 hover:shadow-sm"
-                onClick={() => navigate('/inventory')}
-              >
-                <TrendingUp className="h-8 w-8 text-primary" />
-                <span className="font-medium text-sm">Stock In</span>
-                <span className="text-xs text-muted-foreground">Receive stock</span>
-              </Button>
-              <Button
-                variant="outline"
-                className="flex-col h-auto py-6 gap-2 hover:border-primary/30 hover:shadow-sm"
-                onClick={() => navigate('/reports')}
-              >
-                <BarChart3 className="h-8 w-8 text-primary" />
-                <span className="font-medium text-sm">View Reports</span>
-                <span className="text-xs text-muted-foreground">Analytics</span>
-              </Button>
+          {/* Quick Actions */}
+          <div className="glass-card rounded-2xl flex flex-col relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-purple-600/5 pointer-events-none"></div>
+            <div className="p-6 border-b border-white/5 relative z-10">
+              <h3 className="text-lg font-semibold text-white">Quick Actions</h3>
             </div>
-          </CardContent>
-        </Card>
+            <div className="p-6 relative z-10">
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  className="flex flex-col items-center justify-center p-6 rounded-xl bg-black/20 border border-white/10 hover:border-primary/50 hover:bg-primary/10 transition-all duration-300 group shadow-lg cursor-pointer"
+                  onClick={() => navigate('/sales')}
+                >
+                  <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-[0_0_15px_rgba(99,102,241,0.2)]">
+                    <ShoppingCart className="h-6 w-6 text-primary" />
+                  </div>
+                  <span className="font-semibold text-white mb-1">New Sale</span>
+                  <span className="text-[10px] text-muted-foreground text-center uppercase tracking-wider">Start transaction</span>
+                </button>
+                <button
+                  className="flex flex-col items-center justify-center p-6 rounded-xl bg-black/20 border border-white/10 hover:border-info/50 hover:bg-info/10 transition-all duration-300 group shadow-lg cursor-pointer"
+                  onClick={() => navigate('/products')}
+                >
+                  <div className="w-12 h-12 rounded-full bg-info/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-[0_0_15px_rgba(59,130,246,0.2)]">
+                    <Package className="h-6 w-6 text-info" />
+                  </div>
+                  <span className="font-semibold text-white mb-1">Add Product</span>
+                  <span className="text-[10px] text-muted-foreground text-center uppercase tracking-wider">Inventory</span>
+                </button>
+                <button
+                  className="flex flex-col items-center justify-center p-6 rounded-xl bg-black/20 border border-white/10 hover:border-success/50 hover:bg-success/10 transition-all duration-300 group shadow-lg cursor-pointer"
+                  onClick={() => navigate('/inventory')}
+                >
+                  <div className="w-12 h-12 rounded-full bg-success/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-[0_0_15px_rgba(16,185,129,0.2)]">
+                    <TrendingUp className="h-6 w-6 text-success" />
+                  </div>
+                  <span className="font-semibold text-white mb-1">Stock In</span>
+                  <span className="text-[10px] text-muted-foreground text-center uppercase tracking-wider">Receive</span>
+                </button>
+                <button
+                  className="flex flex-col items-center justify-center p-6 rounded-xl bg-black/20 border border-white/10 hover:border-purple-500/50 hover:bg-purple-500/10 transition-all duration-300 group shadow-lg cursor-pointer"
+                  onClick={() => navigate('/reports')}
+                >
+                  <div className="w-12 h-12 rounded-full bg-purple-500/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-[0_0_15px_rgba(168,85,247,0.2)]">
+                    <BarChart3 className="h-6 w-6 text-purple-400" />
+                  </div>
+                  <span className="font-semibold text-white mb-1">Reports</span>
+                  <span className="text-[10px] text-muted-foreground text-center uppercase tracking-wider">Analytics</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@pos/shared/components/card";
 import { formatCurrency } from "@pos/shared/lib/utils";
 import { Badge } from "@pos/shared/components/badge";
+import { useNavigate } from "react-router-dom";
 import { useDashboard } from "../hooks/useDashboard";
 
 const methodLabel: Record<string, string> = {
@@ -21,6 +22,7 @@ export default function Dashboard() {
     stats, recentTransactions, lowStockItems, bestSelling,
     loading, formatTimeAgo,
   } = useDashboard();
+  const navigate = useNavigate();
 
   const salesTrendUp = stats.salesTrend >= 0;
   const profitTrendUp = stats.profitTrend >= 0;
@@ -192,19 +194,31 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-4">
-              <button className="p-4 border rounded-lg hover:bg-accent transition-colors text-center">
+              <button
+                onClick={() => navigate("/sales")}
+                className="p-4 border rounded-lg hover:bg-accent transition-colors text-center cursor-pointer"
+              >
                 <ShoppingCart className="h-8 w-8 mx-auto mb-2 text-primary" />
                 <span className="font-medium">New Sale</span>
               </button>
-              <button className="p-4 border rounded-lg hover:bg-accent transition-colors text-center">
+              <button
+                onClick={() => navigate("/products")}
+                className="p-4 border rounded-lg hover:bg-accent transition-colors text-center cursor-pointer"
+              >
                 <Package className="h-8 w-8 mx-auto mb-2 text-primary" />
                 <span className="font-medium">Add Product</span>
               </button>
-              <button className="p-4 border rounded-lg hover:bg-accent transition-colors text-center">
+              <button
+                onClick={() => navigate("/inventory")}
+                className="p-4 border rounded-lg hover:bg-accent transition-colors text-center cursor-pointer"
+              >
                 <TrendingUp className="h-8 w-8 mx-auto mb-2 text-primary" />
                 <span className="font-medium">Stock In</span>
               </button>
-              <button className="p-4 border rounded-lg hover:bg-accent transition-colors text-center">
+              <button
+                onClick={() => navigate("/reports")}
+                className="p-4 border rounded-lg hover:bg-accent transition-colors text-center cursor-pointer"
+              >
                 <BarChart3 className="h-8 w-8 mx-auto mb-2 text-primary" />
                 <span className="font-medium">View Reports</span>
               </button>
