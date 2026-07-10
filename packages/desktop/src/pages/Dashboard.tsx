@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@pos/shared/components/card';
 import { Badge } from '@pos/shared/components/badge';
+import { Button } from '@pos/shared/components/button';
 import { formatCurrency } from '@pos/shared/lib/utils';
 import { useTodayStats } from '../hooks/useSales';
 import { useProducts } from '../hooks/useProducts';
@@ -16,7 +17,7 @@ import { api } from '../lib/ipc';
 import { useNavigate } from 'react-router-dom';
 
 export default function Dashboard() {
-  const { stats, loading: statsLoading } = useTodayStats();
+  const { stats } = useTodayStats();
   const { products } = useProducts();
   const { items: lowStock } = useLowStock();
   const [recentSales, setRecentSales] = useState<any[]>([]);
@@ -158,34 +159,42 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <button
+              <Button
+                variant="outline"
+                className="flex-col h-auto py-6 gap-2 hover:border-primary/30 hover:shadow-sm"
                 onClick={() => navigate('/sales')}
-                className="p-4 border rounded-lg hover:bg-accent transition-colors text-center"
               >
-                <ShoppingCart className="h-8 w-8 mx-auto mb-2 text-primary" />
-                <span className="font-medium">New Sale</span>
-              </button>
-              <button
+                <ShoppingCart className="h-8 w-8 text-primary" />
+                <span className="font-medium text-sm">New Sale</span>
+                <span className="text-xs text-muted-foreground">Start a new transaction</span>
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-col h-auto py-6 gap-2 hover:border-primary/30 hover:shadow-sm"
                 onClick={() => navigate('/products')}
-                className="p-4 border rounded-lg hover:bg-accent transition-colors text-center"
               >
-                <Package className="h-8 w-8 mx-auto mb-2 text-primary" />
-                <span className="font-medium">Add Product</span>
-              </button>
-              <button
+                <Package className="h-8 w-8 text-primary" />
+                <span className="font-medium text-sm">Add Product</span>
+                <span className="text-xs text-muted-foreground">Add to inventory</span>
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-col h-auto py-6 gap-2 hover:border-primary/30 hover:shadow-sm"
                 onClick={() => navigate('/inventory')}
-                className="p-4 border rounded-lg hover:bg-accent transition-colors text-center"
               >
-                <TrendingUp className="h-8 w-8 mx-auto mb-2 text-primary" />
-                <span className="font-medium">Stock In</span>
-              </button>
-              <button
+                <TrendingUp className="h-8 w-8 text-primary" />
+                <span className="font-medium text-sm">Stock In</span>
+                <span className="text-xs text-muted-foreground">Receive stock</span>
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-col h-auto py-6 gap-2 hover:border-primary/30 hover:shadow-sm"
                 onClick={() => navigate('/reports')}
-                className="p-4 border rounded-lg hover:bg-accent transition-colors text-center"
               >
-                <BarChart3 className="h-8 w-8 mx-auto mb-2 text-primary" />
-                <span className="font-medium">View Reports</span>
-              </button>
+                <BarChart3 className="h-8 w-8 text-primary" />
+                <span className="font-medium text-sm">View Reports</span>
+                <span className="text-xs text-muted-foreground">Analytics</span>
+              </Button>
             </div>
           </CardContent>
         </Card>

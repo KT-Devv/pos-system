@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Search,
   Plus,
@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@pos/shared/components/button';
 import { Input } from '@pos/shared/components/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@pos/shared/components/card';
+import { Card, CardContent } from '@pos/shared/components/card';
 import { Badge } from '@pos/shared/components/badge';
 import { Label } from '@pos/shared/components/label';
 import { formatCurrency } from '@pos/shared/lib/utils';
@@ -32,8 +32,7 @@ export default function Sales() {
   const [showScanner, setShowScanner] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
-  const [lastSaleId, setLastSaleId] = useState<string>('');
-
+  const [_lastSaleId, setLastSaleId] = useState<string>('');
   const handleSearch = async (value: string) => {
     setSearch(value);
     if (value.trim()) {
@@ -179,7 +178,16 @@ export default function Sales() {
                 <Card
                   key={product.id}
                   className="cursor-pointer hover:shadow-md transition-shadow border-primary"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Add ${product.name} to cart`}
                   onClick={() => addToCart(product)}
+                  onKeyDown={(e: React.KeyboardEvent) => {
+                    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+                      e.preventDefault();
+                      addToCart(product);
+                    }
+                  }}
                 >
                   <CardContent className="p-4 text-center">
                     <h3 className="font-medium">{product.name}</h3>
@@ -231,6 +239,8 @@ export default function Sales() {
                     </p>
                   </div>
                   <Button
+                    type="button"
+                    aria-label={`Remove ${item.product.name} from cart`}
                     variant="ghost"
                     size="icon"
                     className="h-6 w-6"
@@ -242,6 +252,8 @@ export default function Sales() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Button
+                      type="button"
+                      aria-label={`Decrease quantity of ${item.product.name}`}
                       variant="outline"
                       size="icon"
                       className="h-8 w-8"
@@ -251,6 +263,8 @@ export default function Sales() {
                     </Button>
                     <span className="w-8 text-center font-medium">{item.quantity}</span>
                     <Button
+                      type="button"
+                      aria-label={`Increase quantity of ${item.product.name}`}
                       variant="outline"
                       size="icon"
                       className="h-8 w-8"
@@ -295,12 +309,14 @@ export default function Sales() {
 
             {/* Payment Method */}
             <div>
-              <Label className="mb-2 block">Payment Method</Label>
+              <Label className="mb-2 block text-sm font-medium">Payment Method</Label>
               <div className="grid grid-cols-3 gap-2">
                 <Button
                   variant={paymentMethod === 'cash' ? 'default' : 'outline'}
                   onClick={() => setPaymentMethod('cash')}
-                  className="flex flex-col h-auto py-3"
+                  className={`flex flex-col h-auto py-3 transition-all ${
+                    paymentMethod === 'cash' ? 'ring-2 ring-primary/20' : ''
+                  }`}
                 >
                   <Banknote className="h-5 w-5 mb-1" />
                   <span className="text-xs">Cash</span>
@@ -308,7 +324,9 @@ export default function Sales() {
                 <Button
                   variant={paymentMethod === 'momo' ? 'default' : 'outline'}
                   onClick={() => setPaymentMethod('momo')}
-                  className="flex flex-col h-auto py-3"
+                  className={`flex flex-col h-auto py-3 transition-all ${
+                    paymentMethod === 'momo' ? 'ring-2 ring-primary/20' : ''
+                  }`}
                 >
                   <Smartphone className="h-5 w-5 mb-1" />
                   <span className="text-xs">MoMo</span>
@@ -316,7 +334,9 @@ export default function Sales() {
                 <Button
                   variant={paymentMethod === 'card' ? 'default' : 'outline'}
                   onClick={() => setPaymentMethod('card')}
-                  className="flex flex-col h-auto py-3"
+                  className={`flex flex-col h-auto py-3 transition-all ${
+                    paymentMethod === 'card' ? 'ring-2 ring-primary/20' : ''
+                  }`}
                 >
                   <CreditCard className="h-5 w-5 mb-1" />
                   <span className="text-xs">Card</span>
@@ -349,9 +369,9 @@ export default function Sales() {
 function QuickProducts({ onSelect }: { onSelect: (product: Product) => void }) {
   const [products, setProducts] = useState<Product[]>([]);
 
-  useState(() => {
-    api.products.list().then((data) => setProducts(data as Product[]));
-  });
+  useEffect(() => {
+    api.products.list().then((data: Product[]) => setProducts(data));
+  }, []);
 
   return (
     <>
@@ -359,7 +379,16 @@ function QuickProducts({ onSelect }: { onSelect: (product: Product) => void }) {
         <Card
           key={product.id}
           className="cursor-pointer hover:shadow-md transition-shadow"
+          role="button"
+          tabIndex={0}
+          aria-label={`Add ${product.name} to cart`}
           onClick={() => onSelect(product)}
+          onKeyDown={(e: React.KeyboardEvent) => {
+            if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+              e.preventDefault();
+              onSelect(product);
+            }
+          }}
         >
           <CardContent className="p-4">
             <div className="text-center">

@@ -1,7 +1,7 @@
 import { Button } from '@pos/shared/components/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@pos/shared/components/dialog';
 import { formatCurrency } from '@pos/shared/lib/utils';
-import { Printer, Download, X } from 'lucide-react';
+import { Printer, X } from 'lucide-react';
 import type { ReceiptData } from '../hooks/useReceipt';
 import { printReceipt } from '../hooks/useReceipt';
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Search, ArrowDownCircle, ArrowUpCircle, Edit } from "lucide-react";
 import { Button } from "@pos/shared/components/button";
 import { Input } from "@pos/shared/components/input";
@@ -21,61 +21,60 @@ import {
   SelectValue,
 } from "@pos/shared/components/select";
 import { formatDateTime } from "@pos/shared/lib/utils";
+import { useStockHistory, useSuppliers, useCreateStockEntry, useInventoryStats } from "../hooks/useInventory";
+import { supabase } from "../lib/supabase";
 
-interface StockEntry {
+interface ProductOption {
   id: string;
-  product_name: string;
-  type: "in" | "out" | "adjustment";
-  quantity: number;
-  supplier: string;
-  notes: string;
-  date: string;
+  name: string;
 }
 
-const mockStock: StockEntry[] = [
-  { id: "1", product_name: "Milk", type: "in", quantity: 50, supplier: "Fresh Dairy Ltd", notes: "Weekly restock", date: "2024-01-15T10:30:00" },
-  { id: "2", product_name: "Bread", type: "in", quantity: 30, supplier: "Golden Bakery", notes: "Morning delivery", date: "2024-01-15T08:00:00" },
-  { id: "3", product_name: "Rice (5kg)", type: "out", quantity: 5, supplier: "", notes: "Sold to customer", date: "2024-01-14T16:45:00" },
-  { id: "4", product_name: "Cooking Oil", type: "adjustment", quantity: -2, supplier: "", notes: "Damaged items", date: "2024-01-14T14:20:00" },
-  { id: "5", product_name: "Water", type: "in", quantity: 100, supplier: "Aqua Pure", notes: "Bulk order", date: "2024-01-13T11:00:00" },
-];
-
-const suppliers = ["Fresh Dairy Ltd", "Golden Bakery", "Aqua Pure", "Agro Supplies", "General Mart"];
-
 export default function Inventory() {
-  const [stock, setStock] = useState<StockEntry[]>(mockStock);
+  const { stockHistory, loading: historyLoading, refetch: refetchHistory } = useStockHistory();
+  const { suppliers } = useSuppliers();
+  const { stats } = useInventoryStats();
+  const { createStockEntry, creating } = useCreateStockEntry();
+
   const [search, setSearch] = useState("");
   const [isStockInDialogOpen, setIsStockInDialogOpen] = useState(false);
+  const [products, setProducts] = useState<ProductOption[]>([]);
   const [newStockEntry, setNewStockEntry] = useState({
-    product_name: "",
+    product_id: "",
     type: "in" as "in" | "out" | "adjustment",
     quantity: 0,
-    supplier: "",
+    supplier_id: "",
     notes: "",
   });
 
-  const filteredStock = stock.filter((entry) =>
-    entry.product_name.toLowerCase().includes(search.toLowerCase())
+  useEffect(() => {
+    const fetchProducts = async () => {
+      const { data } = await supabase
+        .from("products")
+        .select("id, name")
+        .order("name");
+      setProducts(data || []);
+    };
+    fetchProducts();
+  }, []);
+
+  const filteredStock = stockHistory.filter((entry) =>
+    entry.products?.name?.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleStockEntry = () => {
-    if (newStockEntry.product_name && newStockEntry.quantity > 0) {
-      setStock([
-        {
-          ...newStockEntry,
-          id: String(stock.length + 1),
-          date: new Date().toISOString(),
-        },
-        ...stock,
-      ]);
-      setNewStockEntry({
-        product_name: "",
-        type: "in",
-        quantity: 0,
-        supplier: "",
-        notes: "",
+  const handleStockEntry = async () => {
+    if (newStockEntry.product_id && newStockEntry.quantity > 0) {
+      const ok = await createStockEntry({
+        product_id: newStockEntry.product_id,
+        type: newStockEntry.type,
+        quantity: newStockEntry.type === "out" ? -newStockEntry.quantity : newStockEntry.quantity,
+        supplier_id: newStockEntry.supplier_id || null,
+        notes: newStockEntry.notes || null,
       });
-      setIsStockInDialogOpen(false);
+      if (ok) {
+        setNewStockEntry({ product_id: "", type: "in", quantity: 0, supplier_id: "", notes: "" });
+        setIsStockInDialogOpen(false);
+        refetchHistory();
+      }
     }
   };
 
@@ -98,7 +97,7 @@ export default function Inventory() {
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Products</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">156</div>
+            <div className="text-2xl font-bold">{stats.totalProducts}</div>
           </CardContent>
         </Card>
         <Card>
@@ -106,7 +105,7 @@ export default function Inventory() {
             <CardTitle className="text-sm font-medium text-muted-foreground">Low Stock Items</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">8</div>
+            <div className="text-2xl font-bold text-yellow-600">{stats.lowStock}</div>
           </CardContent>
         </Card>
         <Card>
@@ -114,7 +113,7 @@ export default function Inventory() {
             <CardTitle className="text-sm font-medium text-muted-foreground">Out of Stock</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">2</div>
+            <div className="text-2xl font-bold text-red-600">{stats.outOfStock}</div>
           </CardContent>
         </Card>
       </div>
@@ -136,60 +135,65 @@ export default function Inventory() {
           <CardTitle>Stock History</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {filteredStock.map((entry) => (
-              <div
-                key={entry.id}
-                className="flex items-center justify-between border-b pb-4 last:border-0"
-              >
-                <div className="flex items-center gap-4">
-                  <div className={`p-2 rounded-full ${
-                    entry.type === "in"
-                      ? "bg-green-100"
-                      : entry.type === "out"
-                      ? "bg-red-100"
-                      : "bg-yellow-100"
-                  }`}>
-                    {entry.type === "in" ? (
-                      <ArrowDownCircle className="h-5 w-5 text-green-600" />
-                    ) : entry.type === "out" ? (
-                      <ArrowUpCircle className="h-5 w-5 text-red-600" />
-                    ) : (
-                      <Edit className="h-5 w-5 text-yellow-600" />
-                    )}
+          {historyLoading ? (
+            <p className="text-muted-foreground">Loading...</p>
+          ) : filteredStock.length === 0 ? (
+            <p className="text-muted-foreground">No stock history found</p>
+          ) : (
+            <div className="space-y-4">
+              {filteredStock.map((entry) => (
+                <div
+                  key={entry.id}
+                  className="flex items-center justify-between border-b pb-4 last:border-0"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className={`p-2 rounded-full ${
+                      entry.type === "in"
+                        ? "bg-green-100"
+                        : entry.type === "out"
+                        ? "bg-red-100"
+                        : "bg-yellow-100"
+                    }`}>
+                      {entry.type === "in" ? (
+                        <ArrowDownCircle className="h-5 w-5 text-green-600" />
+                      ) : entry.type === "out" ? (
+                        <ArrowUpCircle className="h-5 w-5 text-red-600" />
+                      ) : (
+                        <Edit className="h-5 w-5 text-yellow-600" />
+                      )}
+                    </div>
+                    <div>
+                      <h4 className="font-medium">{entry.products?.name || "Unknown"}</h4>
+                      <p className="text-sm text-muted-foreground">
+                        {entry.notes}
+                        {entry.suppliers?.name && ` • ${entry.suppliers.name}`}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="font-medium">{entry.product_name}</h4>
-                    <p className="text-sm text-muted-foreground">
-                      {entry.notes}
-                      {entry.supplier && ` • ${entry.supplier}`}
+                  <div className="text-right">
+                    <Badge
+                      variant={
+                        entry.type === "in"
+                          ? "success"
+                          : entry.type === "out"
+                          ? "destructive"
+                          : "warning"
+                      }
+                    >
+                      {entry.type === "in" ? "+" : entry.type === "out" ? "-" : "±"}
+                      {Math.abs(entry.quantity)}
+                    </Badge>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {formatDateTime(entry.created_at)}
                     </p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <Badge
-                    variant={
-                      entry.type === "in"
-                        ? "success"
-                        : entry.type === "out"
-                        ? "destructive"
-                        : "warning"
-                    }
-                  >
-                    {entry.type === "in" ? "+" : entry.type === "out" ? "-" : "±"}
-                    {entry.quantity}
-                  </Badge>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {formatDateTime(entry.date)}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Stock Entry Dialog */}
       <Dialog open={isStockInDialogOpen} onOpenChange={setIsStockInDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -200,14 +204,24 @@ export default function Inventory() {
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label>Product Name</Label>
-              <Input
-                value={newStockEntry.product_name}
-                onChange={(e) =>
-                  setNewStockEntry({ ...newStockEntry, product_name: e.target.value })
+              <Label>Product</Label>
+              <Select
+                value={newStockEntry.product_id}
+                onValueChange={(value) =>
+                  setNewStockEntry({ ...newStockEntry, product_id: value })
                 }
-                placeholder="Enter product name"
-              />
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select product" />
+                </SelectTrigger>
+                <SelectContent>
+                  {products.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-2">
               <Label>Type</Label>
@@ -241,18 +255,18 @@ export default function Inventory() {
             <div className="grid gap-2">
               <Label>Supplier</Label>
               <Select
-                value={newStockEntry.supplier}
+                value={newStockEntry.supplier_id}
                 onValueChange={(value) =>
-                  setNewStockEntry({ ...newStockEntry, supplier: value })
+                  setNewStockEntry({ ...newStockEntry, supplier_id: value })
                 }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select supplier" />
                 </SelectTrigger>
                 <SelectContent>
-                  {suppliers.map((supplier) => (
-                    <SelectItem key={supplier} value={supplier}>
-                      {supplier}
+                  {suppliers.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -273,7 +287,9 @@ export default function Inventory() {
             <Button variant="outline" onClick={() => setIsStockInDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleStockEntry}>Save Entry</Button>
+            <Button onClick={handleStockEntry} disabled={creating}>
+              {creating ? "Saving..." : "Save Entry"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

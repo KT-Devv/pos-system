@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Search,
   Plus,
@@ -17,27 +17,46 @@ import { Badge } from "@pos/shared/components/badge";
 import { Label } from "@pos/shared/components/label";
 import { formatCurrency } from "@pos/shared/lib/utils";
 import type { CartItem, Product } from "@pos/shared/types";
-
-const mockProducts: Product[] = [
-  { id: "1", name: "Milk", category_id: null, cost_price: 20, selling_price: 25, stock: 50, barcode: null, image: null, created_at: "" },
-  { id: "2", name: "Bread", category_id: null, cost_price: 12, selling_price: 18, stock: 30, barcode: null, image: null, created_at: "" },
-  { id: "3", name: "Rice (5kg)", category_id: null, cost_price: 120, selling_price: 150, stock: 20, barcode: null, image: null, created_at: "" },
-  { id: "4", name: "Cooking Oil (1L)", category_id: null, cost_price: 35, selling_price: 45, stock: 15, barcode: null, image: null, created_at: "" },
-  { id: "5", name: "Water (500ml)", category_id: null, cost_price: 2, selling_price: 5, stock: 100, barcode: null, image: null, created_at: "" },
-  { id: "6", name: "Soap", category_id: null, cost_price: 8, selling_price: 12, stock: 40, barcode: null, image: null, created_at: "" },
-  { id: "7", name: "Detergent", category_id: null, cost_price: 25, selling_price: 35, stock: 25, barcode: null, image: null, created_at: "" },
-  { id: "8", name: "Sugar (1kg)", category_id: null, cost_price: 15, selling_price: 20, stock: 35, barcode: null, image: null, created_at: "" },
-];
+import { supabase } from "../lib/supabase";
+import { useCreateSale } from "../hooks/useSales";
 
 type PaymentMethod = "cash" | "momo" | "card";
 
 export default function Sales() {
-  const [products] = useState<Product[]>(mockProducts);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [productsLoading, setProductsLoading] = useState(true);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [search, setSearch] = useState("");
   const [discount, setDiscount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [showReceipt, setShowReceipt] = useState(false);
+  const [cashierId, setCashierId] = useState<string | null>(null);
+  const { createSale, creating } = useCreateSale();
+
+  useEffect(() => {
+    const init = async () => {
+      const { data: users } = await supabase
+        .from("users")
+        .select("id")
+        .limit(1);
+      if (users && users.length > 0) {
+        setCashierId(users[0].id);
+      }
+    };
+    init();
+  }, []);
+
+  useEffect(() => {
+    const fetchProducts = async () => {
+      const { data } = await supabase
+        .from("products")
+        .select("*")
+        .order("name");
+      setProducts(data || []);
+      setProductsLoading(false);
+    };
+    fetchProducts();
+  }, []);
 
   const filteredProducts = products.filter((product) =>
     product.name.toLowerCase().includes(search.toLowerCase())
@@ -80,9 +99,29 @@ export default function Sales() {
   );
   const total = subtotal - discount;
 
-  const completeSale = () => {
+  const completeSale = async () => {
     if (cart.length === 0) return;
-    setShowReceipt(true);
+    if (!cashierId) {
+      alert("No cashier user found. Please add a user in the database first.");
+      return;
+    }
+
+    const sale = await createSale(
+      cashierId,
+      cart.map((item) => ({
+        product_id: item.product.id,
+        quantity: item.quantity,
+        price: item.product.selling_price,
+        cost_price: item.product.cost_price,
+      })),
+      total,
+      discount,
+      paymentMethod
+    );
+
+    if (sale) {
+      setShowReceipt(true);
+    }
   };
 
   const resetSale = () => {
@@ -148,9 +187,16 @@ export default function Sales() {
     );
   }
 
+  if (productsLoading) {
+    return (
+      <div className="p-6">
+        <p className="text-muted-foreground">Loading products...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full">
-      {/* Products Section */}
       <div className="flex-1 p-6 overflow-auto">
         <div className="mb-6">
           <h1 className="text-3xl font-bold">Point of Sale</h1>
@@ -173,6 +219,15 @@ export default function Sales() {
               key={product.id}
               className="cursor-pointer hover:shadow-md transition-shadow"
               onClick={() => addToCart(product)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+                  e.preventDefault();
+                  addToCart(product);
+                }
+              }}
+              aria-label={`Add ${product.name} to cart`}
             >
               <CardContent className="p-4">
                 <div className="text-center">
@@ -193,7 +248,6 @@ export default function Sales() {
         </div>
       </div>
 
-      {/* Cart Section */}
       <div className="w-96 bg-background border-l p-6 flex flex-col">
         <div className="mb-4">
           <h2 className="text-xl font-bold flex items-center gap-2">
@@ -230,6 +284,8 @@ export default function Sales() {
                     size="icon"
                     className="h-6 w-6"
                     onClick={() => removeFromCart(item.product.id)}
+                    aria-label={`Remove ${item.product.name} from cart`}
+                    type="button"
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -241,6 +297,8 @@ export default function Sales() {
                       size="icon"
                       className="h-8 w-8"
                       onClick={() => updateQuantity(item.product.id, -1)}
+                      aria-label={`Decrease quantity for ${item.product.name}`}
+                      type="button"
                     >
                       <Minus className="h-4 w-4" />
                     </Button>
@@ -252,6 +310,8 @@ export default function Sales() {
                       size="icon"
                       className="h-8 w-8"
                       onClick={() => updateQuantity(item.product.id, 1)}
+                      aria-label={`Increase quantity for ${item.product.name}`}
+                      type="button"
                     >
                       <Plus className="h-4 w-4" />
                     </Button>
@@ -265,7 +325,6 @@ export default function Sales() {
           )}
         </div>
 
-        {/* Cart Summary */}
         {cart.length > 0 && (
           <div className="border-t pt-4 space-y-4">
             <div className="space-y-2">
@@ -290,7 +349,6 @@ export default function Sales() {
               </div>
             </div>
 
-            {/* Payment Method */}
             <div>
               <Label className="mb-2 block">Payment Method</Label>
               <div className="grid grid-cols-3 gap-2">
@@ -321,9 +379,9 @@ export default function Sales() {
               </div>
             </div>
 
-            <Button className="w-full" size="lg" onClick={completeSale}>
+            <Button className="w-full" size="lg" onClick={completeSale} disabled={creating || !cashierId}>
               <Receipt className="h-5 w-5 mr-2" />
-              Complete Sale
+              {creating ? "Processing..." : "Complete Sale"}
             </Button>
           </div>
         )}

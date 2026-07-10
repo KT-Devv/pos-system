@@ -38,6 +38,41 @@ body {
   border-color: var(--color-border);
 }
 
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
+}
+
+/* Focus visible ring */
+:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+}
+
+/* Smooth transitions for interactive elements */
+a, button, input, select, textarea {
+  transition: all 150ms ease;
+}
+
+/* Remove tap highlight on mobile/touch */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* Electron window drag region */
 .drag-region {
   -webkit-app-region: drag;

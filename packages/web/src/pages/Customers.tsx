@@ -13,27 +13,10 @@ import {
   DialogFooter,
 } from "@pos/shared/components/dialog";
 import { Label } from "@pos/shared/components/label";
-import { formatCurrency } from "@pos/shared/lib/utils";
-
-interface Customer {
-  id: string;
-  name: string;
-  phone: string;
-  email: string;
-  loyalty_points: number;
-  total_spent: number;
-  visits: number;
-}
-
-const mockCustomers: Customer[] = [
-  { id: "1", name: "Kwame Asante", phone: "+233 24 123 4567", email: "kwame@email.com", loyalty_points: 250, total_spent: 1500, visits: 12 },
-  { id: "2", name: "Ama Mensah", phone: "+233 20 987 6543", email: "ama@email.com", loyalty_points: 180, total_spent: 980, visits: 8 },
-  { id: "3", name: "Kofi Boateng", phone: "+233 27 555 1234", email: "", loyalty_points: 420, total_spent: 2800, visits: 20 },
-  { id: "4", name: "Abena Osei", phone: "+233 55 333 7777", email: "abena@email.com", loyalty_points: 90, total_spent: 450, visits: 5 },
-];
+import { useCustomers } from "../hooks/useCustomers";
 
 export default function Customers() {
-  const [customers] = useState<Customer[]>(mockCustomers);
+  const { customers, loading, addCustomer } = useCustomers();
   const [search, setSearch] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newCustomer, setNewCustomer] = useState({
@@ -44,13 +27,20 @@ export default function Customers() {
 
   const filteredCustomers = customers.filter((customer) =>
     customer.name.toLowerCase().includes(search.toLowerCase()) ||
-    customer.phone.includes(search)
+    (customer.phone || "").includes(search)
   );
 
-  const handleAddCustomer = () => {
-    if (newCustomer.name && newCustomer.phone) {
-      setIsAddDialogOpen(false);
-      setNewCustomer({ name: "", phone: "", email: "" });
+  const handleAddCustomer = async () => {
+    if (newCustomer.name) {
+      const ok = await addCustomer({
+        name: newCustomer.name,
+        phone: newCustomer.phone || null,
+        email: newCustomer.email || null,
+      });
+      if (ok) {
+        setIsAddDialogOpen(false);
+        setNewCustomer({ name: "", phone: "", email: "" });
+      }
     }
   };
 
@@ -81,16 +71,16 @@ export default function Customers() {
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Loyalty Points</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{customers.reduce((sum, c) => sum + c.loyalty_points, 0)}</div>
+            <div className="text-2xl font-bold">{loading ? "..." : customers.reduce((sum, c) => sum + c.loyalty_points, 0)}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Avg. Spent per Customer</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Avg. Loyalty Points</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatCurrency(customers.reduce((sum, c) => sum + c.total_spent, 0) / customers.length)}
+              {loading || customers.length === 0 ? "..." : Math.round(customers.reduce((sum, c) => sum + c.loyalty_points, 0) / customers.length)}
             </div>
           </CardContent>
         </Card>
@@ -108,45 +98,50 @@ export default function Customers() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredCustomers.map((customer) => (
-          <Card key={customer.id} className="hover:shadow-md transition-shadow">
-            <CardHeader className="pb-3">
-              <div className="flex justify-between items-start">
-                <CardTitle className="text-lg">{customer.name}</CardTitle>
-                <Badge variant="secondary">
-                  <Star className="h-3 w-3 mr-1" />
-                  {customer.loyalty_points} pts
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm">
-                  <Phone className="h-4 w-4 text-muted-foreground" />
-                  <span>{customer.phone}</span>
+      {loading ? (
+        <p className="text-muted-foreground">Loading customers...</p>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredCustomers.map((customer) => (
+            <Card key={customer.id} className="hover:shadow-md transition-shadow">
+              <CardHeader className="pb-3">
+                <div className="flex justify-between items-start">
+                  <CardTitle className="text-lg">{customer.name}</CardTitle>
+                  <Badge variant="secondary">
+                    <Star className="h-3 w-3 mr-1" />
+                    {customer.loyalty_points} pts
+                  </Badge>
                 </div>
-                {customer.email && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <Mail className="h-4 w-4 text-muted-foreground" />
-                    <span>{customer.email}</span>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {customer.phone && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Phone className="h-4 w-4 text-muted-foreground" />
+                      <span>{customer.phone}</span>
+                    </div>
+                  )}
+                  {customer.email && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Mail className="h-4 w-4 text-muted-foreground" />
+                      <span>{customer.email}</span>
+                    </div>
+                  )}
+                  <div className="text-sm pt-2 border-t">
+                    <span className="text-muted-foreground">Loyalty Points: </span>
+                    <span className="font-bold">{customer.loyalty_points}</span>
                   </div>
-                )}
-                <div className="flex justify-between text-sm pt-2 border-t">
-                  <span className="text-muted-foreground">Total Spent:</span>
-                  <span className="font-bold">{formatCurrency(customer.total_spent)}</span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Visits:</span>
-                  <span>{customer.visits}</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
-      {/* Add Customer Dialog */}
+      {!loading && filteredCustomers.length === 0 && (
+        <p className="text-center text-muted-foreground mt-8">No customers found</p>
+      )}
+
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent>
           <DialogHeader>

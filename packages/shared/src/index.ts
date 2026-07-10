@@ -1,5 +1,5 @@
 // Components
-export { Button, buttonVariants } from "./components/button";
+export { Button } from "./components/button";
 export type { ButtonProps } from "./components/button";
 
 export { Input } from "./components/input";

@@ -1,11 +1,13 @@
 import { User, Store, CreditCard, Bell } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@pos/shared/components/card";
-import { Button } from "@pos/shared/components/button";
 import { Input } from "@pos/shared/components/input";
 import { Label } from "@pos/shared/components/label";
 import { Switch } from "@pos/shared/components/switch";
+import { useSettings } from "../hooks/useSettings";
 
 export default function Settings() {
+  const { settings, update } = useSettings();
+
   return (
     <div className="p-6">
       <div className="mb-6">
@@ -26,17 +28,28 @@ export default function Settings() {
           <CardContent className="space-y-4">
             <div className="grid gap-2">
               <Label htmlFor="shopName">Shop Name</Label>
-              <Input id="shopName" defaultValue="Mom's Shop" />
+              <Input
+                id="shopName"
+                value={settings.shopName}
+                onChange={(e) => update("shopName", e.target.value)}
+              />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="phone">Phone Number</Label>
-              <Input id="phone" defaultValue="+233 24 123 4567" />
+              <Input
+                id="phone"
+                value={settings.phone}
+                onChange={(e) => update("phone", e.target.value)}
+              />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="address">Address</Label>
-              <Input id="address" defaultValue="Accra, Ghana" />
+              <Input
+                id="address"
+                value={settings.address}
+                onChange={(e) => update("address", e.target.value)}
+              />
             </div>
-            <Button>Save Changes</Button>
           </CardContent>
         </Card>
 
@@ -52,17 +65,25 @@ export default function Settings() {
           <CardContent className="space-y-4">
             <div className="grid gap-2">
               <Label htmlFor="name">Full Name</Label>
-              <Input id="name" defaultValue="Admin User" />
+              <Input
+                id="name"
+                value={settings.fullName}
+                onChange={(e) => update("fullName", e.target.value)}
+              />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" defaultValue="admin@shop.com" />
+              <Input
+                id="email"
+                type="email"
+                value={settings.email}
+                onChange={(e) => update("email", e.target.value)}
+              />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="password">New Password</Label>
               <Input id="password" type="password" placeholder="Leave blank to keep current" />
             </div>
-            <Button>Update Profile</Button>
           </CardContent>
         </Card>
 
@@ -81,27 +102,30 @@ export default function Settings() {
                 <Label>Cash Payments</Label>
                 <p className="text-sm text-muted-foreground">Accept cash payments</p>
               </div>
-              <Switch defaultChecked />
+              <Switch checked={settings.cashEnabled} onCheckedChange={(v) => update("cashEnabled", v)} />
             </div>
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>MTN Mobile Money</Label>
                 <p className="text-sm text-muted-foreground">Accept MoMo payments</p>
               </div>
-              <Switch defaultChecked />
+              <Switch checked={settings.momoEnabled} onCheckedChange={(v) => update("momoEnabled", v)} />
             </div>
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Card Payments</Label>
                 <p className="text-sm text-muted-foreground">Accept card payments</p>
               </div>
-              <Switch />
+              <Switch checked={settings.cardEnabled} onCheckedChange={(v) => update("cardEnabled", v)} />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="momoNumber">MoMo Number</Label>
-              <Input id="momoNumber" defaultValue="+233 24 123 4567" />
+              <Input
+                id="momoNumber"
+                value={settings.momoNumber}
+                onChange={(e) => update("momoNumber", e.target.value)}
+              />
             </div>
-            <Button>Save Payment Settings</Button>
           </CardContent>
         </Card>
 
@@ -120,27 +144,31 @@ export default function Settings() {
                 <Label>Low Stock Alerts</Label>
                 <p className="text-sm text-muted-foreground">Get notified when stock is low</p>
               </div>
-              <Switch defaultChecked />
+              <Switch checked={settings.lowStockAlerts} onCheckedChange={(v) => update("lowStockAlerts", v)} />
             </div>
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Daily Sales Summary</Label>
                 <p className="text-sm text-muted-foreground">Receive daily sales report</p>
               </div>
-              <Switch defaultChecked />
+              <Switch checked={settings.dailySalesSummary} onCheckedChange={(v) => update("dailySalesSummary", v)} />
             </div>
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>SMS Receipts</Label>
                 <p className="text-sm text-muted-foreground">Send receipts via SMS</p>
               </div>
-              <Switch />
+              <Switch checked={settings.smsReceipts} onCheckedChange={(v) => update("smsReceipts", v)} />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="lowStockThreshold">Low Stock Threshold</Label>
-              <Input id="lowStockThreshold" type="number" defaultValue="10" />
+              <Input
+                id="lowStockThreshold"
+                type="number"
+                value={settings.lowStockThreshold}
+                onChange={(e) => update("lowStockThreshold", Number(e.target.value))}
+              />
             </div>
-            <Button>Save Notification Settings</Button>
           </CardContent>
         </Card>
 
@@ -155,25 +183,37 @@ export default function Settings() {
               <div className="space-y-4">
                 <div className="grid gap-2">
                   <Label htmlFor="receiptHeader">Receipt Header</Label>
-                  <Input id="receiptHeader" defaultValue="Mom's Shop" />
+                  <Input
+                    id="receiptHeader"
+                    value={settings.receiptHeader}
+                    onChange={(e) => update("receiptHeader", e.target.value)}
+                  />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="receiptFooter">Receipt Footer</Label>
-                  <Input id="receiptFooter" defaultValue="Thank you for your purchase!" />
+                  <Input
+                    id="receiptFooter"
+                    value={settings.receiptFooter}
+                    onChange={(e) => update("receiptFooter", e.target.value)}
+                  />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="receiptNote">Additional Note</Label>
-                  <Input id="receiptNote" defaultValue="Exchange within 7 days with receipt" />
+                  <Input
+                    id="receiptNote"
+                    value={settings.receiptNote}
+                    onChange={(e) => update("receiptNote", e.target.value)}
+                  />
                 </div>
               </div>
               <div className="border rounded-lg p-4 bg-muted/50">
                 <h4 className="font-medium mb-4">Receipt Preview</h4>
                 <div className="bg-white p-4 rounded border text-sm space-y-2">
-                  <div className="text-center font-bold text-lg">Mom's Shop</div>
-                  <div className="text-center text-muted-foreground">+233 24 123 4567</div>
-                  <div className="text-center text-muted-foreground">Accra, Ghana</div>
+                  <div className="text-center font-bold text-lg">{settings.receiptHeader}</div>
+                  <div className="text-center text-muted-foreground">{settings.phone}</div>
+                  <div className="text-center text-muted-foreground">{settings.address}</div>
                   <div className="border-t my-2" />
-                  <div className="text-center text-muted-foreground">15/01/2024 10:30 AM</div>
+                  <div className="text-center text-muted-foreground">{new Date().toLocaleDateString()}</div>
                   <div className="border-t my-2" />
                   <div className="flex justify-between">
                     <span>Milk x2</span>
@@ -190,12 +230,11 @@ export default function Settings() {
                   </div>
                   <div className="text-center text-muted-foreground">Cash</div>
                   <div className="border-t my-2" />
-                  <div className="text-center text-muted-foreground">Thank you for your purchase!</div>
-                  <div className="text-center text-xs text-muted-foreground">Exchange within 7 days with receipt</div>
+                  <div className="text-center text-muted-foreground">{settings.receiptFooter}</div>
+                  <div className="text-center text-xs text-muted-foreground">{settings.receiptNote}</div>
                 </div>
               </div>
             </div>
-            <Button className="mt-4">Save Receipt Settings</Button>
           </CardContent>
         </Card>
       </div>

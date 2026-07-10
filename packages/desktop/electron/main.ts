@@ -30,11 +30,11 @@ function createWindow(): void {
 
   mainWindow.setMenu(null);
 
-  if (process.env.NODE_ENV === 'development' || process.env.ELECTRON_RENDERER_URL) {
+  if (process.env.NODE_ENV === 'development' && process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'));
+    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
 
   mainWindow.once('ready-to-show', () => {

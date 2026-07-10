@@ -12,7 +12,7 @@ export async function getDatabase(): Promise<SqlJsDatabase> {
   if (!db) {
     const wasmPath = app.isPackaged
       ? path.join(process.resourcesPath, 'sql-wasm.wasm')
-      : path.join(__dirname, '../../../node_modules/sql.js/dist/sql-wasm.wasm');
+      : path.join(__dirname, '../../../../node_modules/sql.js/dist/sql-wasm.wasm');
     const SQL = await initSqlJs({ locateFile: () => wasmPath });
     dbPath = path.join(app.getPath('userData'), 'pos-database.db');
 

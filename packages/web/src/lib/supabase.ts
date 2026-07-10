@@ -3,7 +3,13 @@ import { createClient } from "@supabase/supabase-js";
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+if (!supabaseUrl) {
+  // Avoid throwing during local dev when env is not set. Consumers should handle `supabase` possibly being an empty object.
+  // eslint-disable-next-line no-console
+  console.warn('VITE_SUPABASE_URL not set — supabase client not initialized.');
+}
+
+export const supabase = supabaseUrl ? createClient(supabaseUrl, supabaseAnonKey) : ({} as any);
 
 export type Database = {
   public: {

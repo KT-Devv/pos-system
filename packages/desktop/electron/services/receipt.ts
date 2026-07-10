@@ -75,12 +75,9 @@ async function printThermal(data: ReceiptData): Promise<{ success: boolean; erro
       return await printPDF(data);
     }
 
-    const printer = new escpos.Printer({
+    const printer = new escpos.printer({
       type: escpos.types.EPSON,
       interface: 'usb',
-      options: {
-        codepage: 'cp437',
-      },
     });
 
     await printer.alignCenter();
@@ -138,7 +135,7 @@ async function testThermalPrint(): Promise<{ success: boolean; error?: string }>
       return { success: false, error: 'node-thermal-printer not available' };
     }
 
-    const printer = new escpos.Printer({
+    const printer = new escpos.printer({
       type: escpos.types.EPSON,
       interface: 'usb',
     });

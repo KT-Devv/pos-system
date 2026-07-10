@@ -27,64 +27,48 @@ import {
   SelectValue,
 } from "@pos/shared/components/select";
 import { formatCurrency } from "@pos/shared/lib/utils";
-
-interface Product {
-  id: string;
-  name: string;
-  category: string;
-  cost_price: number;
-  selling_price: number;
-  stock: number;
-}
-
-const mockProducts: Product[] = [
-  { id: "1", name: "Milk", category: "Dairy", cost_price: 20, selling_price: 25, stock: 50 },
-  { id: "2", name: "Bread", category: "Bakery", cost_price: 12, selling_price: 18, stock: 30 },
-  { id: "3", name: "Rice (5kg)", category: "Grains", cost_price: 120, selling_price: 150, stock: 20 },
-  { id: "4", name: "Cooking Oil (1L)", category: "Cooking", cost_price: 35, selling_price: 45, stock: 15 },
-  { id: "5", name: "Water (500ml)", category: "Beverages", cost_price: 2, selling_price: 5, stock: 100 },
-  { id: "6", name: "Soap", category: "Personal Care", cost_price: 8, selling_price: 12, stock: 40 },
-  { id: "7", name: "Detergent", category: "Cleaning", cost_price: 25, selling_price: 35, stock: 25 },
-  { id: "8", name: "Sugar (1kg)", category: "Grains", cost_price: 15, selling_price: 20, stock: 35 },
-];
-
-const categories = ["All", "Dairy", "Bakery", "Grains", "Cooking", "Beverages", "Personal Care", "Cleaning"];
+import { useProducts } from "../hooks/useProducts";
 
 export default function Products() {
-  const [products, setProducts] = useState<Product[]>(mockProducts);
+  const { products, categories, loading, error, addProduct, deleteProduct } = useProducts();
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newProduct, setNewProduct] = useState({
     name: "",
-    category: "",
+    category_id: "",
     cost_price: 0,
     selling_price: 0,
     stock: 0,
   });
 
+  const categoryNames = ["All", ...categories.map((c) => c.name)];
+
   const filteredProducts = products.filter((product) => {
     const matchesSearch = product.name.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = selectedCategory === "All" || product.category === selectedCategory;
+    const productCategory = product.categories?.name || "";
+    const matchesCategory = selectedCategory === "All" || productCategory === selectedCategory;
     return matchesSearch && matchesCategory;
   });
 
-  const handleAddProduct = () => {
-    if (newProduct.name && newProduct.cost_price && newProduct.selling_price) {
-      setProducts([
-        ...products,
-        {
-          ...newProduct,
-          id: String(products.length + 1),
-        },
-      ]);
-      setNewProduct({ name: "", category: "", cost_price: 0, selling_price: 0, stock: 0 });
-      setIsAddDialogOpen(false);
+  const handleAddProduct = async () => {
+    if (newProduct.name && newProduct.cost_price > 0 && newProduct.selling_price > 0) {
+      const ok = await addProduct({
+        name: newProduct.name,
+        category_id: newProduct.category_id || null,
+        cost_price: newProduct.cost_price,
+        selling_price: newProduct.selling_price,
+        stock: newProduct.stock,
+      });
+      if (ok) {
+        setNewProduct({ name: "", category_id: "", cost_price: 0, selling_price: 0, stock: 0 });
+        setIsAddDialogOpen(false);
+      }
     }
   };
 
-  const handleDeleteProduct = (id: string) => {
-    setProducts(products.filter((p) => p.id !== id));
+  const handleDeleteProduct = async (id: string) => {
+    await deleteProduct(id);
   };
 
   return (
@@ -100,7 +84,6 @@ export default function Products() {
         </Button>
       </div>
 
-      {/* Search and Filter */}
       <div className="flex gap-4 mb-6">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -116,7 +99,7 @@ export default function Products() {
             <SelectValue placeholder="Category" />
           </SelectTrigger>
           <SelectContent>
-            {categories.map((cat) => (
+            {categoryNames.map((cat) => (
               <SelectItem key={cat} value={cat}>
                 {cat}
               </SelectItem>
@@ -125,61 +108,65 @@ export default function Products() {
         </Select>
       </div>
 
-      {/* Products Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {filteredProducts.map((product) => (
-          <Card key={product.id} className="hover:shadow-md transition-shadow">
-            <CardHeader className="pb-3">
-              <div className="flex justify-between items-start">
-                <div className="flex items-center gap-2">
-                  <Package className="h-5 w-5 text-muted-foreground" />
-                  <CardTitle className="text-lg">{product.name}</CardTitle>
+      {loading ? (
+        <p className="text-muted-foreground">Loading products...</p>
+      ) : error ? (
+        <p className="text-red-500">{error}</p>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {filteredProducts.map((product) => (
+            <Card key={product.id} className="hover:shadow-md transition-shadow">
+              <CardHeader className="pb-3">
+                <div className="flex justify-between items-start">
+                  <div className="flex items-center gap-2">
+                    <Package className="h-5 w-5 text-muted-foreground" />
+                    <CardTitle className="text-lg">{product.name}</CardTitle>
+                  </div>
+                  <Badge variant={product.stock < 10 ? "destructive" : "secondary"}>
+                    {product.stock} in stock
+                  </Badge>
                 </div>
-                <Badge variant={product.stock < 10 ? "destructive" : "secondary"}>
-                  {product.stock} in stock
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Category:</span>
-                  <span>{product.category}</span>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Category:</span>
+                    <span>{product.categories?.name || "Uncategorized"}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Cost Price:</span>
+                    <span>{formatCurrency(product.cost_price)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Selling Price:</span>
+                    <span className="font-bold">{formatCurrency(product.selling_price)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Profit:</span>
+                    <span className="text-green-600">
+                      {formatCurrency(product.selling_price - product.cost_price)}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Cost Price:</span>
-                  <span>{formatCurrency(product.cost_price)}</span>
+                <div className="flex gap-2 mt-4">
+                  <Button variant="outline" size="sm" className="flex-1">
+                    <Edit className="h-4 w-4 mr-1" />
+                    Edit
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDeleteProduct(product.id)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Selling Price:</span>
-                  <span className="font-bold">{formatCurrency(product.selling_price)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Profit:</span>
-                  <span className="text-green-600">
-                    {formatCurrency(product.selling_price - product.cost_price)}
-                  </span>
-                </div>
-              </div>
-              <div className="flex gap-2 mt-4">
-                <Button variant="outline" size="sm" className="flex-1">
-                  <Edit className="h-4 w-4 mr-1" />
-                  Edit
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleDeleteProduct(product.id)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
-      {/* Add Product Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -203,18 +190,18 @@ export default function Products() {
             <div className="grid gap-2">
               <Label>Category</Label>
               <Select
-                value={newProduct.category}
+                value={newProduct.category_id}
                 onValueChange={(value) =>
-                  setNewProduct({ ...newProduct, category: value })
+                  setNewProduct({ ...newProduct, category_id: value })
                 }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent>
-                  {categories.slice(1).map((cat) => (
-                    <SelectItem key={cat} value={cat}>
-                      {cat}
+                  {categories.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      {cat.name}
                     </SelectItem>
                   ))}
                 </SelectContent>

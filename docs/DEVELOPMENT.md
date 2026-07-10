@@ -114,3 +114,20 @@ Connect your GitHub repo and set:
 3. Add form validation with Zod
 4. Implement receipt printing
 5. Add offline support with service workers
+
+## Accessibility Testing
+
+Run the automated accessibility audit (axe) using Playwright. This test injects axe-core into pages and saves a JSON report to `reports/accessibility/web-axe.json`.
+
+Commands:
+
+```bash
+# start the web dev server (serves at http://localhost:5174 by default when 5173 is taken)
+cd packages/web
+npm run dev
+
+# run the Playwright accessibility test
+npx playwright test packages/web/tests/accessibility.spec.ts --project=chromium
+```
+
+The generated report contains violations grouped by route and can be used to prioritize fixes.

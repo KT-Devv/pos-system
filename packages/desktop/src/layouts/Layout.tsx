@@ -38,14 +38,14 @@ export default function Layout() {
               end={item.to === '/'}
               className={({ isActive }) =>
                 cn(
-                  'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                  'flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-all duration-150',
                   isActive
-                    ? 'bg-primary-foreground/20 text-primary-foreground'
-                    : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground'
+                    ? 'bg-primary-foreground/15 text-primary-foreground shadow-sm'
+                    : 'text-primary-foreground/60 hover:bg-primary-foreground/8 hover:text-primary-foreground hover:translate-x-0.5'
                 )
               }
             >
-              <item.icon className="h-5 w-5" />
+              <item.icon className="h-5 w-5 shrink-0" />
               {item.label}
             </NavLink>
           ))}

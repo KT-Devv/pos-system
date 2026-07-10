@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { User, Store, CreditCard, Bell, Save } from 'lucide-react';
+import { Store, CreditCard, Bell } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@pos/shared/components/card';
 import { Button } from '@pos/shared/components/button';
 import { Input } from '@pos/shared/components/input';
@@ -13,8 +13,8 @@ export default function Settings() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.settings.get().then((data) => {
-      setSettings(data as Record<string, string>);
+    api.settings.get().then((data: Record<string, string>) => {
+      setSettings(data);
       setLoading(false);
     });
   }, []);
@@ -110,7 +110,7 @@ export default function Settings() {
               <select
                 value={settings.printer_type || 'none'}
                 onChange={(e) => saveSetting('printer_type', e.target.value)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 <option value="none">No Printer</option>
                 <option value="thermal">Thermal Printer (XP-80C)</option>
@@ -123,7 +123,7 @@ export default function Settings() {
                 <select
                   value={settings.printer_paper_size || '80'}
                   onChange={(e) => saveSetting('printer_paper_size', e.target.value)}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   <option value="80">80mm (XP-80C)</option>
                   <option value="58">58mm (XP-58C)</option>
