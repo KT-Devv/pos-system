@@ -10,6 +10,7 @@
     "dev": "electron-vite dev -c electron-vite.config.ts",
     "build": "electron-vite build -c electron-vite.config.ts",
     "build:win": "electron-vite build -c electron-vite.config.ts && electron-builder --win",
+    "build:mac": "electron-vite build -c electron-vite.config.ts && electron-builder --mac",
     "preview": "electron-vite preview -c electron-vite.config.ts"
   },
   "dependencies": {
@@ -56,6 +57,11 @@
       "target": "nsis",
       "icon": "public/icon.ico",
       "signAndEditExecutable": false
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "public/icon.icns",
+      "category": "public.app-category.business"
     },
     "nsis": {
       "oneClick": false,
