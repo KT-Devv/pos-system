@@ -1,18 +1,50 @@
-import { User, Store, CreditCard, Bell } from "lucide-react";
+import { User, Store, CreditCard, Bell, Check, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@pos/shared/components/card";
+import { Button } from "@pos/shared/components/button";
 import { Input } from "@pos/shared/components/input";
 import { Label } from "@pos/shared/components/label";
 import { Switch } from "@pos/shared/components/switch";
 import { useSettings } from "../hooks/useSettings";
+import { useState } from "react";
 
 export default function Settings() {
-  const { settings, update } = useSettings();
+  const { settings, update, reset } = useSettings();
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = () => {
+    setSaving(true);
+    setSaved(false);
+    // settings are already persisted by useSettings on every update.
+    // this just gives visual feedback.
+    setTimeout(() => {
+      setSaving(false);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    }, 300);
+  };
 
   return (
     <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold">Settings</h1>
-        <p className="text-muted-foreground">Manage your shop settings</p>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Settings</h1>
+          <p className="text-muted-foreground">Manage your shop settings</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={reset}>
+            Reset Defaults
+          </Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? (
+              <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving...</>
+            ) : saved ? (
+              <><Check className="h-4 w-4 mr-2" /> Saved</>
+            ) : (
+              'Save Changes'
+            )}
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
