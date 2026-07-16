@@ -11,11 +11,20 @@ import {
 } from "@pos/shared/components/select";
 import { formatCurrency } from "@pos/shared/lib/utils";
 import { Badge } from "@pos/shared/components/badge";
-import { useReports } from "../hooks/useReports";
+import { useReports, type ReportPeriod } from "../hooks/useReports";
+
+function formatDateInput(date: Date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 export default function Reports() {
-  const [period, setPeriod] = useState("daily");
-  const { periodData, topProducts, dailySales, paymentMethods, loading, error } = useReports(period as "daily" | "weekly" | "monthly");
+  const [period, setPeriod] = useState<ReportPeriod>("daily");
+  const [startDate, setStartDate] = useState(formatDateInput(new Date()));
+  const [endDate, setEndDate] = useState(formatDateInput(new Date()));
+  const { periodData, topProducts, dailySales, paymentMethods, loading, error } = useReports(period, startDate, endDate);
 
   const handleExport = () => {
     const rows = [
@@ -38,28 +47,51 @@ export default function Reports() {
 
   return (
     <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-center mb-6">
         <div>
           <h1 className="text-3xl font-bold">Reports</h1>
           <p className="text-muted-foreground">View your business analytics</p>
         </div>
-        <div className="flex gap-2">
-          <Select value={period} onValueChange={setPeriod}>
-            <SelectTrigger className="w-32">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Select value={period} onValueChange={(value) => setPeriod(value as ReportPeriod)}>
+            <SelectTrigger className="w-36">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="daily">Daily</SelectItem>
               <SelectItem value="weekly">Weekly</SelectItem>
               <SelectItem value="monthly">Monthly</SelectItem>
+              <SelectItem value="custom">Custom range</SelectItem>
             </SelectContent>
           </Select>
+          {period === "custom" && (
+            <div className="flex gap-2">
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </div>
+          )}
           <Button variant="outline" onClick={handleExport}>
             <Download className="h-4 w-4 mr-2" />
             Export
           </Button>
         </div>
       </div>
+
+      {period === "custom" && (
+        <p className="text-sm text-muted-foreground mb-4">
+          Showing sales from {startDate} to {endDate}
+        </p>
+      )}
 
       {error && <p className="text-red-500 mb-4">{error}</p>}
 

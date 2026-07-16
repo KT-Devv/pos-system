@@ -25,6 +25,9 @@ export default function Products() {
     selling_price: 0,
     stock: 0,
     barcode: '',
+    measurement_unit: '',
+    pack_quantity: 0,
+    unit_cost: 0,
   });
 
   const loadProducts = async () => {
@@ -51,9 +54,12 @@ export default function Products() {
       ...newProduct,
       barcode,
       qr_code: qrData,
+      measurement_unit: newProduct.measurement_unit || null,
+      pack_quantity: newProduct.pack_quantity || null,
+      unit_cost: newProduct.unit_cost || null,
     });
 
-    setNewProduct({ name: '', category_id: '', cost_price: 0, selling_price: 0, stock: 0, barcode: '' });
+    setNewProduct({ name: '', category_id: '', cost_price: 0, selling_price: 0, stock: 0, barcode: '', measurement_unit: '', pack_quantity: 0, unit_cost: 0 });
     setIsAddDialogOpen(false);
     loadProducts();
   };
@@ -199,6 +205,20 @@ export default function Products() {
               <div className="grid gap-2">
                 <Label>Barcode (optional)</Label>
                 <Input value={newProduct.barcode} onChange={(e) => setNewProduct({ ...newProduct, barcode: e.target.value })} placeholder="Enter barcode" />
+              </div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-2">
+                <Label>Quantity / Measure</Label>
+                <Input value={newProduct.measurement_unit} onChange={(e) => setNewProduct({ ...newProduct, measurement_unit: e.target.value })} placeholder="e.g. 500g" />
+              </div>
+              <div className="grid gap-2">
+                <Label>Quantity in box</Label>
+                <Input type="number" value={newProduct.pack_quantity || ''} onChange={(e) => setNewProduct({ ...newProduct, pack_quantity: Number(e.target.value) })} placeholder="e.g. 60" />
+              </div>
+              <div className="grid gap-2 md:col-span-2">
+                <Label>Unit cost price (GHS)</Label>
+                <Input type="number" step="0.01" value={newProduct.unit_cost || ''} onChange={(e) => setNewProduct({ ...newProduct, unit_cost: Number(e.target.value) })} placeholder="e.g. 4.50" />
               </div>
             </div>
           </div>

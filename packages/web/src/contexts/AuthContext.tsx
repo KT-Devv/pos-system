@@ -26,7 +26,7 @@ async function fetchProfile(userId: string): Promise<UserProfile | null> {
     .from('users')
     .select('id, name, email, role')
     .eq('id', userId)
-    .single();
+    .maybeSingle();
   if (error) return null;
   return data;
 }
@@ -42,6 +42,12 @@ async function hasNoUsers(): Promise<boolean> {
   return (count ?? 0) === 0;
 }
 
+function getReadableError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return 'Unexpected error while setting up your profile';
+}
+
 async function ensureProfile(user: User, name?: string): Promise<UserProfile | null> {
   let profile = await fetchProfile(user.id);
   if (!profile) {
@@ -53,7 +59,9 @@ async function ensureProfile(user: User, name?: string): Promise<UserProfile | n
       email: user.email || '',
       role,
     });
-    if (error) throw new Error(error.message);
+    if (error) {
+      throw new Error(`Profile creation failed: ${error.message}`);
+    }
     profile = await fetchProfile(user.id);
   }
   return profile;
@@ -131,7 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           await ensureProfile(data.user, name);
         } catch (e) {
-          return e instanceof Error ? e.message : 'Failed to create profile';
+          return getReadableError(e);
         }
       }
       return null;

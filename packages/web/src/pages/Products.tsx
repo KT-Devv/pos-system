@@ -43,6 +43,9 @@ export default function Products() {
     cost_price: 0,
     selling_price: 0,
     stock: 0,
+    measurement_unit: "",
+    pack_quantity: 0,
+    unit_cost: 0,
   });
 
   const categoryNames = ["All", ...categories.map((c) => c.name)];
@@ -62,9 +65,12 @@ export default function Products() {
         cost_price: newProduct.cost_price,
         selling_price: newProduct.selling_price,
         stock: newProduct.stock,
+        measurement_unit: newProduct.measurement_unit || null,
+        pack_quantity: newProduct.pack_quantity || null,
+        unit_cost: newProduct.unit_cost || null,
       });
       if (ok) {
-        setNewProduct({ name: "", category_id: "", cost_price: 0, selling_price: 0, stock: 0 });
+        setNewProduct({ name: "", category_id: "", cost_price: 0, selling_price: 0, stock: 0, measurement_unit: "", pack_quantity: 0, unit_cost: 0 });
         setIsAddDialogOpen(false);
       }
     }
@@ -223,6 +229,20 @@ export default function Products() {
             <div className="grid gap-2">
               <Label htmlFor="stock">Initial Stock</Label>
               <Input id="stock" type="number" value={newProduct.stock || ""} onChange={(e) => setNewProduct({ ...newProduct, stock: Number(e.target.value) })} />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="measure">Quantity / Measure</Label>
+                <Input id="measure" value={newProduct.measurement_unit} onChange={(e) => setNewProduct({ ...newProduct, measurement_unit: e.target.value })} placeholder="e.g. 500g" />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="pack">Quantity in box</Label>
+                <Input id="pack" type="number" value={newProduct.pack_quantity || ""} onChange={(e) => setNewProduct({ ...newProduct, pack_quantity: Number(e.target.value) })} placeholder="e.g. 60" />
+              </div>
+              <div className="grid gap-2 md:col-span-2">
+                <Label htmlFor="unit-cost">Unit cost price (GHS)</Label>
+                <Input id="unit-cost" type="number" step="0.01" value={newProduct.unit_cost || ""} onChange={(e) => setNewProduct({ ...newProduct, unit_cost: Number(e.target.value) })} placeholder="e.g. 4.50" />
+              </div>
             </div>
           </div>
           <DialogFooter>

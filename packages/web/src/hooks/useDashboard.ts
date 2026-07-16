@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import { getLowStockThreshold } from "../lib/settings";
 
-type SaleRow = { total: number; discount: number; sale_items?: { quantity: number; price: number; cost_price: number }[] };
-type ProductRow = { id: string; name: string; stock: number };
-type SaleItemRow = { product_id: string; quantity: number; price: number };
+type SaleRow = { total: number; discount: number; sale_items?: { product_id?: string; quantity: number; price: number; cost_price?: number | null }[] };
+type ProductRow = { id: string; name: string; stock: number; cost_price?: number | null };
+type SaleItemRow = { product_id: string; quantity: number; price: number; cost_price?: number | null };
 type SaleSimpleRow = { id: string; total: number; payment_method: string; created_at: string; sale_items?: { product_id: string; quantity: number }[] };
 
 export interface DashboardStats {
@@ -47,10 +47,13 @@ function timeAgo(dateStr: string): string {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
-function calcProfit(sales: SaleRow[]): number {
+function calcProfit(sales: SaleRow[], productCosts: Record<string, number> = {}): number {
   return sales.reduce((sum, s) => {
     const itemProfit = (s.sale_items || []).reduce((itemSum, item) => {
-      return itemSum + (Number(item.price) - Number(item.cost_price)) * item.quantity;
+      const costValue = Number(item.cost_price ?? 0);
+      const fallbackCost = item.product_id ? Number(productCosts[item.product_id] ?? 0) : 0;
+      const resolvedCost = costValue > 0 ? costValue : fallbackCost;
+      return itemSum + (Number(item.price) - resolvedCost) * item.quantity;
     }, 0);
     const subtotal = (s.sale_items || []).reduce((t, i) => t + Number(i.price) * i.quantity, 0);
     const discount = Number(s.discount) || 0;
@@ -79,31 +82,49 @@ export function useDashboard() {
 
       const { data: todaySales, error: todayErr } = await supabase
         .from("sales")
-        .select("total, discount, sale_items(quantity, price, cost_price)")
+        .select("total, discount, sale_items(product_id, quantity, price, cost_price)")
         .gte("created_at", todayStart);
       if (todayErr) throw todayErr;
 
       const todaySalesData = (todaySales || []) as SaleRow[];
       const todayTotal = todaySalesData.reduce((sum, s) => sum + Number(s.total), 0);
-      const todayProfit = calcProfit(todaySalesData);
+
+      const productIds = Array.from(new Set(todaySalesData.flatMap((sale) => (sale.sale_items || []).map((item) => item.product_id).filter(Boolean) as string[])));
+      const productCostMap: Record<string, number> = {};
+      if (productIds.length > 0) {
+        const { data: productRows } = await supabase.from("products").select("id, cost_price").in("id", productIds);
+        for (const product of (productRows || []) as ProductRow[]) {
+          productCostMap[product.id] = Number(product.cost_price ?? 0);
+        }
+      }
+
+      const todayProfit = calcProfit(todaySalesData, productCostMap);
 
       const { data: yesterdaySales, error: yErr } = await supabase
         .from("sales")
-        .select("total, discount, sale_items(quantity, price, cost_price)")
+        .select("total, discount, sale_items(product_id, quantity, price, cost_price)")
         .gte("created_at", yesterdayStart)
         .lt("created_at", todayStart);
       if (yErr) throw yErr;
 
       const yesterdaySalesData = (yesterdaySales || []) as SaleRow[];
       const yesterdayTotal = yesterdaySalesData.reduce((sum, s) => sum + Number(s.total), 0);
-      const yesterdayProfit = calcProfit(yesterdaySalesData);
+      const yesterdayProductIds = Array.from(new Set(yesterdaySalesData.flatMap((sale) => (sale.sale_items || []).map((item) => item.product_id).filter(Boolean) as string[])));
+      const yesterdayProductCostMap: Record<string, number> = {};
+      if (yesterdayProductIds.length > 0) {
+        const { data: yesterdayProducts } = await supabase.from("products").select("id, cost_price").in("id", yesterdayProductIds);
+        for (const product of (yesterdayProducts || []) as ProductRow[]) {
+          yesterdayProductCostMap[product.id] = Number(product.cost_price ?? 0);
+        }
+      }
+      const yesterdayProfit = calcProfit(yesterdaySalesData, yesterdayProductCostMap);
 
       const calcTrend = (current: number, previous: number) => {
         if (previous === 0) return current > 0 ? 100 : 0;
         return Math.round(((current - previous) / previous) * 100);
       };
 
-      const { data: products, error: pErr } = await supabase.from("products").select("id, name, stock");
+      const { data: products, error: pErr } = await supabase.from("products").select("id, name, stock, cost_price");
       if (pErr) throw pErr;
 
       const allProducts = (products || []) as ProductRow[];

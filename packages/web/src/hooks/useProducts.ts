@@ -48,13 +48,52 @@ export function useProducts() {
     selling_price: number;
     stock?: number;
     barcode?: string | null;
+    measurement_unit?: string | null;
+    pack_quantity?: number | null;
+    unit_cost?: number | null;
   }) => {
     setError(null);
-    const { error } = await supabase.from("products").insert(product);
-    if (error) {
-      setError(error.message);
+    const initialStock = Math.max(0, Number(product.stock ?? 0));
+    const packQuantity = Math.max(0, Number(product.pack_quantity ?? 0));
+    const qtyToRecord = initialStock > 0 ? initialStock : packQuantity;
+
+    const { data: insertedProduct, error: insertError } = await supabase
+      .from("products")
+      .insert({
+        ...product,
+        stock: 0,
+        barcode: product.barcode ?? null,
+      })
+      .select("id")
+      .single();
+
+    if (insertError) {
+      setError(insertError.message);
       return false;
     }
+
+    if (insertedProduct && qtyToRecord > 0) {
+      const detailParts = [
+        product.measurement_unit?.trim() || null,
+        product.pack_quantity ? `pack ${product.pack_quantity}` : null,
+        product.unit_cost != null ? `unit cost ${product.unit_cost}` : null,
+      ].filter(Boolean) as string[];
+      const noteText = detailParts.length > 0 ? detailParts.join(" • ") : null;
+
+      const { error: historyError } = await supabase.from("stock_history").insert({
+        product_id: insertedProduct.id,
+        type: "in",
+        quantity: Math.abs(qtyToRecord),
+        supplier_id: null,
+        notes: noteText || `Initial stock for ${product.name}`,
+      });
+
+      if (historyError) {
+        setError(historyError.message);
+        return true;
+      }
+    }
+
     await fetchProducts();
     return true;
   }, [fetchProducts]);

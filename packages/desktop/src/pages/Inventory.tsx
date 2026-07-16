@@ -1,28 +1,37 @@
 import { useState, useEffect } from 'react';
-import { Plus, Search, ArrowDownCircle, ArrowUpCircle, Edit } from 'lucide-react';
+import { Plus, Search, ArrowDownCircle, ArrowUpCircle, Edit, Trash2 } from 'lucide-react';
 import { Button } from '@pos/shared/components/button';
 import { Input } from '@pos/shared/components/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@pos/shared/components/card';
 import { Badge } from '@pos/shared/components/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@pos/shared/components/dialog';
 import { Label } from '@pos/shared/components/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@pos/shared/components/select';
 import { formatDateTime } from '@pos/shared/lib/utils';
 import { api } from '../lib/ipc';
 
+interface ProductOption { id: string; name: string; }
+interface StockEntryRow {
+  product_id: string;
+  productSearch: string;
+  measurement_unit: string;
+  pack_quantity: number;
+  unit_cost: number;
+}
+
 export default function Inventory() {
   const [history, setHistory] = useState<any[]>([]);
-  const [products, setProducts] = useState<any[]>([]);
+  const [products, setProducts] = useState<ProductOption[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [newEntry, setNewEntry] = useState({
-    product_id: '',
-    type: 'in' as 'in' | 'out' | 'adjustment',
-    quantity: 0,
-    supplier_id: '',
-    notes: '',
-  });
+  const [supplierId, setSupplierId] = useState('');
+  const [supplierSearch, setSupplierSearch] = useState('');
+  const [notes, setNotes] = useState('');
+  const [stockEntries, setStockEntries] = useState<StockEntryRow[]>([
+    { product_id: '', productSearch: '', measurement_unit: '', pack_quantity: 0, unit_cost: 0 },
+  ]);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const loadData = async () => {
     const [hist, prods, sups] = await Promise.all([
@@ -31,39 +40,64 @@ export default function Inventory() {
       api.suppliers.list(),
     ]);
     setHistory(hist as any[]);
-    setProducts(prods as any[]);
-    setSuppliers(sups as any[]);
+    setProducts((prods as any[]) || []);
+    setSuppliers((sups as any[]) || []);
   };
 
   useEffect(() => { loadData(); }, []);
 
-  const handleStockEntry = async () => {
-    if (!newEntry.product_id || newEntry.quantity <= 0) return;
+  const updateStockEntry = (index: number, updates: Partial<StockEntryRow>) => {
+    setStockEntries((prev) => prev.map((entry, i) => (i === index ? { ...entry, ...updates } : entry)));
+  };
 
-    if (newEntry.type === 'in') {
-      await api.inventory.stockIn({
-        product_id: newEntry.product_id,
-        quantity: newEntry.quantity,
-        supplier_id: newEntry.supplier_id || undefined,
-        notes: newEntry.notes || undefined,
-      });
-    } else if (newEntry.type === 'out') {
-      await api.inventory.stockOut({
-        product_id: newEntry.product_id,
-        quantity: newEntry.quantity,
-        notes: newEntry.notes || undefined,
-      });
-    } else {
-      await api.inventory.adjust({
-        product_id: newEntry.product_id,
-        quantity: newEntry.quantity,
-        notes: newEntry.notes || undefined,
-      });
+  const addStockEntryRow = () => {
+    setStockEntries((prev) => [...prev, { product_id: '', productSearch: '', measurement_unit: '', pack_quantity: 0, unit_cost: 0 }]);
+  };
+
+  const removeStockEntryRow = (index: number) => {
+    setStockEntries((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev));
+  };
+
+  const handleStockEntry = async () => {
+    const validRows = stockEntries.filter((row) => row.product_id && row.pack_quantity > 0 && row.unit_cost >= 0);
+    if (validRows.length === 0) {
+      setError('Please ensure all rows have a valid product selected and quantity > 0');
+      return;
     }
 
-    setNewEntry({ product_id: '', type: 'in', quantity: 0, supplier_id: '', notes: '' });
-    setIsDialogOpen(false);
-    loadData();
+    let finalSupplierId = supplierId;
+    if (!finalSupplierId && supplierSearch) {
+      try {
+        const newSup: any = await api.suppliers.create({ name: supplierSearch });
+        finalSupplierId = newSup?.id || '';
+      } catch (e) {
+        console.error('Failed to create supplier:', e);
+      }
+    }
+
+    setCreating(true);
+    setError(null);
+    try {
+      for (const row of validRows) {
+        await api.inventory.stockIn({
+          product_id: row.product_id,
+          quantity: Math.abs(row.pack_quantity),
+          supplier_id: finalSupplierId || undefined,
+          notes: notes || undefined,
+        });
+      }
+
+      setStockEntries([{ product_id: '', productSearch: '', measurement_unit: '', pack_quantity: 0, unit_cost: 0 }]);
+      setSupplierId('');
+      setSupplierSearch('');
+      setNotes('');
+      setIsDialogOpen(false);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save stock entry');
+    } finally {
+      setCreating(false);
+    }
   };
 
   const filteredHistory = history.filter((entry) =>
@@ -82,6 +116,8 @@ export default function Inventory() {
           Stock Entry
         </Button>
       </div>
+
+      {error && <p className="text-red-500 mb-4">{error}</p>}
 
       <div className="mb-6">
         <div className="relative">
@@ -134,61 +170,112 @@ export default function Inventory() {
         </CardContent>
       </Card>
 
-      {/* Stock Entry Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Stock Entry</DialogTitle>
-            <DialogDescription>Record a new stock movement.</DialogDescription>
+            <DialogTitle>Bulk Stock Entry</DialogTitle>
+            <DialogDescription>Record purchased stock in bulk with product details, measure, pack quantity, and unit cost.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label>Product</Label>
-              <Select value={newEntry.product_id} onValueChange={(v) => setNewEntry({ ...newEntry, product_id: v })}>
-                <SelectTrigger><SelectValue placeholder="Select product" /></SelectTrigger>
-                <SelectContent>
-                  {products.map((p: any) => (
-                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Distributor</Label>
+              <Input
+                list="suppliers-list"
+                value={supplierSearch || ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const matched = suppliers.find((s: any) => s.name === val);
+                  setSupplierSearch(val);
+                  setSupplierId(matched ? matched.id : '');
+                }}
+                placeholder="Type to search or add new distributor..."
+              />
+              <datalist id="suppliers-list">
+                {suppliers.map((s: any) => (
+                  <option key={s.id} value={s.name} />
+                ))}
+              </datalist>
             </div>
-            <div className="grid gap-2">
-              <Label>Type</Label>
-              <Select value={newEntry.type} onValueChange={(v: any) => setNewEntry({ ...newEntry, type: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="in">Stock In</SelectItem>
-                  <SelectItem value="out">Stock Out</SelectItem>
-                  <SelectItem value="adjustment">Adjustment</SelectItem>
-                </SelectContent>
-              </Select>
+
+            <div className="space-y-3">
+              {stockEntries.map((entry, index) => (
+                <div key={index} className="rounded-lg border border-border p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">Item {index + 1}</p>
+                    {stockEntries.length > 1 && (
+                      <button type="button" onClick={() => removeStockEntryRow(index)} className="text-sm text-red-500">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="grid gap-2 md:col-span-2">
+                      <Label>Product name</Label>
+                      <Input
+                        list="products-list"
+                        value={entry.productSearch || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const matched = products.find((p) => p.name === val);
+                          updateStockEntry(index, { productSearch: val, product_id: matched ? matched.id : '' });
+                        }}
+                        placeholder="Type to search products..."
+                      />
+                      <datalist id="products-list">
+                        {products.map((p) => (
+                          <option key={p.id} value={p.name} />
+                        ))}
+                      </datalist>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label>Quantity / Measure</Label>
+                      <Input
+                        value={entry.measurement_unit}
+                        onChange={(e) => updateStockEntry(index, { measurement_unit: e.target.value })}
+                        placeholder="e.g. 500g"
+                      />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label>Quantity in box</Label>
+                      <Input
+                        type="number"
+                        value={entry.pack_quantity || ''}
+                        onChange={(e) => updateStockEntry(index, { pack_quantity: Number(e.target.value) })}
+                        placeholder="e.g. 60"
+                      />
+                    </div>
+
+                    <div className="grid gap-2 md:col-span-2">
+                      <Label>Unit cost price (Ghc)</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={entry.unit_cost || ''}
+                        onChange={(e) => updateStockEntry(index, { unit_cost: Number(e.target.value) })}
+                        placeholder="e.g. 4.50"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              <Button type="button" variant="outline" onClick={addStockEntryRow}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add another item
+              </Button>
             </div>
-            <div className="grid gap-2">
-              <Label>Quantity</Label>
-              <Input type="number" value={newEntry.quantity || ''} onChange={(e) => setNewEntry({ ...newEntry, quantity: Number(e.target.value) })} placeholder="0" />
-            </div>
-            {newEntry.type === 'in' && (
-              <div className="grid gap-2">
-                <Label>Supplier</Label>
-                <Select value={newEntry.supplier_id} onValueChange={(v) => setNewEntry({ ...newEntry, supplier_id: v })}>
-                  <SelectTrigger><SelectValue placeholder="Select supplier" /></SelectTrigger>
-                  <SelectContent>
-                    {suppliers.map((s: any) => (
-                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+
             <div className="grid gap-2">
               <Label>Notes</Label>
-              <Input value={newEntry.notes} onChange={(e) => setNewEntry({ ...newEntry, notes: e.target.value })} placeholder="Optional notes" />
+              <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional notes" />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleStockEntry}>Save Entry</Button>
+            <Button onClick={handleStockEntry} disabled={creating}>{creating ? 'Saving...' : 'Save Entry'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

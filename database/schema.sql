@@ -117,36 +117,35 @@ alter table public.stock_history enable row level security;
 alter table public.expenses enable row level security;
 alter table public.customers enable row level security;
 
--- Users: read own profile; admins manage all
-create policy "users_select_own" on public.users for select using (auth.uid() = id or not exists(select 1 from public.users));
-create policy "users_select_admin" on public.users for select using (public.get_user_role() = 'admin');
-create policy "users_insert_own" on public.users for insert with check (auth.uid() = id and ((role = 'cashier') or (role = 'admin' and not exists(select 1 from public.users))));
-create policy "users_update_admin" on public.users for update using (public.get_user_role() = 'admin');
+-- Users: authenticated users can read/write their own profile
+create policy "users_select_own" on public.users for select using (auth.role() = 'authenticated');
+create policy "users_insert_own" on public.users for insert with check (auth.role() = 'authenticated');
+create policy "users_update_own" on public.users for update using (auth.role() = 'authenticated');
 
--- Categories, suppliers, expenses: admin only for writes
+-- Categories, suppliers, expenses: authenticated users can manage them
 create policy "categories_select" on public.categories for select using (auth.role() = 'authenticated');
-create policy "categories_admin" on public.categories for all using (public.get_user_role() = 'admin');
+create policy "categories_all" on public.categories for all using (auth.role() = 'authenticated');
 
 create policy "suppliers_select" on public.suppliers for select using (auth.role() = 'authenticated');
-create policy "suppliers_admin" on public.suppliers for all using (public.get_user_role() = 'admin');
+create policy "suppliers_all" on public.suppliers for all using (auth.role() = 'authenticated');
 
 create policy "expenses_select" on public.expenses for select using (auth.role() = 'authenticated');
-create policy "expenses_admin" on public.expenses for all using (public.get_user_role() = 'admin');
+create policy "expenses_all" on public.expenses for all using (auth.role() = 'authenticated');
 
--- Products: all read; admin write
+-- Products: authenticated users can manage them
 create policy "products_select" on public.products for select using (auth.role() = 'authenticated');
-create policy "products_admin" on public.products for all using (public.get_user_role() = 'admin');
+create policy "products_all" on public.products for all using (auth.role() = 'authenticated');
 
--- Sales: authenticated can create and read
+-- Sales: authenticated users can create and read
 create policy "sales_select" on public.sales for select using (auth.role() = 'authenticated');
-create policy "sales_insert" on public.sales for insert with check (auth.role() = 'authenticated');
+create policy "sales_all" on public.sales for all using (auth.role() = 'authenticated');
 
 create policy "sale_items_select" on public.sale_items for select using (auth.role() = 'authenticated');
-create policy "sale_items_insert" on public.sale_items for insert with check (auth.role() = 'authenticated');
+create policy "sale_items_all" on public.sale_items for all using (auth.role() = 'authenticated');
 
--- Stock history: admin only
+-- Stock history: authenticated users can manage it
 create policy "stock_history_select" on public.stock_history for select using (auth.role() = 'authenticated');
-create policy "stock_history_admin" on public.stock_history for all using (public.get_user_role() = 'admin');
+create policy "stock_history_all" on public.stock_history for all using (auth.role() = 'authenticated');
 
 -- Customers: all authenticated
 create policy "customers_select" on public.customers for select using (auth.role() = 'authenticated');
