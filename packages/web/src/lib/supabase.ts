@@ -5,8 +5,7 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error(
-    "Missing Supabase environment variables. " +
-    "Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in packages/web/.env"
+    "Supabase is not configured for web. Create packages/web/.env with VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, then restart the dev server."
   );
 }
 

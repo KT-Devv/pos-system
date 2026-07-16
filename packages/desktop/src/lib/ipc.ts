@@ -1,15 +1,23 @@
 import type { ElectronAPI } from '../../electron/preload';
 
-function getElectronAPI(): ElectronAPI {
+function getElectronAPI(): ElectronAPI | null {
   if (typeof window !== 'undefined' && window.electronAPI) {
     return window.electronAPI;
   }
-  throw new Error('Electron API is not available. Run this app in the desktop client.');
+  return null;
+}
+
+function assertElectronAPI(): ElectronAPI {
+  const electron = getElectronAPI();
+  if (!electron) {
+    throw new Error('Electron API is not available. Open the app from the desktop client instead of the web preview.');
+  }
+  return electron;
 }
 
 export const api = new Proxy({} as ElectronAPI, {
   get(_target, prop) {
-    const electron = getElectronAPI();
+    const electron = assertElectronAPI();
     const value = electron[prop as keyof ElectronAPI];
     if (typeof value === 'object' && value !== null) {
       return new Proxy(value as object, {

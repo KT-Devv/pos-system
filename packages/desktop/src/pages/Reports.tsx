@@ -14,9 +14,9 @@ export default function Reports() {
   const [recentSales, setRecentSales] = useState<any[]>([]);
 
   useEffect(() => {
-    api.sales.stats(period).then(setStats);
-    api.sales.todayStats().then(setTodayStats);
-    api.sales.list({ limit: 7 }).then(setRecentSales);
+    api.sales.stats(period).then((data) => setStats(data as any[]));
+    api.sales.todayStats().then((data) => setTodayStats(data as any));
+    api.sales.list({ limit: 7 }).then((data) => setRecentSales(data as any[]));
   }, [period]);
 
   return (

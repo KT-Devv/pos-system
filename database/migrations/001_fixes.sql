@@ -23,13 +23,13 @@ as $$ select role from public.users where id = auth.uid(); $$;
 
 -- New RLS policies (skip if already applied)
 do $$ begin
-  create policy "users_select_own" on public.users for select using (auth.uid() = id);
+  create policy "users_select_own" on public.users for select using (auth.uid() = id or not exists(select 1 from public.users));
 exception when duplicate_object then null; end $$;
 do $$ begin
   create policy "users_select_admin" on public.users for select using (public.get_user_role() = 'admin');
 exception when duplicate_object then null; end $$;
 do $$ begin
-  create policy "users_insert_own" on public.users for insert with check (auth.uid() = id and role = 'cashier');
+  create policy "users_insert_own" on public.users for insert with check (auth.uid() = id and ((role = 'cashier') or (role = 'admin' and not exists(select 1 from public.users))));
 exception when duplicate_object then null; end $$;
 do $$ begin
   create policy "users_update_admin" on public.users for update using (public.get_user_role() = 'admin');

@@ -16,12 +16,16 @@ export interface ReceiptData {
   cashierName: string;
   date: string;
   saleId: string;
+  receiptHeader?: string;
+  receiptFooter?: string;
+  receiptNote?: string;
+  currency?: string;
 }
 
 export async function printReceipt(data: ReceiptData): Promise<boolean> {
   try {
-    const result = await api.receipt.print(data);
-    return result.success;
+    const result = await api.receipt.print(data) as { success: boolean };
+    return result?.success ?? false;
   } catch {
     return false;
   }
@@ -29,8 +33,8 @@ export async function printReceipt(data: ReceiptData): Promise<boolean> {
 
 export async function testPrinter(): Promise<boolean> {
   try {
-    const result = await api.receipt.testPrint();
-    return result.success;
+    const result = await api.receipt.testPrint() as { success: boolean };
+    return result?.success ?? false;
   } catch {
     return false;
   }

@@ -16,9 +16,9 @@ export default function Settings() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    api.settings.get().then((data: Record<string, string>) => {
-      setSettings(data);
-      setDraft(data);
+    api.settings.get().then((data) => {
+      setSettings(data as Record<string, string>);
+      setDraft(data as Record<string, string>);
       setLoading(false);
     });
   }, []);

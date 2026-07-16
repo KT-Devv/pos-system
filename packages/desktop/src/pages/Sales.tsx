@@ -13,7 +13,6 @@ import {
 } from 'lucide-react';
 import { Button } from '@pos/shared/components/button';
 import { Input } from '@pos/shared/components/input';
-import { Card, CardContent } from '@pos/shared/components/card';
 import { Badge } from '@pos/shared/components/badge';
 import { Label } from '@pos/shared/components/label';
 import { formatCurrency, cn } from '@pos/shared/lib/utils';
@@ -413,7 +412,7 @@ function QuickProducts({ onSelect }: { onSelect: (product: Product) => void }) {
   const [products, setProducts] = useState<Product[]>([]);
 
   useEffect(() => {
-    api.products.list().then((data: Product[]) => setProducts(data));
+    api.products.list().then((data) => setProducts(data as Product[]));
   }, []);
 
   return (

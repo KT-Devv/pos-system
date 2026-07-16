@@ -31,15 +31,27 @@ async function fetchProfile(userId: string): Promise<UserProfile | null> {
   return data;
 }
 
+async function hasNoUsers(): Promise<boolean> {
+  const { count, error } = await supabase
+    .from('users')
+    .select('id', { count: 'exact', head: true });
+
+  if (error) {
+    return false;
+  }
+  return (count ?? 0) === 0;
+}
+
 async function ensureProfile(user: User, name?: string): Promise<UserProfile | null> {
   let profile = await fetchProfile(user.id);
   if (!profile) {
     const displayName = name || user.email?.split('@')[0] || 'User';
+    const role = (await hasNoUsers()) ? 'admin' : 'cashier';
     const { error } = await supabase.from('users').insert({
       id: user.id,
       name: displayName,
       email: user.email || '',
-      role: 'cashier',
+      role,
     });
     if (error) throw new Error(error.message);
     profile = await fetchProfile(user.id);

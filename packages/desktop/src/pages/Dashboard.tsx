@@ -5,9 +5,7 @@ import {
   AlertTriangle,
   BarChart3,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@pos/shared/components/card';
 import { Badge } from '@pos/shared/components/badge';
-import { Button } from '@pos/shared/components/button';
 import { formatCurrency } from '@pos/shared/lib/utils';
 import { useTodayStats } from '../hooks/useSales';
 import { useProducts } from '../hooks/useProducts';

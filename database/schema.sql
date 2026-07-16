@@ -118,9 +118,9 @@ alter table public.expenses enable row level security;
 alter table public.customers enable row level security;
 
 -- Users: read own profile; admins manage all
-create policy "users_select_own" on public.users for select using (auth.uid() = id);
+create policy "users_select_own" on public.users for select using (auth.uid() = id or not exists(select 1 from public.users));
 create policy "users_select_admin" on public.users for select using (public.get_user_role() = 'admin');
-create policy "users_insert_own" on public.users for insert with check (auth.uid() = id and role = 'cashier');
+create policy "users_insert_own" on public.users for insert with check (auth.uid() = id and ((role = 'cashier') or (role = 'admin' and not exists(select 1 from public.users))));
 create policy "users_update_admin" on public.users for update using (public.get_user_role() = 'admin');
 
 -- Categories, suppliers, expenses: admin only for writes
