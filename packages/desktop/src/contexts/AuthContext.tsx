@@ -1,52 +1,52 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
-import { api } from '../lib/ipc';
+import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
+import { api } from '@/lib/ipc';
 
-export interface AuthUser {
+interface UserProfile {
   id: string;
   name: string;
   role: 'admin' | 'cashier';
 }
 
 interface AuthContextType {
-  user: AuthUser | null;
-  login: (pin: string) => Promise<string | null>;
-  logout: () => Promise<void>;
+  user: UserProfile | null;
   loading: boolean;
   isAdmin: boolean;
+  login: (pin: string) => Promise<string | null>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [loading] = useState(false);
 
-  const login = async (pin: string): Promise<string | null> => {
-    setLoading(true);
+  const login = useCallback(async (pin: string): Promise<string | null> => {
     try {
       const result = await api.auth.login(pin);
       if (result) {
-        setUser({ id: result.id, name: result.name, role: result.role as 'admin' | 'cashier' });
+        setUser(result as UserProfile);
         return null;
       }
       return 'Invalid PIN';
-    } catch (e) {
+    } catch (e: unknown) {
       return e instanceof Error ? e.message : 'Login failed';
-    } finally {
-      setLoading(false);
     }
-  };
+  }, []);
 
-  const logout = async () => {
-    try {
-      await api.auth.logout();
-    } finally {
-      setUser(null);
-    }
-  };
+  const logout = useCallback(async () => {
+    await api.auth.logout();
+    setUser(null);
+  }, []);
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading, isAdmin: user?.role === 'admin' }}>
+    <AuthContext.Provider value={{
+      user,
+      loading,
+      isAdmin: user?.role === 'admin',
+      login,
+      logout,
+    }}>
       {children}
     </AuthContext.Provider>
   );

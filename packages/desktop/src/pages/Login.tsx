@@ -1,20 +1,37 @@
-import { useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function Login() {
-  const { login, loading } = useAuth();
+  const { login, user, loading } = useAuth();
+  const navigate = useNavigate();
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!loading && user) navigate('/', { replace: true });
+  }, [user, loading, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    const err = await login(pin);
-    if (err) {
-      setError(err);
-      setPin('');
+    setSubmitting(true);
+    try {
+      const result = await login(pin);
+      if (result) setError(result);
+    } finally {
+      setSubmitting(false);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/90 to-primary/70">
@@ -34,25 +51,25 @@ export default function Login() {
             <input
               type="password"
               inputMode="numeric"
-              maxLength={6}
               value={pin}
               onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
               placeholder="Enter PIN"
-              className="w-full h-12 text-center text-2xl tracking-widest rounded-lg border border-input bg-background px-3 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              maxLength={6}
               autoFocus
+              className="w-full h-12 rounded-lg border border-input bg-background px-3 text-center text-2xl tracking-[0.5em] ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              required
+              minLength={4}
             />
           </div>
 
-          {error && (
-            <p className="text-sm text-red-500 text-center">{error}</p>
-          )}
+          {error && <p className="text-sm text-center text-red-500">{error}</p>}
 
           <button
             type="submit"
-            disabled={pin.length < 4 || loading}
+            disabled={!pin || submitting}
             className="w-full h-12 rounded-lg bg-primary text-primary-foreground font-medium text-base hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
-            {loading ? 'Verifying...' : 'Sign In'}
+            {submitting ? 'Verifying...' : 'Sign In'}
           </button>
         </form>
       </div>

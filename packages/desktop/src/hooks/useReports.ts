@@ -1,13 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { api } from '../lib/ipc';
+import { api } from '@/lib/ipc';
 
 export type ReportPeriod = 'daily' | 'weekly' | 'monthly' | 'custom';
-
-export interface SalesQueryOptions {
-  period?: ReportPeriod;
-  startDate?: string;
-  endDate?: string;
-}
 
 export interface PeriodData {
   sales: number;
@@ -36,16 +30,6 @@ export interface PaymentMethodSummary {
   percentage: number;
 }
 
-export async function querySalesSummary(options: SalesQueryOptions = {}) {
-  const period = options.period ?? 'daily';
-  return await api.sales.report(period, options.startDate, options.endDate) as {
-    periodData: PeriodData;
-    topProducts: TopProduct[];
-    dailySales: DailySaleSummary[];
-    paymentMethods: PaymentMethodSummary[];
-  };
-}
-
 export function useReports(period: ReportPeriod, startDate?: string, endDate?: string) {
   const [periodData, setPeriodData] = useState<PeriodData>({ sales: 0, profit: 0, transactions: 0, averageSale: 0 });
   const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
@@ -58,7 +42,12 @@ export function useReports(period: ReportPeriod, startDate?: string, endDate?: s
     setLoading(true);
     setError(null);
     try {
-      const result = await querySalesSummary({ period, startDate, endDate });
+      const result = await api.sales.report(period, startDate, endDate) as {
+        periodData: PeriodData;
+        topProducts: TopProduct[];
+        dailySales: DailySaleSummary[];
+        paymentMethods: PaymentMethodSummary[];
+      };
       setPeriodData(result.periodData);
       setTopProducts(result.topProducts);
       setDailySales(result.dailySales);
@@ -70,9 +59,7 @@ export function useReports(period: ReportPeriod, startDate?: string, endDate?: s
     }
   }, [period, startDate, endDate]);
 
-  useEffect(() => {
-    fetchReports();
-  }, [fetchReports]);
+  useEffect(() => { fetchReports(); }, [fetchReports]);
 
   return { periodData, topProducts, dailySales, paymentMethods, loading, error, refetch: fetchReports };
 }

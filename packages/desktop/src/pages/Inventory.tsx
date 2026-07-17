@@ -7,46 +7,40 @@ import { Badge } from '@pos/shared/components/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@pos/shared/components/dialog';
 import { Label } from '@pos/shared/components/label';
 import { formatDateTime } from '@pos/shared/lib/utils';
-import { api } from '../lib/ipc';
+import { useStockHistory, useSuppliers, useCreateStockEntry, useInventoryStats } from '@/hooks/useInventory';
+import { api } from '@/lib/ipc';
 
 interface ProductOption { id: string; name: string; }
-interface StockEntryRow {
-  product_id: string;
-  productSearch: string;
-  measurement_unit: string;
-  pack_quantity: number;
-  unit_cost: number;
-}
 
 export default function Inventory() {
-  const [history, setHistory] = useState<any[]>([]);
-  const [products, setProducts] = useState<ProductOption[]>([]);
-  const [suppliers, setSuppliers] = useState<any[]>([]);
+  const { stockHistory, loading: historyLoading, refetch: refetchHistory } = useStockHistory();
+  const { suppliers, refetch: refetchSuppliers } = useSuppliers();
+  const { stats } = useInventoryStats();
+  const { createStockEntry, creating, error: stockError } = useCreateStockEntry();
+
   const [search, setSearch] = useState('');
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [supplierId, setSupplierId] = useState('');
+  const [isStockInDialogOpen, setIsStockInDialogOpen] = useState(false);
+  const [products, setProducts] = useState<ProductOption[]>([]);
   const [supplierSearch, setSupplierSearch] = useState('');
+  const [supplierId, setSupplierId] = useState('');
   const [notes, setNotes] = useState('');
-  const [stockEntries, setStockEntries] = useState<StockEntryRow[]>([
-    { product_id: '', productSearch: '', measurement_unit: '', pack_quantity: 0, unit_cost: 0 },
-  ]);
-  const [creating, setCreating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [stockEntries, setStockEntries] = useState<Array<{
+    product_id: string; productSearch: string; measurement_unit: string; pack_quantity: number; unit_cost: number;
+  }>>([{ product_id: '', productSearch: '', measurement_unit: '', pack_quantity: 0, unit_cost: 0 }]);
 
-  const loadData = async () => {
-    const [hist, prods, sups] = await Promise.all([
-      api.inventory.history({ limit: 100 }),
-      api.products.list(),
-      api.suppliers.list(),
-    ]);
-    setHistory(hist as any[]);
-    setProducts((prods as any[]) || []);
-    setSuppliers((sups as any[]) || []);
-  };
+  useEffect(() => {
+    (async () => {
+      const data = await api.products.list() as ProductOption[];
+      setProducts(data || []);
+    })();
+  }, []);
 
-  useEffect(() => { loadData(); }, []);
+  const filteredStock = stockHistory.filter((entry) =>
+    String(entry.product_id || '').toLowerCase().includes(search.toLowerCase()) ||
+    String(entry.notes || '').toLowerCase().includes(search.toLowerCase())
+  );
 
-  const updateStockEntry = (index: number, updates: Partial<StockEntryRow>) => {
+  const updateStockEntry = (index: number, updates: Partial<typeof stockEntries[0]>) => {
     setStockEntries((prev) => prev.map((entry, i) => (i === index ? { ...entry, ...updates } : entry)));
   };
 
@@ -59,50 +53,46 @@ export default function Inventory() {
   };
 
   const handleStockEntry = async () => {
-    const validRows = stockEntries.filter((row) => row.product_id && row.pack_quantity > 0 && row.unit_cost >= 0);
-    if (validRows.length === 0) {
-      setError('Please ensure all rows have a valid product selected and quantity > 0');
-      return;
-    }
+    const validRows = stockEntries.filter((row) => row.product_id && row.pack_quantity > 0);
+    if (validRows.length === 0) { alert('Please ensure all rows have a valid product selected and quantity > 0'); return; }
 
     let finalSupplierId = supplierId;
     if (!finalSupplierId && supplierSearch) {
       try {
-        const newSup: any = await api.suppliers.create({ name: supplierSearch });
-        finalSupplierId = newSup?.id || '';
-      } catch (e) {
-        console.error('Failed to create supplier:', e);
-      }
+        const created = await api.suppliers.create({ name: supplierSearch }) as { id: string } | null;
+        if (created?.id) finalSupplierId = created.id;
+      } catch { /* ignore */ }
     }
 
-    setCreating(true);
-    setError(null);
-    try {
-      for (const row of validRows) {
-        await api.inventory.stockIn({
-          product_id: row.product_id,
-          quantity: Math.abs(row.pack_quantity),
-          supplier_id: finalSupplierId || undefined,
-          notes: notes || undefined,
-        });
-      }
+    let success = true;
+    for (const row of validRows) {
+      const detailParts = [
+        row.measurement_unit?.trim() || null,
+        row.pack_quantity ? `pack ${row.pack_quantity}` : null,
+        row.unit_cost != null ? `unit cost ${row.unit_cost}` : null,
+      ].filter(Boolean);
+      const noteText = [notes?.trim() || null, detailParts.join(' • ')].filter(Boolean).join(' • ') || null;
 
+      const ok = await createStockEntry({
+        product_id: row.product_id,
+        type: 'in',
+        quantity: Math.abs(row.pack_quantity),
+        supplier_id: finalSupplierId || null,
+        notes: noteText,
+      });
+      if (!ok) { success = false; break; }
+    }
+
+    if (success) {
       setStockEntries([{ product_id: '', productSearch: '', measurement_unit: '', pack_quantity: 0, unit_cost: 0 }]);
       setSupplierId('');
       setSupplierSearch('');
       setNotes('');
-      setIsDialogOpen(false);
-      await loadData();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save stock entry');
-    } finally {
-      setCreating(false);
+      setIsStockInDialogOpen(false);
+      refetchHistory();
+      refetchSuppliers();
     }
   };
-
-  const filteredHistory = history.filter((entry) =>
-    entry.product_name?.toLowerCase().includes(search.toLowerCase())
-  );
 
   return (
     <div className="p-6">
@@ -111,13 +101,16 @@ export default function Inventory() {
           <h1 className="text-3xl font-bold">Inventory</h1>
           <p className="text-muted-foreground">Track stock movements and manage inventory</p>
         </div>
-        <Button onClick={() => setIsDialogOpen(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Stock Entry
-        </Button>
+        <Button onClick={() => setIsStockInDialogOpen(true)}><Plus className="h-4 w-4 mr-2" />Stock Entry</Button>
       </div>
 
-      {error && <p className="text-red-500 mb-4">{error}</p>}
+      {stockError && <p className="text-red-500 mb-4">{stockError}</p>}
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Products</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{stats.totalProducts}</div></CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Low Stock Items</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold text-yellow-600">{stats.lowStock}</div></CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Out of Stock</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold text-red-600">{stats.outOfStock}</div></CardContent></Card>
+      </div>
 
       <div className="mb-6">
         <div className="relative">
@@ -127,50 +120,39 @@ export default function Inventory() {
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Stock History</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle>Stock History</CardTitle></CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {filteredHistory.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">No stock history yet</p>
-            ) : (
-              filteredHistory.map((entry) => (
+          {historyLoading ? (
+            <p className="text-muted-foreground">Loading...</p>
+          ) : filteredStock.length === 0 ? (
+            <p className="text-muted-foreground">No stock history found</p>
+          ) : (
+            <div className="space-y-4">
+              {filteredStock.map((entry) => (
                 <div key={entry.id} className="flex items-center justify-between border-b pb-4 last:border-0">
                   <div className="flex items-center gap-4">
                     <div className={`p-2 rounded-full ${entry.type === 'in' ? 'bg-green-100' : entry.type === 'out' ? 'bg-red-100' : 'bg-yellow-100'}`}>
-                      {entry.type === 'in' ? (
-                        <ArrowDownCircle className="h-5 w-5 text-green-600" />
-                      ) : entry.type === 'out' ? (
-                        <ArrowUpCircle className="h-5 w-5 text-red-600" />
-                      ) : (
-                        <Edit className="h-5 w-5 text-yellow-600" />
-                      )}
+                      {entry.type === 'in' ? <ArrowDownCircle className="h-5 w-5 text-green-600" /> : entry.type === 'out' ? <ArrowUpCircle className="h-5 w-5 text-red-600" /> : <Edit className="h-5 w-5 text-yellow-600" />}
                     </div>
                     <div>
-                      <h4 className="font-medium">{entry.product_name}</h4>
-                      <p className="text-sm text-muted-foreground">
-                        {entry.notes}
-                        {entry.supplier_name && ` • ${entry.supplier_name}`}
-                      </p>
+                      <h4 className="font-medium">{entry.product_id || 'Unknown'}</h4>
+                      <p className="text-sm text-muted-foreground">{entry.notes}</p>
                     </div>
                   </div>
                   <div className="text-right">
                     <Badge variant={entry.type === 'in' ? 'success' : entry.type === 'out' ? 'destructive' : 'warning'}>
-                      {entry.type === 'in' ? '+' : entry.type === 'out' ? '-' : '±'}{entry.quantity}
+                      {entry.type === 'in' ? '+' : entry.type === 'out' ? '-' : '±'}{Math.abs(entry.quantity)}
                     </Badge>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {formatDateTime(entry.created_at)}
-                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">{formatDateTime(entry.created_at)}</p>
                   </div>
                 </div>
-              ))
-            )}
-          </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Dialog open={isStockInDialogOpen} onOpenChange={setIsStockInDialogOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Bulk Stock Entry</DialogTitle>
@@ -179,102 +161,51 @@ export default function Inventory() {
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label>Distributor</Label>
-              <Input
-                list="suppliers-list"
-                value={supplierSearch || ''}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  const matched = suppliers.find((s: any) => s.name === val);
-                  setSupplierSearch(val);
-                  setSupplierId(matched ? matched.id : '');
-                }}
-                placeholder="Type to search or add new distributor..."
-              />
-              <datalist id="suppliers-list">
-                {suppliers.map((s: any) => (
-                  <option key={s.id} value={s.name} />
-                ))}
+              <input list="suppliers-list-desktop" value={supplierSearch} onChange={(e) => {
+                const val = e.target.value;
+                const matched = suppliers.find((s) => s.name === val);
+                setSupplierSearch(val);
+                setSupplierId(matched ? matched.id : '');
+              }} placeholder="Type to search or add new distributor..."
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              <datalist id="suppliers-list-desktop">
+                {suppliers.map((s) => (<option key={s.id} value={s.name} />))}
               </datalist>
             </div>
-
             <div className="space-y-3">
               {stockEntries.map((entry, index) => (
-                <div key={index} className="rounded-lg border border-border p-3 space-y-3">
+                <div key={index} className="rounded-lg border p-3 space-y-3">
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium">Item {index + 1}</p>
                     {stockEntries.length > 1 && (
-                      <button type="button" onClick={() => removeStockEntryRow(index)} className="text-sm text-red-500">
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      <button type="button" onClick={() => removeStockEntryRow(index)} className="text-sm text-red-500"><Trash2 className="h-4 w-4" /></button>
                     )}
                   </div>
-
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="grid gap-2 md:col-span-2">
                       <Label>Product name</Label>
-                      <Input
-                        list="products-list"
-                        value={entry.productSearch || ''}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          const matched = products.find((p) => p.name === val);
-                          updateStockEntry(index, { productSearch: val, product_id: matched ? matched.id : '' });
-                        }}
-                        placeholder="Type to search products..."
-                      />
-                      <datalist id="products-list">
-                        {products.map((p) => (
-                          <option key={p.id} value={p.name} />
-                        ))}
+                      <input list="products-list-desktop" value={entry.productSearch} onChange={(e) => {
+                        const val = e.target.value;
+                        const matched = products.find((p) => p.name === val);
+                        updateStockEntry(index, { productSearch: val, product_id: matched ? matched.id : '' });
+                      }} placeholder="Type to search products..."
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+                      <datalist id="products-list-desktop">
+                        {products.map((p) => (<option key={p.id} value={p.name} />))}
                       </datalist>
                     </div>
-
-                    <div className="grid gap-2">
-                      <Label>Quantity / Measure</Label>
-                      <Input
-                        value={entry.measurement_unit}
-                        onChange={(e) => updateStockEntry(index, { measurement_unit: e.target.value })}
-                        placeholder="e.g. 500g"
-                      />
-                    </div>
-
-                    <div className="grid gap-2">
-                      <Label>Quantity in box</Label>
-                      <Input
-                        type="number"
-                        value={entry.pack_quantity || ''}
-                        onChange={(e) => updateStockEntry(index, { pack_quantity: Number(e.target.value) })}
-                        placeholder="e.g. 60"
-                      />
-                    </div>
-
-                    <div className="grid gap-2 md:col-span-2">
-                      <Label>Unit cost price (Ghc)</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={entry.unit_cost || ''}
-                        onChange={(e) => updateStockEntry(index, { unit_cost: Number(e.target.value) })}
-                        placeholder="e.g. 4.50"
-                      />
-                    </div>
+                    <div className="grid gap-2"><Label>Quantity / Measure</Label><Input value={entry.measurement_unit} onChange={(e) => updateStockEntry(index, { measurement_unit: e.target.value })} placeholder="e.g. 500g" /></div>
+                    <div className="grid gap-2"><Label>Quantity in box</Label><Input type="number" value={entry.pack_quantity || ''} onChange={(e) => updateStockEntry(index, { pack_quantity: Number(e.target.value) })} placeholder="e.g. 60" /></div>
+                    <div className="grid gap-2 md:col-span-2"><Label>Unit cost price (Ghc)</Label><Input type="number" step="0.01" value={entry.unit_cost || ''} onChange={(e) => updateStockEntry(index, { unit_cost: Number(e.target.value) })} placeholder="e.g. 4.50" /></div>
                   </div>
                 </div>
               ))}
-
-              <Button type="button" variant="outline" onClick={addStockEntryRow}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add another item
-              </Button>
+              <Button type="button" variant="outline" onClick={addStockEntryRow}><Plus className="h-4 w-4 mr-2" />Add another item</Button>
             </div>
-
-            <div className="grid gap-2">
-              <Label>Notes</Label>
-              <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional notes" />
-            </div>
+            <div className="grid gap-2"><Label>Notes</Label><Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional notes" /></div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setIsStockInDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleStockEntry} disabled={creating}>{creating ? 'Saving...' : 'Save Entry'}</Button>
           </DialogFooter>
         </DialogContent>

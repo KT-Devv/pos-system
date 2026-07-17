@@ -1,62 +1,81 @@
-import { useState, useEffect } from 'react';
-import { Store, CreditCard, Bell, Check, Loader2 } from 'lucide-react';
+import { User, Store, CreditCard, Bell, Check, Loader2, Printer, Users, Plus } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@pos/shared/components/card';
 import { Button } from '@pos/shared/components/button';
 import { Input } from '@pos/shared/components/input';
 import { Label } from '@pos/shared/components/label';
 import { Switch } from '@pos/shared/components/switch';
-import { api } from '../lib/ipc';
-import { testPrinter } from '../hooks/useReceipt';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@pos/shared/components/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@pos/shared/components/dialog';
+import { Badge } from '@pos/shared/components/badge';
+import { useSettings } from '@/hooks/useSettings';
+import { useState, useEffect, useCallback } from 'react';
+import { api } from '@/lib/ipc';
+
+interface UserRow {
+  id: string;
+  name: string;
+  role: string;
+  created_at: string;
+}
 
 export default function Settings() {
-  const [settings, setSettings] = useState<Record<string, string>>({});
-  const [draft, setDraft] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
+  const { settings, update, reset, loading } = useSettings();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => {
-    api.settings.get().then((data) => {
-      setSettings(data as Record<string, string>);
-      setDraft(data as Record<string, string>);
-      setLoading(false);
-    });
+  const [users, setUsers] = useState<UserRow[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
+  const [newUserName, setNewUserName] = useState('');
+  const [newUserPin, setNewUserPin] = useState('');
+  const [newUserRole, setNewUserRole] = useState('cashier');
+  const [userError, setUserError] = useState<string | null>(null);
+
+  const fetchUsers = useCallback(async () => {
+    try {
+      const data = await api.users.list() as UserRow[];
+      setUsers(data || []);
+    } catch {
+      // admin-only, silently fail for non-admins
+    }
+    setUsersLoading(false);
   }, []);
 
-  const updateDraft = (key: string, value: string) => {
-    setDraft((prev) => ({ ...prev, [key]: value }));
-  };
+  useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
-  const handleSave = async () => {
+  const handleSave = () => {
     setSaving(true);
     setSaved(false);
-    try {
-      const entries = Object.entries(draft);
-      for (const [key, value] of entries) {
-        if (settings[key] !== value) {
-          await api.settings.set(key, value);
-        }
-      }
-      setSettings({ ...draft });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } finally {
-      setSaving(false);
-    }
+    setTimeout(() => { setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000); }, 300);
   };
 
   const handleTestPrint = async () => {
-    const success = await testPrinter();
-    alert(success ? 'Test print sent successfully!' : 'Test print failed. Check printer connection.');
+    try {
+      const result = await api.receipt.testPrint() as { success: boolean; error?: string; message?: string };
+      if (result.success) alert(result.message || 'Test print sent!');
+      else alert(result.error || 'Test print failed');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Test print failed');
+    }
   };
 
-  if (loading) {
-    return (
-      <div className="p-6 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-      </div>
-    );
-  }
+  const handleCreateUser = async () => {
+    setUserError(null);
+    if (!newUserName.trim()) { setUserError('Name is required'); return; }
+    if (newUserPin.length < 4) { setUserError('PIN must be at least 4 digits'); return; }
+    try {
+      await api.users.create({ name: newUserName.trim(), pin: newUserPin, role: newUserRole });
+      setNewUserName('');
+      setNewUserPin('');
+      setNewUserRole('cashier');
+      setIsUserDialogOpen(false);
+      await fetchUsers();
+    } catch (err) {
+      setUserError(err instanceof Error ? err.message : 'Failed to create user');
+    }
+  };
+
+  if (loading) return <div className="p-6"><p className="text-muted-foreground">Loading settings...</p></div>;
 
   return (
     <div className="p-6">
@@ -65,190 +84,172 @@ export default function Settings() {
           <h1 className="text-3xl font-bold">Settings</h1>
           <p className="text-muted-foreground">Manage your shop settings</p>
         </div>
-        <Button onClick={handleSave} disabled={saving}>
-          {saving ? (
-            <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving...</>
-          ) : saved ? (
-            <><Check className="h-4 w-4 mr-2" /> Saved</>
-          ) : (
-            'Save Changes'
-          )}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={reset}>Reset Defaults</Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving...</> : saved ? <><Check className="h-4 w-4 mr-2" /> Saved</> : 'Save Changes'}
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Shop Information */}
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Store className="h-5 w-5" />
-              Shop Information
-            </CardTitle>
-            <CardDescription>Update your shop details</CardDescription>
-          </CardHeader>
+          <CardHeader><CardTitle className="flex items-center gap-2"><Store className="h-5 w-5" />Shop Information</CardTitle><CardDescription>Update your shop details</CardDescription></CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-2">
-              <Label>Shop Name</Label>
-              <Input value={draft.shop_name || ''} onChange={(e) => updateDraft('shop_name', e.target.value)} />
-            </div>
-            <div className="grid gap-2">
-              <Label>Phone Number</Label>
-              <Input value={draft.shop_phone || ''} onChange={(e) => updateDraft('shop_phone', e.target.value)} />
-            </div>
-            <div className="grid gap-2">
-              <Label>Address</Label>
-              <Input value={draft.shop_address || ''} onChange={(e) => updateDraft('shop_address', e.target.value)} />
-            </div>
+            <div className="grid gap-2"><Label>Shop Name</Label><Input value={settings.shopName} onChange={(e) => update('shopName', e.target.value)} /></div>
+            <div className="grid gap-2"><Label>Phone Number</Label><Input value={settings.phone} onChange={(e) => update('phone', e.target.value)} /></div>
+            <div className="grid gap-2"><Label>Address</Label><Input value={settings.address} onChange={(e) => update('address', e.target.value)} /></div>
           </CardContent>
         </Card>
 
-        {/* Receipt Settings */}
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CreditCard className="h-5 w-5" />
-              Receipt Settings
-            </CardTitle>
-            <CardDescription>Customize your receipts</CardDescription>
-          </CardHeader>
+          <CardHeader><CardTitle className="flex items-center gap-2"><User className="h-5 w-5" />User Profile</CardTitle><CardDescription>Manage your account</CardDescription></CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-2">
-              <Label>Receipt Header</Label>
-              <Input value={draft.receipt_header || ''} onChange={(e) => updateDraft('receipt_header', e.target.value)} />
+            <div className="grid gap-2"><Label>Shop Currency</Label>
+              <Select value={settings.currency} onValueChange={(v) => update('currency', v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="GHS">GHS - Ghanaian Cedi</SelectItem>
+                  <SelectItem value="USD">USD - US Dollar</SelectItem>
+                  <SelectItem value="NGN">NGN - Nigerian Naira</SelectItem>
+                  <SelectItem value="KES">KES - Kenyan Shilling</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <div className="grid gap-2">
-              <Label>Receipt Footer</Label>
-              <Input value={draft.receipt_footer || ''} onChange={(e) => updateDraft('receipt_footer', e.target.value)} />
-            </div>
-            <div className="grid gap-2">
-              <Label>Additional Note</Label>
-              <Input value={draft.receipt_note || ''} onChange={(e) => updateDraft('receipt_note', e.target.value)} />
-            </div>
+            <div className="grid gap-2"><Label>Low Stock Threshold</Label><Input type="number" value={settings.lowStockThreshold} onChange={(e) => update('lowStockThreshold', Number(e.target.value))} /></div>
           </CardContent>
         </Card>
 
-        {/* Printer Settings */}
+        <Card>
+          <CardHeader><CardTitle className="flex items-center gap-2"><CreditCard className="h-5 w-5" />Payment Settings</CardTitle><CardDescription>Configure payment methods</CardDescription></CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between"><div className="space-y-0.5"><Label>Cash Payments</Label><p className="text-sm text-muted-foreground">Accept cash payments</p></div><Switch checked={settings.cashEnabled} onCheckedChange={(v) => update('cashEnabled', v)} /></div>
+            <div className="flex items-center justify-between"><div className="space-y-0.5"><Label>MTN Mobile Money</Label><p className="text-sm text-muted-foreground">Accept MoMo payments</p></div><Switch checked={settings.momoEnabled} onCheckedChange={(v) => update('momoEnabled', v)} /></div>
+            <div className="flex items-center justify-between"><div className="space-y-0.5"><Label>Card Payments</Label><p className="text-sm text-muted-foreground">Accept card payments</p></div><Switch checked={settings.cardEnabled} onCheckedChange={(v) => update('cardEnabled', v)} /></div>
+            <div className="grid gap-2"><Label>MoMo Number</Label><Input value={settings.momoNumber} onChange={(e) => update('momoNumber', e.target.value)} /></div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle className="flex items-center gap-2"><Bell className="h-5 w-5" />Notifications</CardTitle><CardDescription>Configure alert preferences</CardDescription></CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between"><div className="space-y-0.5"><Label>Low Stock Alerts</Label><p className="text-sm text-muted-foreground">Get notified when stock is low</p></div><Switch checked={settings.lowStockAlerts} onCheckedChange={(v) => update('lowStockAlerts', v)} /></div>
+            <div className="flex items-center justify-between"><div className="space-y-0.5"><Label>Daily Sales Summary</Label><p className="text-sm text-muted-foreground">Receive daily sales report</p></div><Switch checked={settings.dailySalesSummary} onCheckedChange={(v) => update('dailySalesSummary', v)} /></div>
+            <div className="flex items-center justify-between"><div className="space-y-0.5"><Label>SMS Receipts</Label><p className="text-sm text-muted-foreground">Send receipts via SMS</p></div><Switch checked={settings.smsReceipts} onCheckedChange={(v) => update('smsReceipts', v)} /></div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle className="flex items-center gap-2"><Printer className="h-5 w-5" />Printer Settings</CardTitle><CardDescription>Configure receipt printer</CardDescription></CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-2"><Label>Printer Type</Label>
+              <Select value={settings.printerType} onValueChange={(v) => update('printerType', v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No Printer</SelectItem>
+                  <SelectItem value="thermal">Thermal Printer</SelectItem>
+                  <SelectItem value="pdf">PDF (Save to File)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2"><Label>Paper Size</Label>
+              <Select value={settings.printerPaperSize} onValueChange={(v) => update('printerPaperSize', v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="80">80mm</SelectItem>
+                  <SelectItem value="58">58mm</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button variant="outline" onClick={handleTestPrint}><Printer className="h-4 w-4 mr-2" />Test Print</Button>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <PrinterIcon className="h-5 w-5" />
-              Printer Settings
-            </CardTitle>
-            <CardDescription>Configure receipt printer</CardDescription>
+            <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5" />User Management</CardTitle>
+            <CardDescription>Manage cashiers and admins</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-2">
-              <Label>Printer Type</Label>
-              <select
-                value={draft.printer_type || 'none'}
-                onChange={(e) => updateDraft('printer_type', e.target.value)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                <option value="none">No Printer</option>
-                <option value="thermal">Thermal Printer (XP-80C)</option>
-                <option value="pdf">PDF Only</option>
-              </select>
-            </div>
-            {draft.printer_type === 'thermal' && (
-              <div className="grid gap-2">
-                <Label>Paper Size</Label>
-                <select
-                  value={draft.printer_paper_size || '80'}
-                  onChange={(e) => updateDraft('printer_paper_size', e.target.value)}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                >
-                  <option value="80">80mm (XP-80C)</option>
-                  <option value="58">58mm (XP-58C)</option>
-                </select>
-              </div>
-            )}
-            <Button variant="outline" onClick={handleTestPrint}>
-              Test Print
+            <Button variant="outline" size="sm" onClick={() => setIsUserDialogOpen(true)}>
+              <Plus className="h-4 w-4 mr-1" />Add User
             </Button>
-          </CardContent>
-        </Card>
-
-        {/* Notification Settings */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Bell className="h-5 w-5" />
-              Notifications
-            </CardTitle>
-            <CardDescription>Configure alert preferences</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Low Stock Alerts</Label>
-                <p className="text-sm text-muted-foreground">Get notified when stock is low</p>
-              </div>
-              <Switch
-                checked={draft.low_stock_alerts !== 'false'}
-                onCheckedChange={(v) => updateDraft('low_stock_alerts', String(v))}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label>Low Stock Threshold</Label>
-              <Input
-                type="number"
-                value={draft.low_stock_threshold || '10'}
-                onChange={(e) => updateDraft('low_stock_threshold', e.target.value)}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Cloud Sync */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Cloud Sync</CardTitle>
-            <CardDescription>Optional: Sync data with Supabase for backup</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Enable Cloud Sync</Label>
-                <p className="text-sm text-muted-foreground">Backup your data to the cloud</p>
-              </div>
-              <Switch
-                checked={draft.cloud_sync_enabled === 'true'}
-                onCheckedChange={(v) => updateDraft('cloud_sync_enabled', String(v))}
-              />
-            </div>
-            {draft.cloud_sync_enabled === 'true' && (
-              <div className="grid gap-4">
-                <div className="grid gap-2">
-                  <Label>Supabase URL</Label>
-                  <Input
-                    value={draft.supabase_url || ''}
-                    onChange={(e) => updateDraft('supabase_url', e.target.value)}
-                    placeholder="https://your-project.supabase.co"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Supabase Anon Key</Label>
-                  <Input
-                    value={draft.supabase_key || ''}
-                    onChange={(e) => updateDraft('supabase_key', e.target.value)}
-                    placeholder="your-anon-key"
-                  />
-                </div>
+            {usersLoading ? (
+              <p className="text-sm text-muted-foreground">Loading users...</p>
+            ) : users.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No users found</p>
+            ) : (
+              <div className="space-y-2">
+                {users.map((u) => (
+                  <div key={u.id} className="flex items-center justify-between border rounded-lg px-3 py-2">
+                    <div>
+                      <p className="font-medium">{u.name}</p>
+                      <p className="text-xs text-muted-foreground">Created {new Date(u.created_at).toLocaleDateString()}</p>
+                    </div>
+                    <Badge variant={u.role === 'admin' ? 'default' : 'secondary'}>{u.role}</Badge>
+                  </div>
+                ))}
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <CardHeader><CardTitle>Receipt Settings</CardTitle><CardDescription>Customize your receipt appearance</CardDescription></CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <div className="grid gap-2"><Label>Receipt Header</Label><Input value={settings.receiptHeader} onChange={(e) => update('receiptHeader', e.target.value)} /></div>
+                <div className="grid gap-2"><Label>Receipt Footer</Label><Input value={settings.receiptFooter} onChange={(e) => update('receiptFooter', e.target.value)} /></div>
+                <div className="grid gap-2"><Label>Additional Note</Label><Input value={settings.receiptNote} onChange={(e) => update('receiptNote', e.target.value)} /></div>
+              </div>
+              <div className="border rounded-lg p-4 bg-muted/50">
+                <h4 className="font-medium mb-4">Receipt Preview</h4>
+                <div className="bg-white p-4 rounded border text-sm space-y-2">
+                  <div className="text-center font-bold text-lg">{settings.receiptHeader}</div>
+                  <div className="text-center text-muted-foreground">{settings.phone}</div>
+                  <div className="text-center text-muted-foreground">{settings.address}</div>
+                  <div className="border-t my-2" />
+                  <div className="text-center text-muted-foreground">{new Date().toLocaleDateString()}</div>
+                  <div className="border-t my-2" />
+                  <div className="flex justify-between"><span>Milk x2</span><span>{settings.currency} 50.00</span></div>
+                  <div className="flex justify-between"><span>Bread x1</span><span>{settings.currency} 18.00</span></div>
+                  <div className="border-t my-2" />
+                  <div className="flex justify-between font-bold"><span>Total</span><span>{settings.currency} 68.00</span></div>
+                  <div className="text-center text-muted-foreground">Cash</div>
+                  <div className="border-t my-2" />
+                  <div className="text-center text-muted-foreground">{settings.receiptFooter}</div>
+                  <div className="text-center text-xs text-muted-foreground">{settings.receiptNote}</div>
+                </div>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>
-    </div>
-  );
-}
 
-function PrinterIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <polyline points="6 9 6 2 18 2 18 9" />
-      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-      <rect x="6" y="14" width="12" height="8" />
-    </svg>
+      <Dialog open={isUserDialogOpen} onOpenChange={setIsUserDialogOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Add New User</DialogTitle><DialogDescription>Create a new cashier or admin account.</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-4">
+            {userError && <p className="text-sm text-red-500">{userError}</p>}
+            <div className="grid gap-2"><Label>Name</Label><Input value={newUserName} onChange={(e) => setNewUserName(e.target.value)} placeholder="Enter name" /></div>
+            <div className="grid gap-2"><Label>PIN (4-6 digits)</Label><Input type="password" value={newUserPin} onChange={(e) => setNewUserPin(e.target.value)} placeholder="****" maxLength={6} /></div>
+            <div className="grid gap-2"><Label>Role</Label>
+              <Select value={newUserRole} onValueChange={setNewUserRole}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cashier">Cashier</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setIsUserDialogOpen(false); setUserError(null); }}>Cancel</Button>
+            <Button onClick={handleCreateUser}>Create User</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
