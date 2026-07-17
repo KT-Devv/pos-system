@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Search, Edit, Trash2, Package, Tag } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Package, Tag, Barcode, ScanBarcode } from 'lucide-react';
 import { Button } from '@pos/shared/components/button';
 import { Input } from '@pos/shared/components/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@pos/shared/components/card';
@@ -9,6 +9,8 @@ import { Label } from '@pos/shared/components/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@pos/shared/components/select';
 import { formatCurrency } from '@pos/shared/lib/utils';
 import { useProducts } from '@/hooks/useProducts';
+import BarcodeLabel from '@/components/BarcodeLabel';
+import QRScanner from '@/components/QRScanner';
 import type { Product } from '@pos/shared/types';
 
 export default function Products() {
@@ -21,9 +23,12 @@ export default function Products() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [labelProduct, setLabelProduct] = useState<Product | null>(null);
+  const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
+  const [barcodeScanTarget, setBarcodeScanTarget] = useState<'add' | 'edit'>('add');
   const [newProduct, setNewProduct] = useState({
     name: '', category_id: '', cost_price: 0, selling_price: 0, stock: 0,
-    measurement_unit: '', pack_quantity: 0, unit_cost: 0,
+    barcode: '', measurement_unit: '', pack_quantity: 0, unit_cost: 0,
   });
 
   const categoryName = (p: Product) => {
@@ -47,12 +52,13 @@ export default function Products() {
         cost_price: newProduct.cost_price,
         selling_price: newProduct.selling_price,
         stock: newProduct.stock,
+        barcode: newProduct.barcode || null,
         measurement_unit: newProduct.measurement_unit || null,
         pack_quantity: newProduct.pack_quantity || null,
         unit_cost: newProduct.unit_cost || null,
       });
       if (ok) {
-        setNewProduct({ name: '', category_id: '', cost_price: 0, selling_price: 0, stock: 0, measurement_unit: '', pack_quantity: 0, unit_cost: 0 });
+        setNewProduct({ name: '', category_id: '', cost_price: 0, selling_price: 0, stock: 0, barcode: '', measurement_unit: '', pack_quantity: 0, unit_cost: 0 });
         setIsAddDialogOpen(false);
       }
     }
@@ -73,6 +79,7 @@ export default function Products() {
       cost_price: editingProduct.cost_price,
       selling_price: editingProduct.selling_price,
       stock: editingProduct.stock,
+      barcode: editingProduct.barcode,
     });
     if (ok) { setIsEditDialogOpen(false); setEditingProduct(null); }
   };
@@ -86,6 +93,14 @@ export default function Products() {
   const handleDeleteCategory = async (id: string) => {
     if (!confirm('Delete this category? Products in this category will become uncategorized.')) return;
     await deleteCategory(id);
+  };
+
+  const handleBarcodeScan = (code: string) => {
+    if (barcodeScanTarget === 'add') {
+      setNewProduct({ ...newProduct, barcode: code });
+    } else {
+      if (editingProduct) setEditingProduct({ ...editingProduct, barcode: code });
+    }
   };
 
   return (
@@ -132,6 +147,7 @@ export default function Products() {
               <CardContent>
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm"><span className="text-muted-foreground">Category:</span><span>{categoryName(product) || 'Uncategorized'}</span></div>
+                  {product.barcode && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Barcode:</span><span className="font-mono text-xs">{product.barcode}</span></div>}
                   <div className="flex justify-between text-sm"><span className="text-muted-foreground">Cost Price:</span><span>{formatCurrency(product.cost_price)}</span></div>
                   <div className="flex justify-between text-sm"><span className="text-muted-foreground">Selling Price:</span><span className="font-bold">{formatCurrency(product.selling_price)}</span></div>
                   <div className="flex justify-between text-sm"><span className="text-muted-foreground">Profit:</span><span className="text-green-600">{formatCurrency(product.selling_price - product.cost_price)}</span></div>
@@ -139,6 +155,9 @@ export default function Products() {
                 <div className="flex gap-2 mt-4">
                   <Button variant="outline" size="sm" className="flex-1" onClick={() => { setEditingProduct(product); setIsEditDialogOpen(true); }}>
                     <Edit className="h-4 w-4 mr-1" />Edit
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setLabelProduct(product)}>
+                    <Barcode className="h-4 w-4" />
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => handleDeleteProduct(product.id)}><Trash2 className="h-4 w-4" /></Button>
                 </div>
@@ -166,6 +185,21 @@ export default function Products() {
               <div className="grid gap-2"><Label>Selling Price (GHS)</Label><Input type="number" value={newProduct.selling_price || ''} onChange={(e) => setNewProduct({ ...newProduct, selling_price: Number(e.target.value) })} /></div>
             </div>
             <div className="grid gap-2"><Label>Initial Stock</Label><Input type="number" value={newProduct.stock || ''} onChange={(e) => setNewProduct({ ...newProduct, stock: Number(e.target.value) })} /></div>
+            <div className="grid gap-2"><Label>Barcode</Label>
+              <div className="flex gap-2">
+                {newProduct.barcode ? (
+                  <div className="flex items-center gap-2 flex-1 border rounded-md px-3 py-2 text-sm">
+                    <Barcode className="h-4 w-4 text-muted-foreground" />
+                    <span className="font-mono text-xs flex-1">{newProduct.barcode}</span>
+                    <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setNewProduct({ ...newProduct, barcode: '' })}>Remove</Button>
+                  </div>
+                ) : (
+                  <Button variant="outline" className="flex-1" onClick={() => { setBarcodeScanTarget('add'); setIsBarcodeScannerOpen(true); }}>
+                    <ScanBarcode className="h-4 w-4 mr-2" />Scan Barcode
+                  </Button>
+                )}
+              </div>
+            </div>
             <div className="grid gap-3 md:grid-cols-2">
               <div className="grid gap-2"><Label>Quantity / Measure</Label><Input value={newProduct.measurement_unit} onChange={(e) => setNewProduct({ ...newProduct, measurement_unit: e.target.value })} placeholder="e.g. 500g" /></div>
               <div className="grid gap-2"><Label>Quantity in box</Label><Input type="number" value={newProduct.pack_quantity || ''} onChange={(e) => setNewProduct({ ...newProduct, pack_quantity: Number(e.target.value) })} placeholder="e.g. 60" /></div>
@@ -196,6 +230,21 @@ export default function Products() {
                 <div className="grid gap-2"><Label>Selling Price (GHS)</Label><Input type="number" value={editingProduct.selling_price} onChange={(e) => setEditingProduct({ ...editingProduct, selling_price: Number(e.target.value) })} /></div>
               </div>
               <div className="grid gap-2"><Label>Stock</Label><Input type="number" value={editingProduct.stock} onChange={(e) => setEditingProduct({ ...editingProduct, stock: Number(e.target.value) })} /></div>
+              <div className="grid gap-2"><Label>Barcode</Label>
+                <div className="flex gap-2">
+                  {editingProduct.barcode ? (
+                    <div className="flex items-center gap-2 flex-1 border rounded-md px-3 py-2 text-sm">
+                      <Barcode className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-mono text-xs flex-1">{editingProduct.barcode}</span>
+                      <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setEditingProduct({ ...editingProduct, barcode: null })}>Remove</Button>
+                    </div>
+                  ) : (
+                    <Button variant="outline" className="flex-1" onClick={() => { setBarcodeScanTarget('edit'); setIsBarcodeScannerOpen(true); }}>
+                      <ScanBarcode className="h-4 w-4 mr-2" />Scan Barcode
+                    </Button>
+                  )}
+                </div>
+              </div>
             </div>
           )}
           <DialogFooter>
@@ -230,6 +279,14 @@ export default function Products() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <BarcodeLabel
+        open={!!labelProduct}
+        onClose={() => setLabelProduct(null)}
+        product={labelProduct ? { name: labelProduct.name, barcode: labelProduct.barcode, price: labelProduct.selling_price } : null}
+      />
+
+      <QRScanner open={isBarcodeScannerOpen} onClose={() => setIsBarcodeScannerOpen(false)} onScan={handleBarcodeScan} />
     </div>
   );
 }

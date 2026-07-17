@@ -12,6 +12,7 @@ import { api } from '@/lib/ipc';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/hooks/useSettings';
 import { useCreateSale } from '@/hooks/useSales';
+import QRScanner from '@/components/QRScanner';
 
 type PaymentMethod = 'cash' | 'momo' | 'card';
 
@@ -35,6 +36,7 @@ export default function Sales() {
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [lastSaleId, setLastSaleId] = useState<string | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [saleDetail, setSaleDetail] = useState<{
     id: string; total: number; discount: number; payment_method: string; created_at: string; cashier_name: string;
     items: Array<{ product_name: string; quantity: number; price: number }>;
@@ -77,6 +79,20 @@ export default function Sales() {
         setBarcodeInput('');
       } else {
         setCheckoutError('No product found for this barcode');
+      }
+    } catch {
+      setCheckoutError('Barcode lookup failed');
+    }
+  };
+
+  const handleCameraScan = async (code: string) => {
+    setCheckoutError(null);
+    try {
+      const product = await api.products.getByBarcode(code) as Product | null;
+      if (product) {
+        addToCart(product);
+      } else {
+        setCheckoutError(`No product found for barcode: ${code}`);
       }
     } catch {
       setCheckoutError('Barcode lookup failed');
@@ -268,6 +284,7 @@ export default function Sales() {
               onKeyDown={(e) => e.key === 'Enter' && handleBarcodeSearch()}
               className="w-48" />
             <Button variant="outline" onClick={handleBarcodeSearch}><ScanBarcode className="h-4 w-4 mr-1" />Lookup</Button>
+            <Button variant="outline" onClick={() => setIsScannerOpen(true)}><ScanBarcode className="h-4 w-4 mr-1" />Scan</Button>
           </div>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -365,6 +382,7 @@ export default function Sales() {
           </div>
         )}
       </div>
+      <QRScanner open={isScannerOpen} onClose={() => setIsScannerOpen(false)} onScan={handleCameraScan} />
     </div>
   );
 }

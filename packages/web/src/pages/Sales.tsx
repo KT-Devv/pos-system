@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import {
-  Search, Plus, Minus, Trash2, ShoppingCart, CreditCard, Smartphone, Banknote, Receipt,
+  Search, Plus, Minus, Trash2, ShoppingCart, CreditCard, Smartphone, Banknote, Receipt, ScanBarcode,
 } from "lucide-react";
 import { Button } from "@pos/shared/components/button";
 import { Input } from "@pos/shared/components/input";
@@ -13,6 +13,7 @@ import { supabase } from "../lib/supabase";
 import { useCreateSale } from "../hooks/useSales";
 import { useAuth } from "@/contexts/AuthContext";
 import { loadShopSettings } from "../lib/settings";
+import QRScanner from "../components/QRScanner";
 
 type PaymentMethod = "cash" | "momo" | "card";
 
@@ -27,12 +28,14 @@ export default function Sales() {
   const [productsError, setProductsError] = useState<string | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [search, setSearch] = useState("");
+  const [barcodeInput, setBarcodeInput] = useState("");
   const [discount, setDiscount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
     settings.cashEnabled ? "cash" : settings.momoEnabled ? "momo" : "card"
   );
   const [showReceipt, setShowReceipt] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
   const { createSale, creating, error: saleError } = useCreateSale();
 
   const fetchProducts = useCallback(async () => {
@@ -50,6 +53,36 @@ export default function Sales() {
   useEffect(() => {
     fetchProducts();
   }, [fetchProducts]);
+
+  const handleBarcodeSearch = async () => {
+    if (!barcodeInput.trim()) return;
+    setCheckoutError(null);
+    const { data } = await supabase
+      .from("products")
+      .select("*")
+      .or(`barcode.eq.${barcodeInput.trim()},id.eq.${barcodeInput.trim()}`)
+      .single();
+    if (data) {
+      addToCart(data as Product);
+      setBarcodeInput("");
+    } else {
+      setCheckoutError("No product found for this barcode");
+    }
+  };
+
+  const handleCameraScan = async (code: string) => {
+    setCheckoutError(null);
+    const { data } = await supabase
+      .from("products")
+      .select("*")
+      .or(`barcode.eq.${code},id.eq.${code}`)
+      .single();
+    if (data) {
+      addToCart(data as Product);
+    } else {
+      setCheckoutError(`No product found for barcode: ${code}`);
+    }
+  };
 
   const getAvailableStock = (productId: string) => {
     const product = products.find((p) => p.id === productId);
@@ -208,9 +241,19 @@ export default function Sales() {
           <h1 className="text-3xl font-bold">Point of Sale</h1>
           <p className="text-muted-foreground">Select products to add to cart</p>
         </div>
-        <div className="relative mb-6">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search products..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10" />
+        <div className="flex gap-3 mb-6">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Search products..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10" />
+          </div>
+          <div className="flex gap-2">
+            <Input placeholder="Scan barcode (F2)" value={barcodeInput}
+              onChange={(e) => setBarcodeInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleBarcodeSearch()}
+              className="w-48" />
+            <Button variant="outline" onClick={handleBarcodeSearch}><ScanBarcode className="h-4 w-4 mr-1" />Lookup</Button>
+            <Button variant="outline" onClick={() => setIsScannerOpen(true)}><ScanBarcode className="h-4 w-4 mr-1" />Scan</Button>
+          </div>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {filteredProducts.map((product) => (
@@ -325,6 +368,7 @@ export default function Sales() {
           </div>
         )}
       </div>
+      <QRScanner open={isScannerOpen} onClose={() => setIsScannerOpen(false)} onScan={handleCameraScan} />
     </div>
   );
 }
