@@ -61,7 +61,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-6">
-      <Card className="w-full max-w-lg glass-card ring-1 ring-white/10">
+      <Card className="w-full max-w-lg border shadow-lg">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
             {step === 'welcome' && <Store className="h-12 w-12 text-primary" />}
@@ -71,7 +71,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
             {step === 'cloud' && <Cloud className="h-12 w-12 text-primary" />}
             {step === 'complete' && <Check className="h-12 w-12 text-green-500" />}
           </div>
-          <CardTitle className="text-2xl text-white">
+          <CardTitle className="text-2xl">
             {step === 'welcome' && 'Welcome to POS System'}
             {step === 'shop' && 'Shop Information'}
             {step === 'admin' && 'Admin Account'}
@@ -157,10 +157,10 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                     { value: 'pdf', label: 'PDF Only (Save to file)' },
                     { value: 'none', label: 'No Printer' },
                   ].map((option) => (
-                    <label key={option.value} className="flex items-center gap-3 p-3 rounded-lg border border-input bg-[#111214] cursor-pointer hover:border-primary hover:bg-primary/10">
+                    <label key={option.value} className="flex items-center gap-3 p-3 rounded-lg border border-input cursor-pointer hover:border-primary hover:bg-accent">
                       <input type="radio" name="printer" value={option.value} checked={printerType === option.value}
                         onChange={(e) => setPrinterType(e.target.value)} className="accent-primary" />
-                      <span className="text-foreground">{option.label}</span>
+                      <span>{option.label}</span>
                     </label>
                   ))}
                 </div>
@@ -188,19 +188,19 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                 You can set this up later in Settings.
               </p>
               <div className="space-y-2">
-                <label className="flex items-center gap-3 p-3 rounded-lg border border-input bg-[#111214] cursor-pointer hover:border-primary hover:bg-primary/10">
+                <label className="flex items-center gap-3 p-3 rounded-lg border border-input cursor-pointer hover:border-primary hover:bg-accent">
                   <input type="radio" name="cloud" checked={!cloudSync}
                     onChange={() => setCloudSync(false)} className="accent-primary" />
                   <div>
-                    <span className="font-medium text-foreground">No, local only</span>
+                    <span className="font-medium">No, local only</span>
                     <p className="text-sm text-muted-foreground">Data stays on this computer</p>
                   </div>
                 </label>
-                <label className="flex items-center gap-3 p-3 rounded-lg border border-input bg-[#111214] cursor-pointer hover:border-primary hover:bg-primary/10">
+                <label className="flex items-center gap-3 p-3 rounded-lg border border-input cursor-pointer hover:border-primary hover:bg-accent">
                   <input type="radio" name="cloud" checked={cloudSync}
                     onChange={() => setCloudSync(true)} className="accent-primary" />
                   <div>
-                    <span className="font-medium text-foreground">Yes, enable cloud sync</span>
+                    <span className="font-medium">Yes, enable cloud sync</span>
                     <p className="text-sm text-muted-foreground">Backup and multi-device access</p>
                   </div>
                 </label>

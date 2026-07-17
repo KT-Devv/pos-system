@@ -7,10 +7,16 @@ import { Badge } from '@pos/shared/components/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@pos/shared/components/dialog';
 import { Label } from '@pos/shared/components/label';
 import { formatDateTime } from '@pos/shared/lib/utils';
+import type { StockHistory } from '@pos/shared/types';
 import { useStockHistory, useSuppliers, useCreateStockEntry, useInventoryStats } from '@/hooks/useInventory';
 import { api } from '@/lib/ipc';
 
 interface ProductOption { id: string; name: string; }
+
+interface StockHistoryRow extends StockHistory {
+  product_name?: string;
+  supplier_name?: string;
+}
 
 export default function Inventory() {
   const { stockHistory, loading: historyLoading, refetch: refetchHistory } = useStockHistory();
@@ -35,9 +41,10 @@ export default function Inventory() {
     })();
   }, []);
 
-  const filteredStock = stockHistory.filter((entry) =>
-    String(entry.product_id || '').toLowerCase().includes(search.toLowerCase()) ||
-    String(entry.notes || '').toLowerCase().includes(search.toLowerCase())
+  const filteredStock = (stockHistory as StockHistoryRow[]).filter((entry) =>
+    String(entry.product_name || entry.product_id || '').toLowerCase().includes(search.toLowerCase()) ||
+    String(entry.notes || '').toLowerCase().includes(search.toLowerCase()) ||
+    String(entry.supplier_name || '').toLowerCase().includes(search.toLowerCase())
   );
 
   const updateStockEntry = (index: number, updates: Partial<typeof stockEntries[0]>) => {
@@ -135,8 +142,12 @@ export default function Inventory() {
                       {entry.type === 'in' ? <ArrowDownCircle className="h-5 w-5 text-green-600" /> : entry.type === 'out' ? <ArrowUpCircle className="h-5 w-5 text-red-600" /> : <Edit className="h-5 w-5 text-yellow-600" />}
                     </div>
                     <div>
-                      <h4 className="font-medium">{entry.product_id || 'Unknown'}</h4>
-                      <p className="text-sm text-muted-foreground">{entry.notes}</p>
+                      <h4 className="font-medium">{entry.product_name || 'Unknown'}</h4>
+                      <p className="text-sm text-muted-foreground">
+                        {entry.supplier_name && <span className="font-medium">{entry.supplier_name}</span>}
+                        {entry.supplier_name && entry.notes && <span> — </span>}
+                        {entry.notes}
+                      </p>
                     </div>
                   </div>
                   <div className="text-right">

@@ -205,7 +205,7 @@ export default function Dashboard() {
                 {lowStockItems.map((item) => (
                   <div key={item.id} className="flex items-center justify-between border-b pb-2 last:border-0">
                     <p className="font-medium">{item.name}</p>
-                    <Badge variant={item.stock === 0 ? 'destructive' : 'secondary'}>
+                    <Badge variant={item.stock === 0 ? 'destructive' : 'warning'}>
                       {item.stock === 0 ? 'Out of stock' : `${item.stock} left`}
                     </Badge>
                   </div>
