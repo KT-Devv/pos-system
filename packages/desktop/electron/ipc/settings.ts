@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
 import { getDatabase, saveDatabase } from '../db/index.js';
 import { randomUUID } from 'crypto';
-import { queryAll, queryOne, runTransaction, parseLimit, assertPositiveInt } from '../lib/db-helpers.js';
+import { queryAll, queryOne, runTransaction } from '../lib/db-helpers.js';
 import { requireSession, requireAdmin } from '../lib/session.js';
 
 const SECRET_KEYS = new Set(['supabase_key', 'supabase_url']);

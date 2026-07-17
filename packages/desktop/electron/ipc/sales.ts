@@ -10,6 +10,7 @@ import {
   assertNonNegativeNumber,
 } from '../lib/db-helpers.js';
 import { requireSession } from '../lib/session.js';
+import type { SqlValue } from 'sql.js';
 
 interface SaleItemInput {
   product_id: string;
@@ -43,6 +44,14 @@ interface ReportItem {
   sale_id: string;
   product_id: string;
   product_name: string;
+  quantity: number;
+  price: number;
+  cost_price: number;
+}
+
+interface TodaySaleRow {
+  id: string;
+  discount: number;
   quantity: number;
   price: number;
   cost_price: number;
@@ -177,7 +186,7 @@ export function registerSalesHandlers(): void {
                        WHERE si2.sale_id = s.id) as item_names
                FROM sales s LEFT JOIN users u ON s.cashier_id = u.id`;
     const conditions: string[] = [];
-    const params: unknown[] = [];
+    const params: SqlValue[] = [];
 
     if (filters?.startDate) {
       conditions.push('s.created_at >= ?');
@@ -229,8 +238,8 @@ export function registerSalesHandlers(): void {
        JOIN sale_items si ON si.sale_id = s.id
        WHERE date(s.created_at) = ?`,
       [today]
-    ) as Array<ReportSale & ReportItem>;
-    const itemsBySale = new Map<string, ReportItem[]>();
+    ) as unknown as TodaySaleRow[];
+    const itemsBySale = new Map<string, TodaySaleRow[]>();
     for (const row of saleRows) {
       const items = itemsBySale.get(row.id) ?? [];
       items.push(row);
@@ -238,8 +247,8 @@ export function registerSalesHandlers(): void {
     }
     let profit = 0;
     for (const [saleId, items] of itemsBySale) {
-      const sale = items[0] as ReportSale;
-      profit += calculateSaleProfit(sale, items);
+      const sale = items[0] as unknown as ReportSale;
+      profit += calculateSaleProfit(sale, items as unknown as ReportItem[]);
       if (!saleId) continue;
     }
 
@@ -278,7 +287,7 @@ export function registerSalesHandlers(): void {
        WHERE date(s.created_at) BETWEEN date(?) AND date(?)
        ORDER BY s.created_at DESC`,
       [startDate, endDate]
-    ) as ReportSale[];
+    ) as unknown as ReportSale[];
     const items = queryAll(db,
       `SELECT si.sale_id, si.product_id, p.name as product_name,
               si.quantity, si.price, si.cost_price
@@ -287,7 +296,7 @@ export function registerSalesHandlers(): void {
        LEFT JOIN products p ON p.id = si.product_id
        WHERE date(s.created_at) BETWEEN date(?) AND date(?)`,
       [startDate, endDate]
-    ) as ReportItem[];
+    ) as unknown as ReportItem[];
 
     const itemsBySale = new Map<string, ReportItem[]>();
     for (const item of items) {
@@ -337,7 +346,7 @@ export function registerSalesHandlers(): void {
        WHERE date(created_at) BETWEEN date(?) AND date(?)
        GROUP BY payment_method`,
       [startDate, endDate]
-    ) as Array<{ payment_method: string; amount: number }>;
+    ) as unknown as Array<{ payment_method: string; amount: number }>;
     for (const row of paymentRows) paymentTotals.set(row.payment_method, Number(row.amount || 0));
     const paymentTotal = [...paymentTotals.values()].reduce((sum, amount) => sum + amount, 0);
     const paymentMethods = [...paymentTotals.entries()].map(([method, amount]) => ({

@@ -1,6 +1,6 @@
-import type { Database as SqlJsDatabase } from 'sql.js';
+import type { Database as SqlJsDatabase, SqlValue } from 'sql.js';
 
-export function queryAll(db: SqlJsDatabase, sql: string, params: unknown[] = []): Record<string, unknown>[] {
+export function queryAll(db: SqlJsDatabase, sql: string, params: SqlValue[] = []): Record<string, unknown>[] {
   const stmt = db.prepare(sql);
   stmt.bind(params);
   const results: Record<string, unknown>[] = [];
@@ -11,7 +11,7 @@ export function queryAll(db: SqlJsDatabase, sql: string, params: unknown[] = [])
   return results;
 }
 
-export function queryOne(db: SqlJsDatabase, sql: string, params: unknown[] = []): Record<string, unknown> | null {
+export function queryOne(db: SqlJsDatabase, sql: string, params: SqlValue[] = []): Record<string, unknown> | null {
   const results = queryAll(db, sql, params);
   return results[0] || null;
 }

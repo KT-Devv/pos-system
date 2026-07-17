@@ -3,6 +3,7 @@ import { getDatabase, saveDatabase } from '../db/index.js';
 import { randomUUID } from 'crypto';
 import { queryAll, queryOne } from '../lib/db-helpers.js';
 import { requireSession, requireAdmin } from '../lib/session.js';
+import type { SqlValue } from 'sql.js';
 
 export function registerCustomerHandlers(): void {
   ipcMain.handle('customers:list', async (_event, token: string, search?: string) => {
@@ -40,12 +41,12 @@ export function registerCustomerHandlers(): void {
     requireSession(token);
     const db = await getDatabase();
     const fields: string[] = [];
-    const values: unknown[] = [];
+    const values: SqlValue[] = [];
 
     for (const key of ['name', 'phone', 'email', 'loyalty_points']) {
       if (customer[key] !== undefined) {
         fields.push(`${key} = ?`);
-        values.push(customer[key]);
+        values.push(customer[key] as SqlValue);
       }
     }
 

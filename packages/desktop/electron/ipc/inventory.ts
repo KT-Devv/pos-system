@@ -3,6 +3,7 @@ import { getDatabase, saveDatabase } from '../db/index.js';
 import { randomUUID } from 'crypto';
 import { queryAll, queryOne, runTransaction, parseLimit, assertPositiveInt } from '../lib/db-helpers.js';
 import { requireSession, requireAdmin } from '../lib/session.js';
+import type { SqlValue } from 'sql.js';
 
 function applyStockChange(
   db: Awaited<ReturnType<typeof getDatabase>>,
@@ -94,7 +95,7 @@ export function registerInventoryHandlers(): void {
                LEFT JOIN products p ON sh.product_id = p.id
                LEFT JOIN suppliers s ON sh.supplier_id = s.id`;
     const conditions: string[] = [];
-    const params: unknown[] = [];
+    const params: SqlValue[] = [];
 
     if (filters?.product_id) {
       conditions.push('sh.product_id = ?');

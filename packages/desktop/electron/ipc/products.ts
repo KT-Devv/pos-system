@@ -3,6 +3,7 @@ import { getDatabase, saveDatabase } from '../db/index.js';
 import { randomUUID } from 'crypto';
 import { queryAll, queryOne } from '../lib/db-helpers.js';
 import { requireSession, requireAdmin } from '../lib/session.js';
+import type { SqlValue } from 'sql.js';
 
 export function registerProductHandlers(): void {
   ipcMain.handle('products:list', async (_event, token: string, search?: string) => {
@@ -65,13 +66,13 @@ export function registerProductHandlers(): void {
       [
         id,
         name,
-        product.category_id || null,
+        (product.category_id as SqlValue) || null,
         costPrice,
         sellingPrice,
         qtyToRecord,
-        product.barcode || null,
-        product.qr_code || null,
-        product.image || null,
+        (product.barcode as SqlValue) || null,
+        (product.qr_code as SqlValue) || null,
+        (product.image as SqlValue) || null,
       ]
     );
 
@@ -97,12 +98,12 @@ export function registerProductHandlers(): void {
     requireAdmin(token);
     const db = await getDatabase();
     const fields: string[] = [];
-    const values: unknown[] = [];
+    const values: SqlValue[] = [];
 
     for (const key of ['name', 'category_id', 'cost_price', 'selling_price', 'stock', 'barcode', 'qr_code', 'image']) {
       if (product[key] !== undefined) {
         fields.push(`${key} = ?`);
-        values.push(product[key]);
+        values.push(product[key] as SqlValue);
       }
     }
 
