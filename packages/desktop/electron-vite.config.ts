@@ -38,7 +38,7 @@ export default defineConfig({
         input: resolve(__dirname, 'index.html'),
       },
     },
-    plugins: [tailwindcss(), react()],
+    plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
         '@': resolve(__dirname, './src'),
