@@ -48,6 +48,12 @@ export function registerProductHandlers(): void {
   ipcMain.handle('products:create', async (_event, token: string, product: Record<string, unknown>) => {
     requireAdmin(token);
     const db = await getDatabase();
+    const name = String(product.name ?? '').trim();
+    const costPrice = Number(product.cost_price ?? 0);
+    const sellingPrice = Number(product.selling_price ?? 0);
+    if (!name) throw new Error('Product name is required');
+    if (!Number.isFinite(costPrice) || costPrice < 0) throw new Error('Cost price must be a non-negative number');
+    if (!Number.isFinite(sellingPrice) || sellingPrice < 0) throw new Error('Selling price must be a non-negative number');
     const id = randomUUID();
     const initialStock = Math.max(0, Number(product.stock ?? 0));
     const packQuantity = Math.max(0, Number(product.pack_quantity ?? 0));
@@ -58,11 +64,11 @@ export function registerProductHandlers(): void {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
-        product.name,
+        name,
         product.category_id || null,
-        product.cost_price,
-        product.selling_price,
-        0,
+        costPrice,
+        sellingPrice,
+        qtyToRecord,
         product.barcode || null,
         product.qr_code || null,
         product.image || null,
@@ -79,7 +85,7 @@ export function registerProductHandlers(): void {
       db.run(
         `INSERT INTO stock_history (id, product_id, type, quantity, supplier_id, notes)
          VALUES (?, ?, 'in', ?, ?, ?)`,
-        [randomUUID(), id, qtyToRecord, null, noteText || `Initial stock for ${String(product.name)}`]
+        [randomUUID(), id, qtyToRecord, null, noteText || `Initial stock for ${name}`]
       );
     }
 

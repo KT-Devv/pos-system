@@ -13,15 +13,15 @@ function applyStockChange(
   notes: string | null
 ): string {
   const id = randomUUID();
-  const qty = assertPositiveInt(quantity, 'quantity');
 
   if (type === 'out') {
+    const qty = assertPositiveInt(quantity, 'quantity');
     const product = queryOne(db, 'SELECT stock FROM products WHERE id = ?', [productId]);
     if (!product || (product.stock as number) < qty) throw new Error('Insufficient stock');
     db.run(`UPDATE products SET stock = stock - ? WHERE id = ?`, [qty, productId]);
   } else if (type === 'adjustment') {
     const delta = typeof quantity === 'number' ? quantity : parseInt(String(quantity), 10);
-    if (!Number.isFinite(delta) || delta === 0) throw new Error('Invalid adjustment quantity');
+    if (!Number.isInteger(delta) || delta === 0) throw new Error('Invalid adjustment quantity');
     const product = queryOne(db, 'SELECT stock FROM products WHERE id = ?', [productId]);
     if (!product) throw new Error('Product not found');
     if ((product.stock as number) + delta < 0) throw new Error('Adjustment would result in negative stock');
@@ -33,13 +33,21 @@ function applyStockChange(
     );
     return id;
   } else {
+    const qty = assertPositiveInt(quantity, 'quantity');
     db.run(`UPDATE products SET stock = stock + ? WHERE id = ?`, [qty, productId]);
+
+    db.run(
+      `INSERT INTO stock_history (id, product_id, type, quantity, supplier_id, notes)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [id, productId, type, qty, supplierId, notes]
+    );
+    return id;
   }
 
   db.run(
     `INSERT INTO stock_history (id, product_id, type, quantity, supplier_id, notes)
      VALUES (?, ?, ?, ?, ?, ?)`,
-    [id, productId, type, qty, supplierId, notes]
+    [id, productId, type, Math.abs(Number(quantity)), supplierId, notes]
   );
   return id;
 }

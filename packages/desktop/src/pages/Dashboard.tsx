@@ -7,23 +7,12 @@ import {
 } from 'lucide-react';
 import { Badge } from '@pos/shared/components/badge';
 import { formatCurrency } from '@pos/shared/lib/utils';
-import { useTodayStats } from '../hooks/useSales';
-import { useProducts } from '../hooks/useProducts';
-import { useLowStock } from '../hooks/useInventory';
-import { useEffect, useState } from 'react';
-import { api } from '../lib/ipc';
+import { useDashboard } from '../hooks/useDashboard';
 import { useNavigate } from 'react-router-dom';
 
 export default function Dashboard() {
-  const { stats } = useTodayStats();
-  const { products } = useProducts();
-  const { items: lowStock } = useLowStock();
-  const [recentSales, setRecentSales] = useState<any[]>([]);
+  const { stats, recentTransactions, lowStockItems, bestSelling, loading, formatTimeAgo } = useDashboard();
   const navigate = useNavigate();
-
-  useEffect(() => {
-    api.sales.list({ limit: 5 }).then(setRecentSales);
-  }, []);
 
   return (
     <div className="p-8 h-full overflow-auto animate-in slide-in-from-bottom-4 duration-500">
@@ -50,10 +39,10 @@ export default function Dashboard() {
             </div>
           </div>
           <div>
-            <div className="text-3xl font-bold text-white mb-1">{formatCurrency(stats.totalSales)}</div>
+            <div className="text-3xl font-bold text-white mb-1">{loading ? '...' : formatCurrency(stats.todaySales)}</div>
             <p className="text-xs text-muted-foreground flex items-center gap-1">
               <span className="inline-block w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-              {stats.transactionCount} transactions today
+              {stats.salesTrend >= 0 ? '+' : ''}{stats.salesTrend}% from yesterday
             </p>
           </div>
         </div>
@@ -69,9 +58,9 @@ export default function Dashboard() {
             </div>
           </div>
           <div>
-            <div className="text-3xl font-bold text-white mb-1">{formatCurrency(stats.profit)}</div>
+            <div className="text-3xl font-bold text-white mb-1">{loading ? '...' : formatCurrency(stats.todayProfit)}</div>
             <p className="text-xs text-success flex items-center gap-1">
-              Gross profit today
+              {stats.profitTrend >= 0 ? '+' : ''}{stats.profitTrend}% from yesterday
             </p>
           </div>
         </div>
@@ -87,7 +76,7 @@ export default function Dashboard() {
             </div>
           </div>
           <div>
-            <div className="text-3xl font-bold text-white mb-1">{products.length}</div>
+            <div className="text-3xl font-bold text-white mb-1">{loading ? '...' : stats.totalProducts}</div>
             <p className="text-xs text-muted-foreground">Total products</p>
           </div>
         </div>
@@ -103,7 +92,7 @@ export default function Dashboard() {
             </div>
           </div>
           <div>
-            <div className="text-3xl font-bold text-warning mb-1">{lowStock.length}</div>
+            <div className="text-3xl font-bold text-warning mb-1">{loading ? '...' : stats.lowStockCount}</div>
             <p className="text-xs text-muted-foreground">Items need restocking</p>
           </div>
         </div>
@@ -120,25 +109,27 @@ export default function Dashboard() {
           </div>
           <div className="p-6 flex-1">
             <div className="space-y-4">
-              {recentSales.length === 0 ? (
+              {loading ? (
+                <p className="text-muted-foreground">Loading...</p>
+              ) : recentTransactions.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 text-muted-foreground opacity-50">
                   <ShoppingCart className="h-12 w-12 mb-2" />
                   <p>No transactions yet</p>
                 </div>
               ) : (
-                recentSales.map((sale: any) => (
+                recentTransactions.map((sale) => (
                   <div
                     key={sale.id}
                     className="flex items-center justify-between p-3 rounded-xl hover:bg-white/5 transition-colors border border-transparent hover:border-white/5"
                   >
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-medium border border-primary/20">
-                        {sale.cashier_name?.charAt(0).toUpperCase() || 'C'}
+                        {sale.items.charAt(0).toUpperCase() || 'S'}
                       </div>
                       <div>
-                        <p className="font-medium text-white">{sale.cashier_name || 'Cashier'}</p>
+                        <p className="font-medium text-white">{sale.items}</p>
                         <p className="text-xs text-muted-foreground">
-                          {new Date(sale.created_at).toLocaleString()}
+                          {formatTimeAgo(sale.created_at)}
                         </p>
                       </div>
                     </div>
@@ -154,6 +145,35 @@ export default function Dashboard() {
         </div>
 
         <div className="space-y-8">
+          {/* Best Selling Products */}
+          <div className="glass-card rounded-2xl flex flex-col">
+            <div className="p-6 border-b border-white/5">
+              <h3 className="text-lg font-semibold text-white">Best Selling Products</h3>
+            </div>
+            <div className="p-6">
+              {loading ? (
+                <p className="text-muted-foreground">Loading...</p>
+              ) : bestSelling.length === 0 ? (
+                <p className="text-muted-foreground">No sales data yet</p>
+              ) : (
+                <div className="space-y-3">
+                  {bestSelling.map((item, index) => (
+                    <div key={item.name} className="flex items-center justify-between border-b border-white/5 pb-2 last:border-0">
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg font-bold text-muted-foreground">#{index + 1}</span>
+                        <div>
+                          <p className="font-medium text-white">{item.name}</p>
+                          <p className="text-xs text-muted-foreground">{item.quantity} sold</p>
+                        </div>
+                      </div>
+                      <p className="font-bold text-white">{formatCurrency(item.revenue)}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Low Stock Alert */}
           <div className="glass-card rounded-2xl flex flex-col">
             <div className="p-6 border-b border-warning/10 bg-warning/5 rounded-t-2xl">
@@ -164,10 +184,12 @@ export default function Dashboard() {
             </div>
             <div className="p-6">
               <div className="space-y-3">
-                {lowStock.length === 0 ? (
+                {loading ? (
+                  <p className="text-muted-foreground text-center py-4">Loading...</p>
+                ) : lowStockItems.length === 0 ? (
                   <p className="text-muted-foreground text-center py-4">All stock levels are good!</p>
                 ) : (
-                  lowStock.slice(0, 3).map((item: any) => (
+                  lowStockItems.slice(0, 3).map((item) => (
                     <div
                       key={item.id}
                       className="flex items-center justify-between p-3 rounded-xl bg-black/20 border border-white/5"
@@ -175,11 +197,11 @@ export default function Dashboard() {
                       <div>
                         <p className="font-medium text-white">{item.name}</p>
                         <p className="text-xs text-muted-foreground">
-                          {item.category_name || 'No category'}
+                          {item.stock === 0 ? 'Out of stock' : 'Needs restocking'}
                         </p>
                       </div>
-                      <Badge variant={item.stock < 5 ? 'destructive' : 'warning'} className="shadow-lg">
-                        {item.stock} left
+                      <Badge variant={item.stock === 0 ? 'destructive' : 'warning'} className="shadow-lg">
+                        {item.stock === 0 ? 'Out of stock' : `${item.stock} left`}
                       </Badge>
                     </div>
                   ))

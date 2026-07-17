@@ -30,6 +30,7 @@ export interface ElectronAPI {
     getWithItems: (saleId: string) => Promise<unknown>;
     todayStats: () => Promise<unknown>;
     stats: (period: string) => Promise<unknown[]>;
+    report: (period: string, startDate?: string, endDate?: string) => Promise<unknown>;
   };
   inventory: {
     stockIn: (entry: unknown) => Promise<unknown>;
@@ -100,6 +101,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getWithItems: (saleId: string) => invoke('sales:getWithItems', saleId),
     todayStats: () => invoke('sales:todayStats'),
     stats: (period: string) => invoke('sales:stats', period),
+    report: (period: string, startDate?: string, endDate?: string) => invoke('sales:report', { period, startDate, endDate }),
   },
   inventory: {
     stockIn: (entry: unknown) => invoke('inventory:stockIn', entry),

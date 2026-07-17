@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { HashRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { api } from './lib/ipc';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Layout from './layouts/Layout';
@@ -14,11 +14,15 @@ import Login from './pages/Login';
 import SetupWizard from './components/SetupWizard';
 
 function AppContent() {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
 
   if (!user) {
     return <Login />;
   }
+
+  const AdminRoute = ({ children }: { children: React.ReactNode }) => (
+    isAdmin ? <>{children}</> : <Navigate to="/" replace />
+  );
 
   return (
     <HashRouter>
@@ -26,12 +30,13 @@ function AppContent() {
         <Route element={<Layout />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/sales" element={<Sales />} />
-          <Route path="/products" element={<Products />} />
-          <Route path="/inventory" element={<Inventory />} />
+          <Route path="/products" element={<AdminRoute><Products /></AdminRoute>} />
+          <Route path="/inventory" element={<AdminRoute><Inventory /></AdminRoute>} />
           <Route path="/customers" element={<Customers />} />
-          <Route path="/reports" element={<Reports />} />
-          <Route path="/settings" element={<Settings />} />
+          <Route path="/reports" element={<AdminRoute><Reports /></AdminRoute>} />
+          <Route path="/settings" element={<AdminRoute><Settings /></AdminRoute>} />
         </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </HashRouter>
   );

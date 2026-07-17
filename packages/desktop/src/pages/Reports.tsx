@@ -209,6 +209,41 @@ export default function Reports() {
                 )}
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Profit Trend</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {dailySales.length === 0 ? (
+                  <p className="text-muted-foreground">No data available</p>
+                ) : (
+                  <div className="space-y-4">
+                    {dailySales.map((sale) => {
+                      const maxProfit = Math.max(...dailySales.map((item) => item.profit), 1);
+                      return (
+                        <div key={sale.date} className="flex items-center gap-4">
+                          <span className="text-sm text-muted-foreground w-20">
+                            {sale.date.split('-').slice(1).join('-')}
+                          </span>
+                          <div className="flex-1">
+                            <div className="h-4 bg-muted rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-green-500"
+                                style={{ width: `${Math.max(0, (sale.profit / maxProfit) * 100)}%` }}
+                              />
+                            </div>
+                          </div>
+                          <span className="font-bold w-20 text-right">
+                            {formatCurrency(sale.profit)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         </>
       )}

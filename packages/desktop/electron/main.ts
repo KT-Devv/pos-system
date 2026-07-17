@@ -24,6 +24,10 @@ if (!gotLock) {
 }
 
 function createWindow(): void {
+  const iconPath = app.isPackaged
+    ? path.join(__dirname, '../renderer/icon.ico')
+    : path.join(__dirname, '../public/icon.ico');
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -31,12 +35,12 @@ function createWindow(): void {
     minHeight: 700,
     title: 'POS System',
     webPreferences: {
-      preload: path.join(__dirname, '../preload/preload.mjs'),
+      preload: path.join(__dirname, '../preload/preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
     },
-    icon: path.join(__dirname, '../public/icon.png'),
+    icon: iconPath,
     show: false,
   });
 

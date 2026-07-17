@@ -23,6 +23,12 @@ export default defineConfig({
       lib: {
         entry: resolve(__dirname, 'electron/preload.ts'),
       },
+      rollupOptions: {
+        output: {
+          format: 'cjs',
+          entryFileNames: '[name].js'
+        }
+      }
     },
   },
   renderer: {

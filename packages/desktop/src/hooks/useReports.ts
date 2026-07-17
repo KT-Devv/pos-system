@@ -38,23 +38,11 @@ export interface PaymentMethodSummary {
 
 export async function querySalesSummary(options: SalesQueryOptions = {}) {
   const period = options.period ?? 'daily';
-  const data = await api.sales.stats(period);
-  const stats = Array.isArray(data) ? data : [];
-  return {
-    periodData: {
-      sales: stats.reduce((sum: number, item: any) => sum + Number(item.totalSales ?? 0), 0),
-      profit: 0,
-      transactions: stats.reduce((sum: number, item: any) => sum + Number(item.transactionCount ?? 0), 0),
-      averageSale: 0,
-    },
-    topProducts: [] as TopProduct[],
-    dailySales: stats.map((item: any) => ({
-      date: item.period,
-      total: Number(item.totalSales ?? 0),
-      profit: 0,
-      transactions: Number(item.transactionCount ?? 0),
-    })),
-    paymentMethods: [] as PaymentMethodSummary[],
+  return await api.sales.report(period, options.startDate, options.endDate) as {
+    periodData: PeriodData;
+    topProducts: TopProduct[];
+    dailySales: DailySaleSummary[];
+    paymentMethods: PaymentMethodSummary[];
   };
 }
 
