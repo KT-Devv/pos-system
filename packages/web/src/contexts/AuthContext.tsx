@@ -13,7 +13,6 @@ interface AuthContextType {
   user: User | null;
   profile: UserProfile | null;
   loading: boolean;
-  isAdmin: boolean;
   login: (email: string, password: string) => Promise<string | null>;
   signup: (email: string, password: string, name: string) => Promise<string | null>;
   logout: () => Promise<void>;
@@ -26,43 +25,24 @@ async function fetchProfile(userId: string): Promise<UserProfile | null> {
     .from('users')
     .select('id, name, email, role')
     .eq('id', userId)
-    .maybeSingle();
+    .single();
   if (error) return null;
   return data;
-}
-
-async function hasNoUsers(): Promise<boolean> {
-  const { count, error } = await supabase
-    .from('users')
-    .select('id', { count: 'exact', head: true });
-
-  if (error) {
-    return false;
-  }
-  return (count ?? 0) === 0;
-}
-
-function getReadableError(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === 'string') return error;
-  return 'Unexpected error while setting up your profile';
 }
 
 async function ensureProfile(user: User, name?: string): Promise<UserProfile | null> {
   let profile = await fetchProfile(user.id);
   if (!profile) {
     const displayName = name || user.email?.split('@')[0] || 'User';
-    const role = (await hasNoUsers()) ? 'admin' : 'cashier';
     const { error } = await supabase.from('users').insert({
       id: user.id,
       name: displayName,
       email: user.email || '',
-      role,
+      role: 'admin',
     });
-    if (error) {
-      throw new Error(`Profile creation failed: ${error.message}`);
+    if (!error) {
+      profile = await fetchProfile(user.id);
     }
-    profile = await fetchProfile(user.id);
   }
   return profile;
 }
@@ -75,6 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let isMounted = true;
 
+    // Helper to load profile and update state
     async function handleSession(session: Session | null) {
       const authUser = session?.user ?? null;
       if (!isMounted) return;
@@ -95,8 +76,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (isMounted) setLoading(false);
     }
 
+    // 1. Get the current session first
     supabase.auth.getSession()
-      .then(({ data: { session } }) => handleSession(session))
+      .then(({ data: { session } }) => {
+        handleSession(session);
+      })
       .catch(() => {
         if (isMounted) {
           setUser(null);
@@ -105,6 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       });
 
+    // 2. Listen for auth state changes (login, logout, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         handleSession(session).catch(() => {});
@@ -120,9 +105,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string): Promise<string | null> => {
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      return error?.message ?? null;
+      if (error) return error.message;
+      // onAuthStateChange will handle setting user/profile
+      return null;
     } catch (e: unknown) {
-      return e instanceof Error ? e.message : 'An unexpected error occurred';
+      const msg = e instanceof Error ? e.message : 'An unexpected error occurred';
+      return msg;
     }
   };
 
@@ -131,41 +119,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { display_name: name } },
+        options: {
+          data: { display_name: name },
+        },
       });
       if (error) return error.message;
-      if (data.user && !data.session) return '__confirm_email__';
-      if (data.user && data.session) {
-        try {
-          await ensureProfile(data.user, name);
-        } catch (e) {
-          return getReadableError(e);
-        }
+
+      // If email confirmation is required, user won't have a session yet
+      if (data.user && !data.session) {
+        return '__confirm_email__';
       }
+
+      // If auto-confirmed, ensure profile is created
+      if (data.user && data.session) {
+        await ensureProfile(data.user, name).catch(() => {});
+      }
+
       return null;
     } catch (e: unknown) {
-      return e instanceof Error ? e.message : 'An unexpected error occurred';
+      const msg = e instanceof Error ? e.message : 'An unexpected error occurred';
+      return msg;
     }
   };
 
   const logout = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (!error) {
-      setUser(null);
-      setProfile(null);
-    }
+    await supabase.auth.signOut();
+    setUser(null);
+    setProfile(null);
   };
 
   return (
-    <AuthContext.Provider value={{
-      user,
-      profile,
-      loading,
-      isAdmin: profile?.role === 'admin',
-      login,
-      signup,
-      logout,
-    }}>
+    <AuthContext.Provider value={{ user, profile, loading, login, signup, logout }}>
       {children}
     </AuthContext.Provider>
   );

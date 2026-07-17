@@ -1,111 +1,63 @@
 import { useState, useEffect, useCallback } from 'react';
-import { api } from '@/lib/ipc';
-import type { StockHistory, Supplier } from '@pos/shared/types';
+import { api } from '../lib/ipc';
 
-export function useStockHistory() {
-  const [stockHistory, setStockHistory] = useState<StockHistory[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchStockHistory = useCallback(async () => {
-    try {
-      const data = await api.inventory.history() as StockHistory[];
-      setStockHistory(data || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch stock history');
-    }
-  }, []);
-
-  useEffect(() => {
-    const init = async () => {
-      setLoading(true);
-      await fetchStockHistory();
-      setLoading(false);
-    };
-    init();
-  }, [fetchStockHistory]);
-
-  return { stockHistory, loading, error, refetch: fetchStockHistory };
+export interface StockEntry {
+  id: string;
+  product_id: string;
+  product_name: string;
+  type: 'in' | 'out' | 'adjustment';
+  quantity: number;
+  supplier_id: string | null;
+  supplier_name: string | null;
+  notes: string | null;
+  created_at: string;
 }
 
-export function useSuppliers() {
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+export interface LowStockProduct {
+  id: string;
+  name: string;
+  stock: number;
+  category_name: string | null;
+}
+
+export function useStockHistory(productId?: string) {
+  const [history, setHistory] = useState<StockEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchSuppliers = useCallback(async () => {
+  const refresh = useCallback(async () => {
     setLoading(true);
-    const data = await api.suppliers.list() as Supplier[];
-    setSuppliers(data || []);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { fetchSuppliers(); }, [fetchSuppliers]);
-
-  return { suppliers, loading, refetch: fetchSuppliers };
-}
-
-export function useInventoryStats() {
-  const [stats, setStats] = useState({ totalProducts: 0, lowStock: 0, outOfStock: 0 });
-  const [loading, setLoading] = useState(true);
+    try {
+      const data = await api.inventory.history({ product_id: productId, limit: 100 });
+      setHistory(data as StockEntry[]);
+    } finally {
+      setLoading(false);
+    }
+  }, [productId]);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const productStats = await api.products.stats() as { total: number; lowStock: number; outOfStock: number };
-        setStats({ totalProducts: productStats.total, lowStock: productStats.lowStock, outOfStock: productStats.outOfStock });
-      } catch {
-        // keep defaults
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+    refresh();
+  }, [refresh]);
 
-  return { stats, loading };
+  return { history, loading, refresh };
 }
 
-export function useCreateStockEntry() {
-  const [creating, setCreating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export function useLowStock() {
+  const [items, setItems] = useState<LowStockProduct[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const createStockEntry = useCallback(async (entry: {
-    product_id: string;
-    type: 'in' | 'out' | 'adjustment';
-    quantity: number;
-    supplier_id?: string | null;
-    notes?: string | null;
-  }) => {
-    setCreating(true);
-    setError(null);
+  const refresh = useCallback(async () => {
+    setLoading(true);
     try {
-      if (entry.type === 'in') {
-        await api.inventory.stockIn({
-          product_id: entry.product_id,
-          quantity: Math.abs(entry.quantity),
-          supplier_id: entry.supplier_id || undefined,
-          notes: entry.notes || undefined,
-        });
-      } else if (entry.type === 'out') {
-        await api.inventory.stockOut({
-          product_id: entry.product_id,
-          quantity: Math.abs(entry.quantity),
-          notes: entry.notes || undefined,
-        });
-      } else {
-        await api.inventory.adjust({
-          product_id: entry.product_id,
-          quantity: entry.quantity,
-          notes: entry.notes || undefined,
-        });
-      }
-      return true;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create stock entry');
-      return false;
+      const data = await api.inventory.lowStock();
+      setItems(data as LowStockProduct[]);
     } finally {
-      setCreating(false);
+      setLoading(false);
     }
   }, []);
 
-  return { createStockEntry, creating, error };
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { items, loading, refresh };
 }

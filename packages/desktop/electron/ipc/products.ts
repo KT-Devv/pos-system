@@ -1,13 +1,25 @@
 import { ipcMain } from 'electron';
 import { getDatabase, saveDatabase } from '../db/index.js';
 import { randomUUID } from 'crypto';
-import { queryAll, queryOne } from '../lib/db-helpers.js';
-import { requireSession, requireAdmin } from '../lib/session.js';
-import type { SqlValue } from 'sql.js';
+
+function queryAll(db: any, sql: string, params: any[] = []): any[] {
+  const stmt = db.prepare(sql);
+  stmt.bind(params);
+  const results: any[] = [];
+  while (stmt.step()) {
+    results.push(stmt.getAsObject());
+  }
+  stmt.free();
+  return results;
+}
+
+function queryOne(db: any, sql: string, params: any[] = []): any {
+  const results = queryAll(db, sql, params);
+  return results[0] || null;
+}
 
 export function registerProductHandlers(): void {
-  ipcMain.handle('products:list', async (_event, token: string, search?: string) => {
-    requireSession(token);
+  ipcMain.handle('products:list', async (_event, search?: string) => {
     const db = await getDatabase();
     if (search) {
       return queryAll(db,
@@ -25,87 +37,51 @@ export function registerProductHandlers(): void {
     );
   });
 
-  ipcMain.handle('products:get', async (_event, token: string, id: string) => {
-    requireSession(token);
-    const db = await getDatabase();
-    return queryOne(db,
-      `SELECT p.*, c.name as category_name FROM products p
-       LEFT JOIN categories c ON p.category_id = c.id WHERE p.id = ?`,
-      [id]
-    );
-  });
-
-  ipcMain.handle('products:getByBarcode', async (_event, token: string, code: string) => {
-    requireSession(token);
+  ipcMain.handle('products:get', async (_event, id: string) => {
     const db = await getDatabase();
     return queryOne(db,
       `SELECT p.*, c.name as category_name FROM products p
        LEFT JOIN categories c ON p.category_id = c.id
-       WHERE p.barcode = ? OR p.id = ?`,
-      [code, code]
+       WHERE p.id = ?`,
+      [id]
     );
   });
 
-  ipcMain.handle('products:create', async (_event, token: string, product: Record<string, unknown>) => {
-    requireAdmin(token);
+  ipcMain.handle('products:getByBarcode', async (_event, barcode: string) => {
     const db = await getDatabase();
-    const name = String(product.name ?? '').trim();
-    const costPrice = Number(product.cost_price ?? 0);
-    const sellingPrice = Number(product.selling_price ?? 0);
-    if (!name) throw new Error('Product name is required');
-    if (!Number.isFinite(costPrice) || costPrice < 0) throw new Error('Cost price must be a non-negative number');
-    if (!Number.isFinite(sellingPrice) || sellingPrice < 0) throw new Error('Selling price must be a non-negative number');
-    const id = randomUUID();
-    const initialStock = Math.max(0, Number(product.stock ?? 0));
-    const packQuantity = Math.max(0, Number(product.pack_quantity ?? 0));
-    const qtyToRecord = initialStock > 0 ? initialStock : packQuantity;
+    return queryOne(db,
+      `SELECT p.*, c.name as category_name FROM products p
+       LEFT JOIN categories c ON p.category_id = c.id
+       WHERE p.barcode = ?`,
+      [barcode]
+    );
+  });
 
+  ipcMain.handle('products:create', async (_event, product: any) => {
+    const db = await getDatabase();
+    const id = randomUUID();
     db.run(
       `INSERT INTO products (id, name, category_id, cost_price, selling_price, stock, barcode, qr_code, image)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id,
-        name,
-        (product.category_id as SqlValue) || null,
-        costPrice,
-        sellingPrice,
-        qtyToRecord,
-        (product.barcode as SqlValue) || null,
-        (product.qr_code as SqlValue) || null,
-        (product.image as SqlValue) || null,
-      ]
+      [id, product.name, product.category_id || null, product.cost_price, product.selling_price, product.stock || 0, product.barcode || null, product.qr_code || null, product.image || null]
     );
-
-    if (qtyToRecord > 0) {
-      const detailParts = [
-        product.measurement_unit?.toString().trim() || null,
-        product.pack_quantity ? `pack ${product.pack_quantity}` : null,
-        product.unit_cost != null ? `unit cost ${product.unit_cost}` : null,
-      ].filter(Boolean) as string[];
-      const noteText = detailParts.length > 0 ? detailParts.join(' • ') : null;
-      db.run(
-        `INSERT INTO stock_history (id, product_id, type, quantity, supplier_id, notes)
-         VALUES (?, ?, 'in', ?, ?, ?)`,
-        [randomUUID(), id, qtyToRecord, null, noteText || `Initial stock for ${name}`]
-      );
-    }
-
     saveDatabase();
     return queryOne(db, 'SELECT * FROM products WHERE id = ?', [id]);
   });
 
-  ipcMain.handle('products:update', async (_event, token: string, id: string, product: Record<string, unknown>) => {
-    requireAdmin(token);
+  ipcMain.handle('products:update', async (_event, id: string, product: any) => {
     const db = await getDatabase();
     const fields: string[] = [];
-    const values: SqlValue[] = [];
+    const values: any[] = [];
 
-    for (const key of ['name', 'category_id', 'cost_price', 'selling_price', 'stock', 'barcode', 'qr_code', 'image']) {
-      if (product[key] !== undefined) {
-        fields.push(`${key} = ?`);
-        values.push(product[key] as SqlValue);
-      }
-    }
+    if (product.name !== undefined) { fields.push('name = ?'); values.push(product.name); }
+    if (product.category_id !== undefined) { fields.push('category_id = ?'); values.push(product.category_id); }
+    if (product.cost_price !== undefined) { fields.push('cost_price = ?'); values.push(product.cost_price); }
+    if (product.selling_price !== undefined) { fields.push('selling_price = ?'); values.push(product.selling_price); }
+    if (product.stock !== undefined) { fields.push('stock = ?'); values.push(product.stock); }
+    if (product.barcode !== undefined) { fields.push('barcode = ?'); values.push(product.barcode); }
+    if (product.qr_code !== undefined) { fields.push('qr_code = ?'); values.push(product.qr_code); }
+    if (product.image !== undefined) { fields.push('image = ?'); values.push(product.image); }
 
     if (fields.length > 0) {
       values.push(id);
@@ -115,30 +91,18 @@ export function registerProductHandlers(): void {
     return queryOne(db, 'SELECT * FROM products WHERE id = ?', [id]);
   });
 
-  ipcMain.handle('products:delete', async (_event, token: string, id: string) => {
-    requireAdmin(token);
+  ipcMain.handle('products:delete', async (_event, id: string) => {
     const db = await getDatabase();
-    try {
-      db.run('DELETE FROM products WHERE id = ?', [id]);
-      saveDatabase();
-    } catch {
-      throw new Error('Cannot delete product: it may be referenced by past sales');
-    }
+    db.run('DELETE FROM products WHERE id = ?', [id]);
+    saveDatabase();
     return { success: true };
   });
 
-  ipcMain.handle('products:stats', async (_event, token: string) => {
-    requireSession(token);
+  ipcMain.handle('products:stats', async () => {
     const db = await getDatabase();
     const total = queryOne(db, 'SELECT COUNT(*) as count FROM products');
-    const lowStock = queryOne(db,
-      `SELECT COUNT(*) as count FROM products WHERE stock <= CAST((SELECT value FROM settings WHERE key = 'low_stock_threshold') AS INTEGER) AND stock > 0`
-    );
+    const lowStock = queryOne(db, `SELECT COUNT(*) as count FROM products WHERE stock <= CAST((SELECT value FROM settings WHERE key = 'low_stock_threshold') AS INTEGER)`);
     const outOfStock = queryOne(db, 'SELECT COUNT(*) as count FROM products WHERE stock = 0');
-    return {
-      total: total?.count || 0,
-      lowStock: lowStock?.count || 0,
-      outOfStock: outOfStock?.count || 0,
-    };
+    return { total: total?.count || 0, lowStock: lowStock?.count || 0, outOfStock: outOfStock?.count || 0 };
   });
 }

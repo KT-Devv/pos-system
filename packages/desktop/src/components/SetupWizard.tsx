@@ -25,21 +25,8 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
   const [cloudSync, setCloudSync] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const [setupError, setSetupError] = useState<string | null>(null);
-
   const handleComplete = async () => {
-    if (adminPin.length < 4) {
-      setSetupError('PIN must be at least 4 digits');
-      return;
-    }
-
-    if (typeof window === 'undefined' || !window.electronAPI) {
-      setSetupError('This wizard only works inside the desktop app. Open the Electron client instead of the web preview.');
-      return;
-    }
-
     setLoading(true);
-    setSetupError(null);
     try {
       await api.settings.setup({
         shop_name: shopName,
@@ -51,17 +38,15 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
         printer_type: printerType,
         printer_paper_size: paperSize,
       });
-      setStep('complete');
-    } catch (e) {
-      setSetupError(e instanceof Error ? e.message : 'Setup failed');
+      onComplete();
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-6">
-      <Card className="w-full max-w-lg border shadow-lg">
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-6">
+      <Card className="w-full max-w-lg">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
             {step === 'welcome' && <Store className="h-12 w-12 text-primary" />}
@@ -157,7 +142,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                     { value: 'pdf', label: 'PDF Only (Save to file)' },
                     { value: 'none', label: 'No Printer' },
                   ].map((option) => (
-                    <label key={option.value} className="flex items-center gap-3 p-3 rounded-lg border border-input cursor-pointer hover:border-primary hover:bg-accent">
+                    <label key={option.value} className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent">
                       <input type="radio" name="printer" value={option.value} checked={printerType === option.value}
                         onChange={(e) => setPrinterType(e.target.value)} className="accent-primary" />
                       <span>{option.label}</span>
@@ -188,7 +173,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                 You can set this up later in Settings.
               </p>
               <div className="space-y-2">
-                <label className="flex items-center gap-3 p-3 rounded-lg border border-input cursor-pointer hover:border-primary hover:bg-accent">
+                <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent">
                   <input type="radio" name="cloud" checked={!cloudSync}
                     onChange={() => setCloudSync(false)} className="accent-primary" />
                   <div>
@@ -196,7 +181,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                     <p className="text-sm text-muted-foreground">Data stays on this computer</p>
                   </div>
                 </label>
-                <label className="flex items-center gap-3 p-3 rounded-lg border border-input cursor-pointer hover:border-primary hover:bg-accent">
+                <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent">
                   <input type="radio" name="cloud" checked={cloudSync}
                     onChange={() => setCloudSync(true)} className="accent-primary" />
                   <div>
@@ -205,7 +190,6 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                   </div>
                 </label>
               </div>
-              {setupError && <p className="text-sm text-red-500">{setupError}</p>}
               <Button className="w-full" onClick={handleComplete} disabled={loading}>
                 {loading ? 'Setting up...' : 'Complete Setup'}
               </Button>

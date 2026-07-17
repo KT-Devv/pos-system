@@ -1,13 +1,25 @@
 import { ipcMain } from 'electron';
 import { getDatabase, saveDatabase } from '../db/index.js';
 import { randomUUID } from 'crypto';
-import { queryAll, queryOne } from '../lib/db-helpers.js';
-import { requireSession, requireAdmin } from '../lib/session.js';
-import type { SqlValue } from 'sql.js';
+
+function queryAll(db: any, sql: string, params: any[] = []): any[] {
+  const stmt = db.prepare(sql);
+  stmt.bind(params);
+  const results: any[] = [];
+  while (stmt.step()) {
+    results.push(stmt.getAsObject());
+  }
+  stmt.free();
+  return results;
+}
+
+function queryOne(db: any, sql: string, params: any[] = []): any {
+  const results = queryAll(db, sql, params);
+  return results[0] || null;
+}
 
 export function registerCustomerHandlers(): void {
-  ipcMain.handle('customers:list', async (_event, token: string, search?: string) => {
-    requireSession(token);
+  ipcMain.handle('customers:list', async (_event, search?: string) => {
     const db = await getDatabase();
     if (search) {
       return queryAll(db,
@@ -18,15 +30,12 @@ export function registerCustomerHandlers(): void {
     return queryAll(db, 'SELECT * FROM customers ORDER BY name');
   });
 
-  ipcMain.handle('customers:get', async (_event, token: string, id: string) => {
-    requireSession(token);
+  ipcMain.handle('customers:get', async (_event, id: string) => {
     const db = await getDatabase();
     return queryOne(db, 'SELECT * FROM customers WHERE id = ?', [id]);
   });
 
-  ipcMain.handle('customers:create', async (_event, token: string, customer: { name: string; phone?: string; email?: string }) => {
-    requireSession(token);
-    if (!customer.name?.trim()) throw new Error('Customer name is required');
+  ipcMain.handle('customers:create', async (_event, customer: any) => {
     const db = await getDatabase();
     const id = randomUUID();
     db.run(
@@ -37,18 +46,15 @@ export function registerCustomerHandlers(): void {
     return queryOne(db, 'SELECT * FROM customers WHERE id = ?', [id]);
   });
 
-  ipcMain.handle('customers:update', async (_event, token: string, id: string, customer: Record<string, unknown>) => {
-    requireSession(token);
+  ipcMain.handle('customers:update', async (_event, id: string, customer: any) => {
     const db = await getDatabase();
     const fields: string[] = [];
-    const values: SqlValue[] = [];
+    const values: any[] = [];
 
-    for (const key of ['name', 'phone', 'email', 'loyalty_points']) {
-      if (customer[key] !== undefined) {
-        fields.push(`${key} = ?`);
-        values.push(customer[key] as SqlValue);
-      }
-    }
+    if (customer.name !== undefined) { fields.push('name = ?'); values.push(customer.name); }
+    if (customer.phone !== undefined) { fields.push('phone = ?'); values.push(customer.phone); }
+    if (customer.email !== undefined) { fields.push('email = ?'); values.push(customer.email); }
+    if (customer.loyalty_points !== undefined) { fields.push('loyalty_points = ?'); values.push(customer.loyalty_points); }
 
     if (fields.length > 0) {
       values.push(id);
@@ -58,8 +64,7 @@ export function registerCustomerHandlers(): void {
     return queryOne(db, 'SELECT * FROM customers WHERE id = ?', [id]);
   });
 
-  ipcMain.handle('customers:delete', async (_event, token: string, id: string) => {
-    requireAdmin(token);
+  ipcMain.handle('customers:delete', async (_event, id: string) => {
     const db = await getDatabase();
     db.run('DELETE FROM customers WHERE id = ?', [id]);
     saveDatabase();

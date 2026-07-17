@@ -10,40 +10,40 @@ import Reports from "@/pages/Reports";
 import Settings from "@/pages/Settings";
 import Login from "@/pages/Login";
 
-function LoadingScreen() {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-    </div>
-  );
-}
-
 function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { user, profile, loading } = useAuth();
+  const { user, loading } = useAuth();
 
-  if (loading) return <LoadingScreen />;
-  if (!user) return <Navigate to="/login" replace />;
-  if (!profile) {
+  if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100 p-6">
-        <p className="text-red-600 text-center">Unable to load your profile. Contact an administrator.</p>
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
       </div>
     );
   }
-  return <>{children}</>;
-}
 
-function AdminGuard({ children }: { children: React.ReactNode }) {
-  const { isAdmin, loading } = useAuth();
-  if (loading) return <LoadingScreen />;
-  if (!isAdmin) return <Navigate to="/" replace />;
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
   return <>{children}</>;
 }
 
 function LoginGuard({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-  if (loading) return <LoadingScreen />;
-  if (user) return <Navigate to="/" replace />;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
+
+  // Already logged in — send them to dashboard
+  if (user) {
+    return <Navigate to="/" replace />;
+  }
+
   return <>{children}</>;
 }
 
@@ -56,11 +56,11 @@ export default function App() {
           <Route element={<AuthGuard><Layout /></AuthGuard>}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/sales" element={<Sales />} />
+            <Route path="/products" element={<Products />} />
+            <Route path="/inventory" element={<Inventory />} />
             <Route path="/customers" element={<Customers />} />
-            <Route path="/products" element={<AdminGuard><Products /></AdminGuard>} />
-            <Route path="/inventory" element={<AdminGuard><Inventory /></AdminGuard>} />
-            <Route path="/reports" element={<AdminGuard><Reports /></AdminGuard>} />
-            <Route path="/settings" element={<AdminGuard><Settings /></AdminGuard>} />
+            <Route path="/reports" element={<Reports />} />
+            <Route path="/settings" element={<Settings />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabase";
-import { getLowStockThreshold } from "../lib/settings";
 
 export interface StockHistoryRow {
   id: string;
@@ -58,21 +57,19 @@ export function useSuppliers() {
   const [suppliers, setSuppliers] = useState<SupplierRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchSuppliers = useCallback(async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from("suppliers")
-      .select("*")
-      .order("name");
-    setSuppliers(data || []);
-    setLoading(false);
+  useEffect(() => {
+    const fetch = async () => {
+      const { data } = await supabase
+        .from("suppliers")
+        .select("*")
+        .order("name");
+      setSuppliers(data || []);
+      setLoading(false);
+    };
+    fetch();
   }, []);
 
-  useEffect(() => {
-    fetchSuppliers();
-  }, [fetchSuppliers]);
-
-  return { suppliers, loading, refetch: fetchSuppliers };
+  return { suppliers, loading };
 }
 
 export function useCreateStockEntry() {
@@ -85,50 +82,12 @@ export function useCreateStockEntry() {
     quantity: number;
     supplier_id?: string | null;
     notes?: string | null;
-    measurement_unit?: string | null;
-    pack_quantity?: number | null;
-    unit_cost?: number | null;
   }) => {
     setCreating(true);
     setError(null);
     try {
-      const detailParts = [
-        entry.measurement_unit?.trim() || null,
-        entry.pack_quantity ? `pack ${entry.pack_quantity}` : null,
-        entry.unit_cost != null ? `unit cost ${entry.unit_cost}` : null,
-      ].filter(Boolean) as string[];
-      const detailText = detailParts.length > 0 ? detailParts.join(" • ") : null;
-      const noteText = [entry.notes?.trim() || null, detailText].filter(Boolean).join(" • ");
-
-      const { error: insertError } = await supabase.from("stock_history").insert({
-        product_id: entry.product_id,
-        type: entry.type,
-        quantity: Math.abs(entry.quantity || 0),
-        supplier_id: entry.supplier_id || null,
-        notes: noteText || null,
-      });
-      if (insertError) throw insertError;
-
-      if (entry.type === "in") {
-        const { data: productData, error: fetchError } = await supabase
-          .from("products")
-          .select("stock, cost_price")
-          .eq("id", entry.product_id)
-          .single();
-        if (fetchError) throw fetchError;
-
-        const currentStock = Number(productData?.stock ?? 0);
-        const currentCost = Number(productData?.cost_price ?? 0);
-        const nextStock = currentStock + Math.abs(entry.quantity || 0);
-        const nextCost = entry.unit_cost != null && entry.unit_cost >= 0 ? Number(entry.unit_cost) : currentCost;
-
-        const { error: updateError } = await supabase
-          .from("products")
-          .update({ stock: nextStock, cost_price: nextCost })
-          .eq("id", entry.product_id);
-        if (updateError) throw updateError;
-      }
-
+      const { error } = await supabase.from("stock_history").insert(entry);
+      if (error) throw error;
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create stock entry");
@@ -153,7 +112,7 @@ export function useInventoryStats() {
         const products = (data || []) as { stock: number }[];
         setStats({
           totalProducts: products.length,
-          lowStock: products.filter((p) => p.stock > 0 && p.stock <= getLowStockThreshold()).length,
+          lowStock: products.filter((p) => p.stock > 0 && p.stock <= 10).length,
           outOfStock: products.filter((p) => p.stock === 0).length,
         });
       } catch {

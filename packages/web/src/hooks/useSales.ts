@@ -1,5 +1,50 @@
-import { useState, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabase";
+
+export interface SaleRow {
+  id: string;
+  cashier_id: string;
+  total: number;
+  discount: number;
+  payment_method: "cash" | "momo" | "card";
+  created_at: string;
+  users?: { name: string } | null;
+  sale_items?: {
+    id: string;
+    product_id: string;
+    quantity: number;
+    price: number;
+  }[];
+}
+
+export function useRecentSales(limit = 5) {
+  const [sales, setSales] = useState<SaleRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchSales = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from("sales")
+        .select("*, users(name), sale_items(id, product_id, quantity, price)")
+        .order("created_at", { ascending: false })
+        .limit(limit);
+
+      if (error) throw error;
+      setSales(data || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch sales");
+    } finally {
+      setLoading(false);
+    }
+  }, [limit]);
+
+  useEffect(() => {
+    fetchSales();
+  }, [fetchSales]);
+
+  return { sales, loading, error, refetch: fetchSales };
+}
 
 export function useCreateSale() {
   const [creating, setCreating] = useState(false);
@@ -15,23 +60,33 @@ export function useCreateSale() {
     setCreating(true);
     setError(null);
     try {
-      const { data: saleId, error: rpcError } = await supabase.rpc("create_sale", {
-        p_cashier_id: cashierId,
-        p_total: total,
-        p_discount: discount,
-        p_payment_method: paymentMethod,
-        p_items: items,
-      });
-
-      if (rpcError) throw rpcError;
-
-      const { data: sale, error: fetchError } = await supabase
+      const { data: sale, error: saleError } = await supabase
         .from("sales")
-        .select("*")
-        .eq("id", saleId)
+        .insert({
+          cashier_id: cashierId,
+          total,
+          discount,
+          payment_method: paymentMethod,
+        })
+        .select()
         .single();
 
-      if (fetchError) throw fetchError;
+      if (saleError) throw saleError;
+
+      const saleItems = items.map((item) => ({
+        sale_id: sale.id,
+        product_id: item.product_id,
+        quantity: item.quantity,
+        price: item.price,
+        cost_price: item.cost_price,
+      }));
+
+      const { error: itemsError } = await supabase
+        .from("sale_items")
+        .insert(saleItems);
+
+      if (itemsError) throw itemsError;
+
       return sale;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create sale");

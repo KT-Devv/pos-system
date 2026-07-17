@@ -23,12 +23,6 @@ export default defineConfig({
       lib: {
         entry: resolve(__dirname, 'electron/preload.ts'),
       },
-      rollupOptions: {
-        output: {
-          format: 'cjs',
-          entryFileNames: '[name].js'
-        }
-      }
     },
   },
   renderer: {
@@ -38,7 +32,7 @@ export default defineConfig({
         input: resolve(__dirname, 'index.html'),
       },
     },
-    plugins: [react(), tailwindcss()],
+    plugins: [tailwindcss(), react()],
     resolve: {
       alias: {
         '@': resolve(__dirname, './src'),

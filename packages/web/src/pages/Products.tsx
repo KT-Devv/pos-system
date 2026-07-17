@@ -5,8 +5,6 @@ import {
   Edit,
   Trash2,
   Package,
-  Barcode,
-  ScanBarcode,
 } from "lucide-react";
 import { Button } from "@pos/shared/components/button";
 import { Input } from "@pos/shared/components/input";
@@ -29,31 +27,19 @@ import {
   SelectValue,
 } from "@pos/shared/components/select";
 import { formatCurrency } from "@pos/shared/lib/utils";
-import { useProducts, type ProductRow } from "../hooks/useProducts";
-import QRScanner from "../components/QRScanner";
-import BarcodeLabel from "../components/BarcodeLabel";
+import { useProducts } from "../hooks/useProducts";
 
 export default function Products() {
-  const { products, categories, loading, error, lowStockThreshold, addProduct, updateProduct, deleteProduct } = useProducts();
+  const { products, categories, loading, error, addProduct, deleteProduct } = useProducts();
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<ProductRow | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [labelProduct, setLabelProduct] = useState<ProductRow | null>(null);
-  const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
-  const [barcodeScanTarget, setBarcodeScanTarget] = useState<"add" | "edit">("add");
   const [newProduct, setNewProduct] = useState({
     name: "",
     category_id: "",
     cost_price: 0,
     selling_price: 0,
     stock: 0,
-    barcode: "",
-    measurement_unit: "",
-    pack_quantity: 0,
-    unit_cost: 0,
   });
 
   const categoryNames = ["All", ...categories.map((c) => c.name)];
@@ -73,47 +59,16 @@ export default function Products() {
         cost_price: newProduct.cost_price,
         selling_price: newProduct.selling_price,
         stock: newProduct.stock,
-        barcode: newProduct.barcode || null,
-        measurement_unit: newProduct.measurement_unit || null,
-        pack_quantity: newProduct.pack_quantity || null,
-        unit_cost: newProduct.unit_cost || null,
       });
       if (ok) {
-        setNewProduct({ name: "", category_id: "", cost_price: 0, selling_price: 0, stock: 0, barcode: "", measurement_unit: "", pack_quantity: 0, unit_cost: 0 });
+        setNewProduct({ name: "", category_id: "", cost_price: 0, selling_price: 0, stock: 0 });
         setIsAddDialogOpen(false);
       }
     }
   };
 
   const handleDeleteProduct = async (id: string) => {
-    if (!confirm("Delete this product? Products referenced in past sales cannot be deleted.")) return;
-    setDeleteError(null);
-    const ok = await deleteProduct(id);
-    if (!ok) setDeleteError(error || "Failed to delete product");
-  };
-
-  const handleEditProduct = async () => {
-    if (!editingProduct) return;
-    const ok = await updateProduct(editingProduct.id, {
-      name: editingProduct.name,
-      category_id: editingProduct.category_id,
-      cost_price: editingProduct.cost_price,
-      selling_price: editingProduct.selling_price,
-      stock: editingProduct.stock,
-      barcode: editingProduct.barcode,
-    });
-    if (ok) {
-      setIsEditDialogOpen(false);
-      setEditingProduct(null);
-    }
-  };
-
-  const handleBarcodeScan = (code: string) => {
-    if (barcodeScanTarget === "add") {
-      setNewProduct({ ...newProduct, barcode: code });
-    } else {
-      if (editingProduct) setEditingProduct({ ...editingProduct, barcode: code });
-    }
+    await deleteProduct(id);
   };
 
   return (
@@ -167,7 +122,7 @@ export default function Products() {
                     <Package className="h-5 w-5 text-muted-foreground" />
                     <CardTitle className="text-lg">{product.name}</CardTitle>
                   </div>
-                  <Badge variant={product.stock <= lowStockThreshold ? "destructive" : "secondary"}>
+                  <Badge variant={product.stock < 10 ? "destructive" : "secondary"}>
                     {product.stock} in stock
                   </Badge>
                 </div>
@@ -178,12 +133,6 @@ export default function Products() {
                     <span className="text-muted-foreground">Category:</span>
                     <span>{product.categories?.name || "Uncategorized"}</span>
                   </div>
-                  {product.barcode && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Barcode:</span>
-                      <span className="font-mono text-xs">{product.barcode}</span>
-                    </div>
-                  )}
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Cost Price:</span>
                     <span>{formatCurrency(product.cost_price)}</span>
@@ -200,12 +149,9 @@ export default function Products() {
                   </div>
                 </div>
                 <div className="flex gap-2 mt-4">
-                  <Button variant="outline" size="sm" className="flex-1" onClick={() => { setEditingProduct(product); setIsEditDialogOpen(true); }}>
+                  <Button variant="outline" size="sm" className="flex-1">
                     <Edit className="h-4 w-4 mr-1" />
                     Edit
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setLabelProduct(product)}>
-                    <Barcode className="h-4 w-4" />
                   </Button>
                   <Button
                     variant="outline"
@@ -221,147 +167,99 @@ export default function Products() {
         </div>
       )}
 
-      {deleteError && <p className="text-red-500 mt-4">{deleteError}</p>}
-
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add New Product</DialogTitle>
-            <DialogDescription>Add a new product to your inventory.</DialogDescription>
+            <DialogDescription>
+              Add a new product to your inventory.
+            </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label htmlFor="name">Product Name</Label>
-              <Input id="name" value={newProduct.name} onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })} placeholder="Enter product name" />
+              <Input
+                id="name"
+                value={newProduct.name}
+                onChange={(e) =>
+                  setNewProduct({ ...newProduct, name: e.target.value })
+                }
+                placeholder="Enter product name"
+              />
             </div>
             <div className="grid gap-2">
               <Label>Category</Label>
-              <Select value={newProduct.category_id} onValueChange={(value) => setNewProduct({ ...newProduct, category_id: value })}>
-                <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
+              <Select
+                value={newProduct.category_id}
+                onValueChange={(value) =>
+                  setNewProduct({ ...newProduct, category_id: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
                 <SelectContent>
-                  {categories.map((cat) => (<SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>))}
+                  {categories.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="cost">Cost Price (GHS)</Label>
-                <Input id="cost" type="number" value={newProduct.cost_price || ""} onChange={(e) => setNewProduct({ ...newProduct, cost_price: Number(e.target.value) })} />
+                <Input
+                  id="cost"
+                  type="number"
+                  value={newProduct.cost_price || ""}
+                  onChange={(e) =>
+                    setNewProduct({
+                      ...newProduct,
+                      cost_price: Number(e.target.value),
+                    })
+                  }
+                  placeholder="0.00"
+                />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="selling">Selling Price (GHS)</Label>
-                <Input id="selling" type="number" value={newProduct.selling_price || ""} onChange={(e) => setNewProduct({ ...newProduct, selling_price: Number(e.target.value) })} />
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label>Barcode</Label>
-              <div className="flex gap-2">
-                {newProduct.barcode ? (
-                  <div className="flex items-center gap-2 flex-1 border rounded-md px-3 py-2 text-sm">
-                    <Barcode className="h-4 w-4 text-muted-foreground" />
-                    <span className="font-mono text-xs flex-1">{newProduct.barcode}</span>
-                    <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setNewProduct({ ...newProduct, barcode: "" })}>Remove</Button>
-                  </div>
-                ) : (
-                  <Button variant="outline" className="flex-1" onClick={() => { setBarcodeScanTarget("add"); setIsBarcodeScannerOpen(true); }}>
-                    <ScanBarcode className="h-4 w-4 mr-2" />Scan Barcode
-                  </Button>
-                )}
+                <Input
+                  id="selling"
+                  type="number"
+                  value={newProduct.selling_price || ""}
+                  onChange={(e) =>
+                    setNewProduct({
+                      ...newProduct,
+                      selling_price: Number(e.target.value),
+                    })
+                  }
+                  placeholder="0.00"
+                />
               </div>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="stock">Initial Stock</Label>
-              <Input id="stock" type="number" value={newProduct.stock || ""} onChange={(e) => setNewProduct({ ...newProduct, stock: Number(e.target.value) })} />
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="grid gap-2">
-                <Label htmlFor="measure">Quantity / Measure</Label>
-                <Input id="measure" value={newProduct.measurement_unit} onChange={(e) => setNewProduct({ ...newProduct, measurement_unit: e.target.value })} placeholder="e.g. 500g" />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="pack">Quantity in box</Label>
-                <Input id="pack" type="number" value={newProduct.pack_quantity || ""} onChange={(e) => setNewProduct({ ...newProduct, pack_quantity: Number(e.target.value) })} placeholder="e.g. 60" />
-              </div>
-              <div className="grid gap-2 md:col-span-2">
-                <Label htmlFor="unit-cost">Unit cost price (GHS)</Label>
-                <Input id="unit-cost" type="number" step="0.01" value={newProduct.unit_cost || ""} onChange={(e) => setNewProduct({ ...newProduct, unit_cost: Number(e.target.value) })} placeholder="e.g. 4.50" />
-              </div>
+              <Input
+                id="stock"
+                type="number"
+                value={newProduct.stock || ""}
+                onChange={(e) =>
+                  setNewProduct({ ...newProduct, stock: Number(e.target.value) })
+                }
+                placeholder="0"
+              />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+              Cancel
+            </Button>
             <Button onClick={handleAddProduct}>Add Product</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Product</DialogTitle>
-            <DialogDescription>Update product details.</DialogDescription>
-          </DialogHeader>
-          {editingProduct && (
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label>Product Name</Label>
-                <Input value={editingProduct.name} onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })} />
-              </div>
-              <div className="grid gap-2">
-                <Label>Category</Label>
-                <Select value={editingProduct.category_id || ""} onValueChange={(value) => setEditingProduct({ ...editingProduct, category_id: value })}>
-                  <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
-                  <SelectContent>
-                    {categories.map((cat) => (<SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label>Cost Price (GHS)</Label>
-                  <Input type="number" value={editingProduct.cost_price} onChange={(e) => setEditingProduct({ ...editingProduct, cost_price: Number(e.target.value) })} />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Selling Price (GHS)</Label>
-                  <Input type="number" value={editingProduct.selling_price} onChange={(e) => setEditingProduct({ ...editingProduct, selling_price: Number(e.target.value) })} />
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <Label>Stock</Label>
-                <Input type="number" value={editingProduct.stock} onChange={(e) => setEditingProduct({ ...editingProduct, stock: Number(e.target.value) })} />
-              </div>
-              <div className="grid gap-2">
-                <Label>Barcode</Label>
-                <div className="flex gap-2">
-                  {editingProduct.barcode ? (
-                    <div className="flex items-center gap-2 flex-1 border rounded-md px-3 py-2 text-sm">
-                      <Barcode className="h-4 w-4 text-muted-foreground" />
-                      <span className="font-mono text-xs flex-1">{editingProduct.barcode}</span>
-                      <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setEditingProduct({ ...editingProduct, barcode: null })}>Remove</Button>
-                    </div>
-                  ) : (
-                    <Button variant="outline" className="flex-1" onClick={() => { setBarcodeScanTarget("edit"); setIsBarcodeScannerOpen(true); }}>
-                      <ScanBarcode className="h-4 w-4 mr-2" />Scan Barcode
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleEditProduct}>Save Changes</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <BarcodeLabel
-        open={!!labelProduct}
-        onClose={() => setLabelProduct(null)}
-        product={labelProduct ? { name: labelProduct.name, barcode: labelProduct.barcode, price: labelProduct.selling_price } : null}
-      />
-
-      <QRScanner open={isBarcodeScannerOpen} onClose={() => setIsBarcodeScannerOpen(false)} onScan={handleBarcodeScan} />
     </div>
   );
 }
