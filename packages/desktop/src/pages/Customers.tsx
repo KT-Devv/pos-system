@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Plus, Search, Phone, Mail, Star } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Plus, Search, Phone, Mail, Star, Loader2 } from 'lucide-react';
 import { Button } from '@pos/shared/components/button';
 import { Input } from '@pos/shared/components/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@pos/shared/components/card';
@@ -8,11 +8,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Label } from '@pos/shared/components/label';
 import { api } from '../lib/ipc';
 
+const EMPTY_CUSTOMER = { name: '', phone: '', email: '' };
+
 export default function Customers() {
   const [customers, setCustomers] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', email: '' });
+  const [newCustomer, setNewCustomer] = useState(EMPTY_CUSTOMER);
+  const [loading, setLoading] = useState(false);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const loadCustomers = async () => {
     const data = await api.customers.list(search || undefined);
@@ -24,16 +28,38 @@ export default function Customers() {
     return () => clearTimeout(timer);
   }, [search]);
 
+  const resetForm = useCallback(() => {
+    setNewCustomer(EMPTY_CUSTOMER);
+    setFormErrors({});
+  }, []);
+
+  useEffect(() => {
+    if (!isAddDialogOpen) resetForm();
+  }, [isAddDialogOpen, resetForm]);
+
+  const validateCustomer = (customer: typeof EMPTY_CUSTOMER): Record<string, string> => {
+    const errors: Record<string, string> = {};
+    if (!customer.name.trim()) errors.name = 'Customer name is required';
+    if (!customer.phone.trim()) errors.phone = 'Phone number is required';
+    return errors;
+  };
+
   const handleAddCustomer = async () => {
-    if (!newCustomer.name || !newCustomer.phone) return;
+    const errors = validateCustomer(newCustomer);
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+    setLoading(true);
     try {
       await api.customers.create(newCustomer);
-      setNewCustomer({ name: '', phone: '', email: '' });
       setIsAddDialogOpen(false);
       loadCustomers();
     } catch (err) {
       console.error('Failed to add customer:', err);
       alert('Failed to add customer. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -78,10 +104,12 @@ export default function Customers() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm">
-                    <Phone className="h-4 w-4 text-muted-foreground" />
-                    <span>{customer.phone}</span>
-                  </div>
+                  {customer.phone && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Phone className="h-4 w-4 text-muted-foreground" />
+                      <span>{customer.phone}</span>
+                    </div>
+                  )}
                   {customer.email && (
                     <div className="flex items-center gap-2 text-sm">
                       <Mail className="h-4 w-4 text-muted-foreground" />
@@ -104,21 +132,43 @@ export default function Customers() {
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label>Customer Name</Label>
-              <Input value={newCustomer.name} onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })} placeholder="Enter customer name" />
+              <Label htmlFor="cust-name">Customer Name *</Label>
+              <Input
+                id="cust-name"
+                value={newCustomer.name}
+                onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
+                placeholder="Enter customer name"
+                className={formErrors.name ? 'border-destructive' : ''}
+              />
+              {formErrors.name && <p className="text-sm text-destructive">{formErrors.name}</p>}
             </div>
             <div className="grid gap-2">
-              <Label>Phone Number</Label>
-              <Input value={newCustomer.phone} onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })} placeholder="+233 XX XXX XXXX" />
+              <Label htmlFor="cust-phone">Phone Number *</Label>
+              <Input
+                id="cust-phone"
+                value={newCustomer.phone}
+                onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
+                placeholder="+233 XX XXX XXXX"
+                className={formErrors.phone ? 'border-destructive' : ''}
+              />
+              {formErrors.phone && <p className="text-sm text-destructive">{formErrors.phone}</p>}
             </div>
             <div className="grid gap-2">
-              <Label>Email (Optional)</Label>
-              <Input type="email" value={newCustomer.email} onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })} placeholder="customer@email.com" />
+              <Label htmlFor="cust-email">Email (Optional)</Label>
+              <Input
+                id="cust-email"
+                type="email"
+                value={newCustomer.email}
+                onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })}
+                placeholder="customer@email.com"
+              />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleAddCustomer}>Add Customer</Button>
+            <Button onClick={handleAddCustomer} disabled={loading}>
+              {loading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Adding...</> : 'Add Customer'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Plus, Search, Phone, Mail, Star } from "lucide-react";
+import { useState, useCallback, useEffect } from "react";
+import { Plus, Search, Phone, Mail, Star, Loader2 } from "lucide-react";
 import { Button } from "@pos/shared/components/button";
 import { Input } from "@pos/shared/components/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@pos/shared/components/card";
@@ -15,32 +15,51 @@ import {
 import { Label } from "@pos/shared/components/label";
 import { useCustomers } from "../hooks/useCustomers";
 
+const EMPTY_CUSTOMER = { name: "", phone: "", email: "" };
+
 export default function Customers() {
   const { customers, loading, addCustomer } = useCustomers();
   const [search, setSearch] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [newCustomer, setNewCustomer] = useState({
-    name: "",
-    phone: "",
-    email: "",
-  });
+  const [newCustomer, setNewCustomer] = useState(EMPTY_CUSTOMER);
+  const [submitting, setSubmitting] = useState(false);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const filteredCustomers = customers.filter((customer) =>
     customer.name.toLowerCase().includes(search.toLowerCase()) ||
     (customer.phone || "").includes(search)
   );
 
+  const validateCustomer = (customer: typeof EMPTY_CUSTOMER): Record<string, string> => {
+    const errors: Record<string, string> = {};
+    if (!customer.name.trim()) errors.name = "Customer name is required";
+    return errors;
+  };
+
+  const resetForm = useCallback(() => {
+    setNewCustomer(EMPTY_CUSTOMER);
+    setFormErrors({});
+  }, []);
+
+  useEffect(() => {
+    if (!isAddDialogOpen) resetForm();
+  }, [isAddDialogOpen, resetForm]);
+
   const handleAddCustomer = async () => {
-    if (newCustomer.name) {
-      const ok = await addCustomer({
-        name: newCustomer.name,
-        phone: newCustomer.phone || null,
-        email: newCustomer.email || null,
-      });
-      if (ok) {
-        setIsAddDialogOpen(false);
-        setNewCustomer({ name: "", phone: "", email: "" });
-      }
+    const errors = validateCustomer(newCustomer);
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+    setSubmitting(true);
+    const ok = await addCustomer({
+      name: newCustomer.name,
+      phone: newCustomer.phone || null,
+      email: newCustomer.email || null,
+    });
+    setSubmitting(false);
+    if (ok) {
+      setIsAddDialogOpen(false);
     }
   };
 
@@ -152,36 +171,32 @@ export default function Customers() {
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label htmlFor="name">Customer Name</Label>
+              <Label htmlFor="cust-name">Customer Name *</Label>
               <Input
-                id="name"
+                id="cust-name"
                 value={newCustomer.name}
-                onChange={(e) =>
-                  setNewCustomer({ ...newCustomer, name: e.target.value })
-                }
+                onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
                 placeholder="Enter customer name"
+                className={formErrors.name ? "border-destructive" : ""}
               />
+              {formErrors.name && <p className="text-sm text-destructive">{formErrors.name}</p>}
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="phone">Phone Number</Label>
+              <Label htmlFor="cust-phone">Phone Number</Label>
               <Input
-                id="phone"
+                id="cust-phone"
                 value={newCustomer.phone}
-                onChange={(e) =>
-                  setNewCustomer({ ...newCustomer, phone: e.target.value })
-                }
+                onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
                 placeholder="+233 XX XXX XXXX"
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="email">Email (Optional)</Label>
+              <Label htmlFor="cust-email">Email (Optional)</Label>
               <Input
-                id="email"
+                id="cust-email"
                 type="email"
                 value={newCustomer.email}
-                onChange={(e) =>
-                  setNewCustomer({ ...newCustomer, email: e.target.value })
-                }
+                onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })}
                 placeholder="customer@email.com"
               />
             </div>
@@ -190,7 +205,9 @@ export default function Customers() {
             <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleAddCustomer}>Add Customer</Button>
+            <Button onClick={handleAddCustomer} disabled={submitting}>
+              {submitting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Adding...</> : "Add Customer"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

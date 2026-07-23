@@ -5,6 +5,7 @@ import { Button } from '@pos/shared/components/button';
 import { Input } from '@pos/shared/components/input';
 import { Label } from '@pos/shared/components/label';
 import { Switch } from '@pos/shared/components/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@pos/shared/components/select';
 import { api } from '../lib/ipc';
 import { testPrinter } from '../hooks/useReceipt';
 
@@ -139,27 +140,25 @@ export default function Settings() {
           <CardContent className="space-y-4">
             <div className="grid gap-2">
               <Label>Printer Type</Label>
-              <select
-                value={draft.printer_type || 'none'}
-                onChange={(e) => updateDraft('printer_type', e.target.value)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                <option value="none">No Printer</option>
-                <option value="thermal">Thermal Printer (XP-80C)</option>
-                <option value="pdf">PDF Only</option>
-              </select>
+              <Select value={draft.printer_type || 'none'} onValueChange={(v) => updateDraft('printer_type', v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No Printer</SelectItem>
+                  <SelectItem value="thermal">Thermal Printer (XP-80C)</SelectItem>
+                  <SelectItem value="pdf">PDF Only</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             {draft.printer_type === 'thermal' && (
               <div className="grid gap-2">
                 <Label>Paper Size</Label>
-                <select
-                  value={draft.printer_paper_size || '80'}
-                  onChange={(e) => updateDraft('printer_paper_size', e.target.value)}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                >
-                  <option value="80">80mm (XP-80C)</option>
-                  <option value="58">58mm (XP-58C)</option>
-                </select>
+                <Select value={draft.printer_paper_size || '80'} onValueChange={(v) => updateDraft('printer_paper_size', v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="80">80mm (XP-80C)</SelectItem>
+                    <SelectItem value="58">58mm (XP-58C)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             )}
             <Button variant="outline" onClick={handleTestPrint}>
@@ -192,7 +191,7 @@ export default function Settings() {
               <Label>Low Stock Threshold</Label>
               <Input
                 type="number"
-                value={draft.low_stock_threshold || '10'}
+                value={draft.low_stock_threshold !== undefined ? draft.low_stock_threshold : '10'}
                 onChange={(e) => updateDraft('low_stock_threshold', e.target.value)}
               />
             </div>

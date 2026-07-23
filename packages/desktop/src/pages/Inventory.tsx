@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Plus, Search, ArrowDownCircle, ArrowUpCircle, Edit } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Plus, Search, ArrowDownCircle, ArrowUpCircle, Edit, Loader2 } from 'lucide-react';
 import { Button } from '@pos/shared/components/button';
 import { Input } from '@pos/shared/components/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@pos/shared/components/card';
@@ -10,19 +10,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { formatDateTime } from '@pos/shared/lib/utils';
 import { api } from '../lib/ipc';
 
+const EMPTY_ENTRY = { product_id: '', type: 'in' as 'in' | 'out' | 'adjustment', quantity: 0, supplier_id: '', notes: '' };
+
 export default function Inventory() {
   const [history, setHistory] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [newEntry, setNewEntry] = useState({
-    product_id: '',
-    type: 'in' as 'in' | 'out' | 'adjustment',
-    quantity: 0,
-    supplier_id: '',
-    notes: '',
-  });
+  const [newEntry, setNewEntry] = useState(EMPTY_ENTRY);
+  const [loading, setLoading] = useState(false);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const loadData = async () => {
     const [hist, prods, sups] = await Promise.all([
@@ -37,8 +35,29 @@ export default function Inventory() {
 
   useEffect(() => { loadData(); }, []);
 
+  const resetForm = useCallback(() => {
+    setNewEntry(EMPTY_ENTRY);
+    setFormErrors({});
+  }, []);
+
+  useEffect(() => {
+    if (!isDialogOpen) resetForm();
+  }, [isDialogOpen, resetForm]);
+
+  const validateEntry = (entry: typeof EMPTY_ENTRY): Record<string, string> => {
+    const errors: Record<string, string> = {};
+    if (!entry.product_id) errors.product_id = 'Product is required';
+    if (entry.quantity <= 0) errors.quantity = 'Quantity must be greater than 0';
+    return errors;
+  };
+
   const handleStockEntry = async () => {
-    if (!newEntry.product_id || newEntry.quantity <= 0) return;
+    const errors = validateEntry(newEntry);
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+    setLoading(true);
     try {
       if (newEntry.type === 'in') {
         await api.inventory.stockIn({
@@ -60,12 +79,13 @@ export default function Inventory() {
           notes: newEntry.notes || undefined,
         });
       }
-      setNewEntry({ product_id: '', type: 'in', quantity: 0, supplier_id: '', notes: '' });
       setIsDialogOpen(false);
       loadData();
     } catch (err) {
       console.error('Failed to record stock entry:', err);
       alert('Failed to save stock entry. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -146,15 +166,16 @@ export default function Inventory() {
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label>Product</Label>
-              <Select value={newEntry.product_id} onValueChange={(v) => setNewEntry({ ...newEntry, product_id: v })}>
-                <SelectTrigger><SelectValue placeholder="Select product" /></SelectTrigger>
+              <Label>Product *</Label>
+              <Select value={newEntry.product_id || undefined} onValueChange={(v) => setNewEntry({ ...newEntry, product_id: v })}>
+                <SelectTrigger className={formErrors.product_id ? 'border-destructive' : ''}><SelectValue placeholder="Select product" /></SelectTrigger>
                 <SelectContent>
                   {products.map((p: any) => (
                     <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {formErrors.product_id && <p className="text-sm text-destructive">{formErrors.product_id}</p>}
             </div>
             <div className="grid gap-2">
               <Label>Type</Label>
@@ -168,13 +189,21 @@ export default function Inventory() {
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label>Quantity</Label>
-              <Input type="number" value={newEntry.quantity || ''} onChange={(e) => setNewEntry({ ...newEntry, quantity: Number(e.target.value) })} placeholder="0" />
+              <Label>Quantity *</Label>
+              <Input
+                type="number"
+                min="1"
+                value={newEntry.quantity || ''}
+                onChange={(e) => setNewEntry({ ...newEntry, quantity: Number(e.target.value) || 0 })}
+                placeholder="0"
+                className={formErrors.quantity ? 'border-destructive' : ''}
+              />
+              {formErrors.quantity && <p className="text-sm text-destructive">{formErrors.quantity}</p>}
             </div>
             {newEntry.type === 'in' && (
               <div className="grid gap-2">
                 <Label>Supplier</Label>
-                <Select value={newEntry.supplier_id} onValueChange={(v) => setNewEntry({ ...newEntry, supplier_id: v })}>
+                <Select value={newEntry.supplier_id || undefined} onValueChange={(v) => setNewEntry({ ...newEntry, supplier_id: v })}>
                   <SelectTrigger><SelectValue placeholder="Select supplier" /></SelectTrigger>
                   <SelectContent>
                     {suppliers.map((s: any) => (
@@ -191,7 +220,9 @@ export default function Inventory() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleStockEntry}>Save Entry</Button>
+            <Button onClick={handleStockEntry} disabled={loading}>
+              {loading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving...</> : 'Save Entry'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

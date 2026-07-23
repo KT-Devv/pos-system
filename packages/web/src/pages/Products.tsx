@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   Plus,
   Search,
   Edit,
   Trash2,
   Package,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@pos/shared/components/button";
 import { Input } from "@pos/shared/components/input";
@@ -29,6 +30,8 @@ import {
 import { formatCurrency } from "@pos/shared/lib/utils";
 import { useProducts } from "../hooks/useProducts";
 
+const EMPTY_PRODUCT = { name: "", category_id: "", cost_price: 0, selling_price: 0, stock: 0 };
+
 export default function Products() {
   const { products, categories, loading, error, addProduct, updateProduct, deleteProduct } = useProducts();
   const [search, setSearch] = useState("");
@@ -36,13 +39,9 @@ export default function Products() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
-  const [newProduct, setNewProduct] = useState({
-    name: "",
-    category_id: "",
-    cost_price: 0,
-    selling_price: 0,
-    stock: 0,
-  });
+  const [newProduct, setNewProduct] = useState(EMPTY_PRODUCT);
+  const [submitting, setSubmitting] = useState(false);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const categoryNames = ["All", ...categories.map((c) => c.name)];
 
@@ -53,37 +52,77 @@ export default function Products() {
     return matchesSearch && matchesCategory;
   });
 
+  const validateProduct = (product: typeof EMPTY_PRODUCT): Record<string, string> => {
+    const errors: Record<string, string> = {};
+    if (!product.name.trim()) errors.name = "Product name is required";
+    if (!product.selling_price || product.selling_price <= 0) errors.selling_price = "Selling price must be greater than 0";
+    if (product.cost_price < 0) errors.cost_price = "Cost price cannot be negative";
+    if (product.stock < 0) errors.stock = "Stock cannot be negative";
+    return errors;
+  };
+
+  const resetAddForm = useCallback(() => {
+    setNewProduct(EMPTY_PRODUCT);
+    setFormErrors({});
+  }, []);
+
+  const resetEditForm = useCallback(() => {
+    setEditingProduct(null);
+    setFormErrors({});
+  }, []);
+
+  useEffect(() => {
+    if (!isAddDialogOpen) resetAddForm();
+  }, [isAddDialogOpen, resetAddForm]);
+
+  useEffect(() => {
+    if (!isEditDialogOpen) resetEditForm();
+  }, [isEditDialogOpen, resetEditForm]);
+
   const handleAddProduct = async () => {
-    if (newProduct.name && newProduct.cost_price > 0 && newProduct.selling_price > 0) {
-      const ok = await addProduct({
-        name: newProduct.name,
-        category_id: newProduct.category_id || null,
-        cost_price: newProduct.cost_price,
-        selling_price: newProduct.selling_price,
-        stock: newProduct.stock,
-      });
-      if (ok) {
-        setNewProduct({ name: "", category_id: "", cost_price: 0, selling_price: 0, stock: 0 });
-        setIsAddDialogOpen(false);
-      }
+    const errors = validateProduct(newProduct);
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+    setSubmitting(true);
+    const ok = await addProduct({
+      name: newProduct.name,
+      category_id: newProduct.category_id || null,
+      cost_price: newProduct.cost_price,
+      selling_price: newProduct.selling_price,
+      stock: newProduct.stock,
+    });
+    setSubmitting(false);
+    if (ok) {
+      setIsAddDialogOpen(false);
     }
   };
 
   const handleDeleteProduct = async (id: string) => {
-    await deleteProduct(id);
+    if (confirm("Are you sure you want to delete this product?")) {
+      await deleteProduct(id);
+    }
   };
 
   const handleEditProduct = async () => {
     if (!editingProduct) return;
+    const errors = validateProduct(editingProduct);
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+    setSubmitting(true);
     const ok = await updateProduct(editingProduct.id, {
       name: editingProduct.name,
       category_id: editingProduct.category_id || null,
       cost_price: editingProduct.cost_price,
       selling_price: editingProduct.selling_price,
+      barcode: editingProduct.barcode,
     });
+    setSubmitting(false);
     if (ok) {
       setIsEditDialogOpen(false);
-      setEditingProduct(null);
     }
   };
 
@@ -165,7 +204,12 @@ export default function Products() {
                   </div>
                 </div>
                 <div className="flex gap-2 mt-4">
-                  <Button variant="outline" size="sm" className="flex-1" onClick={() => { setEditingProduct({ ...product }); setIsEditDialogOpen(true); }}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => { setEditingProduct({ ...product }); setIsEditDialogOpen(true); }}
+                  >
                     <Edit className="h-4 w-4 mr-1" />
                     Edit
                   </Button>
@@ -183,6 +227,7 @@ export default function Products() {
         </div>
       )}
 
+      {/* Add Product Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -193,23 +238,21 @@ export default function Products() {
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label htmlFor="name">Product Name</Label>
+              <Label htmlFor="add-name">Product Name *</Label>
               <Input
-                id="name"
+                id="add-name"
                 value={newProduct.name}
-                onChange={(e) =>
-                  setNewProduct({ ...newProduct, name: e.target.value })
-                }
+                onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
                 placeholder="Enter product name"
+                className={formErrors.name ? "border-destructive" : ""}
               />
+              {formErrors.name && <p className="text-sm text-destructive">{formErrors.name}</p>}
             </div>
             <div className="grid gap-2">
               <Label>Category</Label>
               <Select
-                value={newProduct.category_id}
-                onValueChange={(value) =>
-                  setNewProduct({ ...newProduct, category_id: value })
-                }
+                value={newProduct.category_id || undefined}
+                onValueChange={(value) => setNewProduct({ ...newProduct, category_id: value })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select category" />
@@ -225,58 +268,60 @@ export default function Products() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="cost">Cost Price (GHS)</Label>
+                <Label htmlFor="add-cost">Cost Price (GHS)</Label>
                 <Input
-                  id="cost"
+                  id="add-cost"
                   type="number"
+                  min="0"
+                  step="0.01"
                   value={newProduct.cost_price || ""}
-                  onChange={(e) =>
-                    setNewProduct({
-                      ...newProduct,
-                      cost_price: Number(e.target.value),
-                    })
-                  }
+                  onChange={(e) => setNewProduct({ ...newProduct, cost_price: Number(e.target.value) || 0 })}
                   placeholder="0.00"
+                  className={formErrors.cost_price ? "border-destructive" : ""}
                 />
+                {formErrors.cost_price && <p className="text-sm text-destructive">{formErrors.cost_price}</p>}
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="selling">Selling Price (GHS)</Label>
+                <Label htmlFor="add-selling">Selling Price (GHS) *</Label>
                 <Input
-                  id="selling"
+                  id="add-selling"
                   type="number"
+                  min="0"
+                  step="0.01"
                   value={newProduct.selling_price || ""}
-                  onChange={(e) =>
-                    setNewProduct({
-                      ...newProduct,
-                      selling_price: Number(e.target.value),
-                    })
-                  }
+                  onChange={(e) => setNewProduct({ ...newProduct, selling_price: Number(e.target.value) || 0 })}
                   placeholder="0.00"
+                  className={formErrors.selling_price ? "border-destructive" : ""}
                 />
+                {formErrors.selling_price && <p className="text-sm text-destructive">{formErrors.selling_price}</p>}
               </div>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="stock">Initial Stock</Label>
+              <Label htmlFor="add-stock">Initial Stock</Label>
               <Input
-                id="stock"
+                id="add-stock"
                 type="number"
+                min="0"
                 value={newProduct.stock || ""}
-                onChange={(e) =>
-                  setNewProduct({ ...newProduct, stock: Number(e.target.value) })
-                }
+                onChange={(e) => setNewProduct({ ...newProduct, stock: Number(e.target.value) || 0 })}
                 placeholder="0"
+                className={formErrors.stock ? "border-destructive" : ""}
               />
+              {formErrors.stock && <p className="text-sm text-destructive">{formErrors.stock}</p>}
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleAddProduct}>Add Product</Button>
+            <Button onClick={handleAddProduct} disabled={submitting}>
+              {submitting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Adding...</> : "Add Product"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
+      {/* Edit Product Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -286,12 +331,18 @@ export default function Products() {
           {editingProduct && (
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label>Product Name</Label>
-                <Input value={editingProduct.name} onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })} />
+                <Label htmlFor="edit-name">Product Name *</Label>
+                <Input
+                  id="edit-name"
+                  value={editingProduct.name}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })}
+                  className={formErrors.name ? "border-destructive" : ""}
+                />
+                {formErrors.name && <p className="text-sm text-destructive">{formErrors.name}</p>}
               </div>
               <div className="grid gap-2">
                 <Label>Category</Label>
-                <Select value={editingProduct.category_id || ""} onValueChange={(v) => setEditingProduct({ ...editingProduct, category_id: v })}>
+                <Select value={editingProduct.category_id || undefined} onValueChange={(v) => setEditingProduct({ ...editingProduct, category_id: v })}>
                   <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
                   <SelectContent>
                     {categories.map((cat) => (
@@ -302,19 +353,39 @@ export default function Products() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label>Cost Price (GHS)</Label>
-                  <Input type="number" value={editingProduct.cost_price} onChange={(e) => setEditingProduct({ ...editingProduct, cost_price: Number(e.target.value) })} />
+                  <Label htmlFor="edit-cost">Cost Price (GHS)</Label>
+                  <Input
+                    id="edit-cost"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={editingProduct.cost_price}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, cost_price: Number(e.target.value) || 0 })}
+                    className={formErrors.cost_price ? "border-destructive" : ""}
+                  />
+                  {formErrors.cost_price && <p className="text-sm text-destructive">{formErrors.cost_price}</p>}
                 </div>
                 <div className="grid gap-2">
-                  <Label>Selling Price (GHS)</Label>
-                  <Input type="number" value={editingProduct.selling_price} onChange={(e) => setEditingProduct({ ...editingProduct, selling_price: Number(e.target.value) })} />
+                  <Label htmlFor="edit-selling">Selling Price (GHS) *</Label>
+                  <Input
+                    id="edit-selling"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={editingProduct.selling_price}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, selling_price: Number(e.target.value) || 0 })}
+                    className={formErrors.selling_price ? "border-destructive" : ""}
+                  />
+                  {formErrors.selling_price && <p className="text-sm text-destructive">{formErrors.selling_price}</p>}
                 </div>
               </div>
             </div>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleEditProduct}>Save Changes</Button>
+            <Button onClick={handleEditProduct} disabled={submitting}>
+              {submitting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving...</> : "Save Changes"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

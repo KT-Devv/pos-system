@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { Plus, Search, Edit, Trash2, Package } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Plus, Search, Edit, Trash2, Package, Loader2 } from 'lucide-react';
 import { Button } from '@pos/shared/components/button';
 import { Input } from '@pos/shared/components/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@pos/shared/components/card';
@@ -11,21 +11,18 @@ import { formatCurrency } from '@pos/shared/lib/utils';
 import { api } from '../lib/ipc';
 import QRCode from 'qrcode';
 
+const EMPTY_PRODUCT = { name: '', category_id: '', cost_price: 0, selling_price: 0, stock: 0, barcode: '' };
+
 export default function Products() {
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
-  const [newProduct, setNewProduct] = useState({
-    name: '',
-    category_id: '',
-    cost_price: 0,
-    selling_price: 0,
-    stock: 0,
-    barcode: '',
-  });
+  const [newProduct, setNewProduct] = useState(EMPTY_PRODUCT);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const loadProducts = async () => {
     const data = await api.products.list(search || undefined);
@@ -57,39 +54,80 @@ export default function Products() {
     return () => clearTimeout(timer);
   }, [search]);
 
+  const validateProduct = (product: typeof EMPTY_PRODUCT): Record<string, string> => {
+    const errors: Record<string, string> = {};
+    if (!product.name.trim()) errors.name = 'Product name is required';
+    if (!product.selling_price || product.selling_price <= 0) errors.selling_price = 'Selling price must be greater than 0';
+    if (product.cost_price < 0) errors.cost_price = 'Cost price cannot be negative';
+    if (product.stock < 0) errors.stock = 'Stock cannot be negative';
+    return errors;
+  };
+
+  const resetAddForm = useCallback(() => {
+    setNewProduct(EMPTY_PRODUCT);
+    setFormErrors({});
+  }, []);
+
+  const resetEditForm = useCallback(() => {
+    setEditingProduct(null);
+    setFormErrors({});
+  }, []);
+
+  useEffect(() => {
+    if (!isAddDialogOpen) resetAddForm();
+  }, [isAddDialogOpen, resetAddForm]);
+
+  useEffect(() => {
+    if (!isEditDialogOpen) resetEditForm();
+  }, [isEditDialogOpen, resetEditForm]);
+
   const handleAddProduct = async () => {
-    if (!newProduct.name || !newProduct.selling_price) return;
+    const errors = validateProduct(newProduct);
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+    setLoading(true);
     try {
       const qrData = await QRCode.toDataURL(newProduct.name, { width: 200 });
       await api.products.create({
         ...newProduct,
         qr_code: qrData,
       });
-      setNewProduct({ name: '', category_id: '', cost_price: 0, selling_price: 0, stock: 0, barcode: '' });
       setIsAddDialogOpen(false);
       loadProducts();
     } catch (err) {
       console.error('Failed to add product:', err);
       alert('Failed to add product. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleEditProduct = async () => {
     if (!editingProduct) return;
+    const errors = validateProduct(editingProduct);
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+    setLoading(true);
     try {
       await api.products.update(editingProduct.id, {
         name: editingProduct.name,
         category_id: editingProduct.category_id,
         cost_price: editingProduct.cost_price,
         selling_price: editingProduct.selling_price,
+        stock: editingProduct.stock,
         barcode: editingProduct.barcode,
       });
       setIsEditDialogOpen(false);
-      setEditingProduct(null);
       loadProducts();
     } catch (err) {
       console.error('Failed to update product:', err);
       alert('Failed to update product. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -193,12 +231,19 @@ export default function Products() {
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label>Product Name</Label>
-              <Input value={newProduct.name} onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })} placeholder="Enter product name" />
+              <Label htmlFor="add-name">Product Name *</Label>
+              <Input
+                id="add-name"
+                value={newProduct.name}
+                onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
+                placeholder="Enter product name"
+                className={formErrors.name ? 'border-destructive' : ''}
+              />
+              {formErrors.name && <p className="text-sm text-destructive">{formErrors.name}</p>}
             </div>
             <div className="grid gap-2">
               <Label>Category</Label>
-              <Select value={newProduct.category_id} onValueChange={(v) => setNewProduct({ ...newProduct, category_id: v })}>
+              <Select value={newProduct.category_id || undefined} onValueChange={(v) => setNewProduct({ ...newProduct, category_id: v })}>
                 <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
                 <SelectContent>
                   {categories.map((cat: any) => (
@@ -209,28 +254,64 @@ export default function Products() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label>Cost Price (GHS)</Label>
-                <Input type="number" value={newProduct.cost_price || ''} onChange={(e) => setNewProduct({ ...newProduct, cost_price: Number(e.target.value) })} placeholder="0.00" />
+                <Label htmlFor="add-cost">Cost Price (GHS)</Label>
+                <Input
+                  id="add-cost"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={newProduct.cost_price || ''}
+                  onChange={(e) => setNewProduct({ ...newProduct, cost_price: Number(e.target.value) || 0 })}
+                  placeholder="0.00"
+                  className={formErrors.cost_price ? 'border-destructive' : ''}
+                />
+                {formErrors.cost_price && <p className="text-sm text-destructive">{formErrors.cost_price}</p>}
               </div>
               <div className="grid gap-2">
-                <Label>Selling Price (GHS)</Label>
-                <Input type="number" value={newProduct.selling_price || ''} onChange={(e) => setNewProduct({ ...newProduct, selling_price: Number(e.target.value) })} placeholder="0.00" />
+                <Label htmlFor="add-selling">Selling Price (GHS) *</Label>
+                <Input
+                  id="add-selling"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={newProduct.selling_price || ''}
+                  onChange={(e) => setNewProduct({ ...newProduct, selling_price: Number(e.target.value) || 0 })}
+                  placeholder="0.00"
+                  className={formErrors.selling_price ? 'border-destructive' : ''}
+                />
+                {formErrors.selling_price && <p className="text-sm text-destructive">{formErrors.selling_price}</p>}
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label>Initial Stock</Label>
-                <Input type="number" value={newProduct.stock || ''} onChange={(e) => setNewProduct({ ...newProduct, stock: Number(e.target.value) })} placeholder="0" />
+                <Label htmlFor="add-stock">Initial Stock</Label>
+                <Input
+                  id="add-stock"
+                  type="number"
+                  min="0"
+                  value={newProduct.stock || ''}
+                  onChange={(e) => setNewProduct({ ...newProduct, stock: Number(e.target.value) || 0 })}
+                  placeholder="0"
+                  className={formErrors.stock ? 'border-destructive' : ''}
+                />
+                {formErrors.stock && <p className="text-sm text-destructive">{formErrors.stock}</p>}
               </div>
               <div className="grid gap-2">
-                <Label>Barcode (optional)</Label>
-                <Input value={newProduct.barcode} onChange={(e) => setNewProduct({ ...newProduct, barcode: e.target.value })} placeholder="Enter barcode" />
+                <Label htmlFor="add-barcode">Barcode (optional)</Label>
+                <Input
+                  id="add-barcode"
+                  value={newProduct.barcode}
+                  onChange={(e) => setNewProduct({ ...newProduct, barcode: e.target.value })}
+                  placeholder="Enter barcode"
+                />
               </div>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleAddProduct}>Add Product</Button>
+            <Button onClick={handleAddProduct} disabled={loading}>
+              {loading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Adding...</> : 'Add Product'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -245,12 +326,18 @@ export default function Products() {
           {editingProduct && (
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label>Product Name</Label>
-                <Input value={editingProduct.name} onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })} />
+                <Label htmlFor="edit-name">Product Name *</Label>
+                <Input
+                  id="edit-name"
+                  value={editingProduct.name}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })}
+                  className={formErrors.name ? 'border-destructive' : ''}
+                />
+                {formErrors.name && <p className="text-sm text-destructive">{formErrors.name}</p>}
               </div>
               <div className="grid gap-2">
                 <Label>Category</Label>
-                <Select value={editingProduct.category_id || ''} onValueChange={(v) => setEditingProduct({ ...editingProduct, category_id: v })}>
+                <Select value={editingProduct.category_id || undefined} onValueChange={(v) => setEditingProduct({ ...editingProduct, category_id: v })}>
                   <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
                   <SelectContent>
                     {categories.map((cat: any) => (
@@ -261,23 +348,61 @@ export default function Products() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label>Cost Price (GHS)</Label>
-                  <Input type="number" value={editingProduct.cost_price} onChange={(e) => setEditingProduct({ ...editingProduct, cost_price: Number(e.target.value) })} />
+                  <Label htmlFor="edit-cost">Cost Price (GHS)</Label>
+                  <Input
+                    id="edit-cost"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={editingProduct.cost_price}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, cost_price: Number(e.target.value) || 0 })}
+                    className={formErrors.cost_price ? 'border-destructive' : ''}
+                  />
+                  {formErrors.cost_price && <p className="text-sm text-destructive">{formErrors.cost_price}</p>}
                 </div>
                 <div className="grid gap-2">
-                  <Label>Selling Price (GHS)</Label>
-                  <Input type="number" value={editingProduct.selling_price} onChange={(e) => setEditingProduct({ ...editingProduct, selling_price: Number(e.target.value) })} />
+                  <Label htmlFor="edit-selling">Selling Price (GHS) *</Label>
+                  <Input
+                    id="edit-selling"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={editingProduct.selling_price}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, selling_price: Number(e.target.value) || 0 })}
+                    className={formErrors.selling_price ? 'border-destructive' : ''}
+                  />
+                  {formErrors.selling_price && <p className="text-sm text-destructive">{formErrors.selling_price}</p>}
                 </div>
               </div>
-              <div className="grid gap-2">
-                <Label>Barcode</Label>
-                <Input value={editingProduct.barcode || ''} onChange={(e) => setEditingProduct({ ...editingProduct, barcode: e.target.value })} />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-stock">Stock</Label>
+                  <Input
+                    id="edit-stock"
+                    type="number"
+                    min="0"
+                    value={editingProduct.stock}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, stock: Number(e.target.value) || 0 })}
+                    className={formErrors.stock ? 'border-destructive' : ''}
+                  />
+                  {formErrors.stock && <p className="text-sm text-destructive">{formErrors.stock}</p>}
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-barcode">Barcode</Label>
+                  <Input
+                    id="edit-barcode"
+                    value={editingProduct.barcode || ''}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, barcode: e.target.value })}
+                  />
+                </div>
               </div>
             </div>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleEditProduct}>Save Changes</Button>
+            <Button onClick={handleEditProduct} disabled={loading}>
+              {loading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving...</> : 'Save Changes'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

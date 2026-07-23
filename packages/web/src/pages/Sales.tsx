@@ -326,7 +326,7 @@ export default function Sales() {
                 <Input
                   id="discount"
                   type="number"
-                  value={discount || ""}
+                  value={discount === 0 ? "" : discount}
                   onChange={(e) => setDiscount(Number(e.target.value))}
                   className="w-24 text-right"
                   placeholder="0"

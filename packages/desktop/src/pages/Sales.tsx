@@ -311,14 +311,14 @@ export default function Sales() {
                 <span>Subtotal:</span>
                 <span className="text-white">{formatCurrency(subtotal)}</span>
               </div>
-              <div className="flex justify-between items-center">
+                <div className="flex justify-between items-center">
                 <Label htmlFor="discount" className="text-muted-foreground">Discount:</Label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">GH₵</span>
                   <Input
                     id="discount"
                     type="number"
-                    value={discount || ''}
+                    value={discount === 0 ? '' : discount}
                     onChange={(e) => setDiscount(Number(e.target.value))}
                     className="w-28 text-right pl-8 bg-black/40 border-white/10 focus-visible:ring-primary/50"
                     placeholder="0.00"

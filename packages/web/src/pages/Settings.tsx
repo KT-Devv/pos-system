@@ -197,7 +197,7 @@ export default function Settings() {
               <Input
                 id="lowStockThreshold"
                 type="number"
-                value={settings.lowStockThreshold}
+                value={settings.lowStockThreshold === 0 ? "" : settings.lowStockThreshold}
                 onChange={(e) => update("lowStockThreshold", Number(e.target.value))}
               />
             </div>

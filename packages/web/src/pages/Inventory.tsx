@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Plus, Search, ArrowDownCircle, ArrowUpCircle, Edit } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Plus, Search, ArrowDownCircle, ArrowUpCircle, Edit, Loader2 } from "lucide-react";
 import { Button } from "@pos/shared/components/button";
 import { Input } from "@pos/shared/components/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@pos/shared/components/card";
@@ -29,6 +29,8 @@ interface ProductOption {
   name: string;
 }
 
+const EMPTY_ENTRY = { product_id: "", type: "in" as "in" | "out" | "adjustment", quantity: 0, supplier_id: "", notes: "" };
+
 export default function Inventory() {
   const { stockHistory, loading: historyLoading, refetch: refetchHistory } = useStockHistory();
   const { suppliers } = useSuppliers();
@@ -38,13 +40,8 @@ export default function Inventory() {
   const [search, setSearch] = useState("");
   const [isStockInDialogOpen, setIsStockInDialogOpen] = useState(false);
   const [products, setProducts] = useState<ProductOption[]>([]);
-  const [newStockEntry, setNewStockEntry] = useState({
-    product_id: "",
-    type: "in" as "in" | "out" | "adjustment",
-    quantity: 0,
-    supplier_id: "",
-    notes: "",
-  });
+  const [newStockEntry, setNewStockEntry] = useState(EMPTY_ENTRY);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -57,24 +54,42 @@ export default function Inventory() {
     fetchProducts();
   }, []);
 
+  const resetForm = useCallback(() => {
+    setNewStockEntry(EMPTY_ENTRY);
+    setFormErrors({});
+  }, []);
+
+  useEffect(() => {
+    if (!isStockInDialogOpen) resetForm();
+  }, [isStockInDialogOpen, resetForm]);
+
+  const validateEntry = (entry: typeof EMPTY_ENTRY): Record<string, string> => {
+    const errors: Record<string, string> = {};
+    if (!entry.product_id) errors.product_id = "Product is required";
+    if (entry.quantity <= 0) errors.quantity = "Quantity must be greater than 0";
+    return errors;
+  };
+
   const filteredStock = stockHistory.filter((entry) =>
     entry.products?.name?.toLowerCase().includes(search.toLowerCase())
   );
 
   const handleStockEntry = async () => {
-    if (newStockEntry.product_id && newStockEntry.quantity > 0) {
-      const ok = await createStockEntry({
-        product_id: newStockEntry.product_id,
-        type: newStockEntry.type,
-        quantity: newStockEntry.type === "out" ? -newStockEntry.quantity : newStockEntry.quantity,
-        supplier_id: newStockEntry.supplier_id || null,
-        notes: newStockEntry.notes || null,
-      });
-      if (ok) {
-        setNewStockEntry({ product_id: "", type: "in", quantity: 0, supplier_id: "", notes: "" });
-        setIsStockInDialogOpen(false);
-        refetchHistory();
-      }
+    const errors = validateEntry(newStockEntry);
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+    const ok = await createStockEntry({
+      product_id: newStockEntry.product_id,
+      type: newStockEntry.type,
+      quantity: newStockEntry.type === "out" ? -newStockEntry.quantity : newStockEntry.quantity,
+      supplier_id: newStockEntry.supplier_id || null,
+      notes: newStockEntry.notes || null,
+    });
+    if (ok) {
+      setIsStockInDialogOpen(false);
+      refetchHistory();
     }
   };
 
@@ -204,14 +219,14 @@ export default function Inventory() {
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label>Product</Label>
+              <Label>Product *</Label>
               <Select
-                value={newStockEntry.product_id}
+                value={newStockEntry.product_id || undefined}
                 onValueChange={(value) =>
                   setNewStockEntry({ ...newStockEntry, product_id: value })
                 }
               >
-                <SelectTrigger>
+                <SelectTrigger className={formErrors.product_id ? "border-destructive" : ""}>
                   <SelectValue placeholder="Select product" />
                 </SelectTrigger>
                 <SelectContent>
@@ -222,6 +237,7 @@ export default function Inventory() {
                   ))}
                 </SelectContent>
               </Select>
+              {formErrors.product_id && <p className="text-sm text-destructive">{formErrors.product_id}</p>}
             </div>
             <div className="grid gap-2">
               <Label>Type</Label>
@@ -242,20 +258,23 @@ export default function Inventory() {
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label>Quantity</Label>
+              <Label>Quantity *</Label>
               <Input
                 type="number"
+                min="1"
                 value={newStockEntry.quantity || ""}
                 onChange={(e) =>
-                  setNewStockEntry({ ...newStockEntry, quantity: Number(e.target.value) })
+                  setNewStockEntry({ ...newStockEntry, quantity: Number(e.target.value) || 0 })
                 }
                 placeholder="0"
+                className={formErrors.quantity ? "border-destructive" : ""}
               />
+              {formErrors.quantity && <p className="text-sm text-destructive">{formErrors.quantity}</p>}
             </div>
             <div className="grid gap-2">
               <Label>Supplier</Label>
               <Select
-                value={newStockEntry.supplier_id}
+                value={newStockEntry.supplier_id || undefined}
                 onValueChange={(value) =>
                   setNewStockEntry({ ...newStockEntry, supplier_id: value })
                 }
@@ -288,7 +307,7 @@ export default function Inventory() {
               Cancel
             </Button>
             <Button onClick={handleStockEntry} disabled={creating}>
-              {creating ? "Saving..." : "Save Entry"}
+              {creating ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving...</> : "Save Entry"}
             </Button>
           </DialogFooter>
         </DialogContent>
