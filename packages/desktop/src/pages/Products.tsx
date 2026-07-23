@@ -243,7 +243,7 @@ export default function Products() {
             </div>
             <div className="grid gap-2">
               <Label>Category</Label>
-              <Select value={newProduct.category_id || undefined} onValueChange={(v) => setNewProduct({ ...newProduct, category_id: v })}>
+              <Select value={newProduct.category_id} onValueChange={(v) => setNewProduct({ ...newProduct, category_id: v })}>
                 <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
                 <SelectContent>
                   {categories.map((cat: any) => (
@@ -337,7 +337,7 @@ export default function Products() {
               </div>
               <div className="grid gap-2">
                 <Label>Category</Label>
-                <Select value={editingProduct.category_id || undefined} onValueChange={(v) => setEditingProduct({ ...editingProduct, category_id: v })}>
+                <Select value={editingProduct.category_id} onValueChange={(v) => setEditingProduct({ ...editingProduct, category_id: v })}>
                   <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
                   <SelectContent>
                     {categories.map((cat: any) => (

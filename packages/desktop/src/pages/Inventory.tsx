@@ -167,7 +167,7 @@ export default function Inventory() {
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label>Product *</Label>
-              <Select value={newEntry.product_id || undefined} onValueChange={(v) => setNewEntry({ ...newEntry, product_id: v })}>
+              <Select value={newEntry.product_id} onValueChange={(v) => setNewEntry({ ...newEntry, product_id: v })}>
                 <SelectTrigger className={formErrors.product_id ? 'border-destructive' : ''}><SelectValue placeholder="Select product" /></SelectTrigger>
                 <SelectContent>
                   {products.map((p: any) => (
@@ -203,7 +203,7 @@ export default function Inventory() {
             {newEntry.type === 'in' && (
               <div className="grid gap-2">
                 <Label>Supplier</Label>
-                <Select value={newEntry.supplier_id || undefined} onValueChange={(v) => setNewEntry({ ...newEntry, supplier_id: v })}>
+                <Select value={newEntry.supplier_id} onValueChange={(v) => setNewEntry({ ...newEntry, supplier_id: v })}>
                   <SelectTrigger><SelectValue placeholder="Select supplier" /></SelectTrigger>
                   <SelectContent>
                     {suppliers.map((s: any) => (

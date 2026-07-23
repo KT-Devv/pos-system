@@ -221,7 +221,7 @@ export default function Inventory() {
             <div className="grid gap-2">
               <Label>Product *</Label>
               <Select
-                value={newStockEntry.product_id || undefined}
+                value={newStockEntry.product_id}
                 onValueChange={(value) =>
                   setNewStockEntry({ ...newStockEntry, product_id: value })
                 }
@@ -274,7 +274,7 @@ export default function Inventory() {
             <div className="grid gap-2">
               <Label>Supplier</Label>
               <Select
-                value={newStockEntry.supplier_id || undefined}
+                value={newStockEntry.supplier_id}
                 onValueChange={(value) =>
                   setNewStockEntry({ ...newStockEntry, supplier_id: value })
                 }
