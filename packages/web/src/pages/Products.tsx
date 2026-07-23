@@ -30,10 +30,12 @@ import { formatCurrency } from "@pos/shared/lib/utils";
 import { useProducts } from "../hooks/useProducts";
 
 export default function Products() {
-  const { products, categories, loading, error, addProduct, deleteProduct } = useProducts();
+  const { products, categories, loading, error, addProduct, updateProduct, deleteProduct } = useProducts();
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<any>(null);
   const [newProduct, setNewProduct] = useState({
     name: "",
     category_id: "",
@@ -69,6 +71,20 @@ export default function Products() {
 
   const handleDeleteProduct = async (id: string) => {
     await deleteProduct(id);
+  };
+
+  const handleEditProduct = async () => {
+    if (!editingProduct) return;
+    const ok = await updateProduct(editingProduct.id, {
+      name: editingProduct.name,
+      category_id: editingProduct.category_id || null,
+      cost_price: editingProduct.cost_price,
+      selling_price: editingProduct.selling_price,
+    });
+    if (ok) {
+      setIsEditDialogOpen(false);
+      setEditingProduct(null);
+    }
   };
 
   return (
@@ -149,7 +165,7 @@ export default function Products() {
                   </div>
                 </div>
                 <div className="flex gap-2 mt-4">
-                  <Button variant="outline" size="sm" className="flex-1">
+                  <Button variant="outline" size="sm" className="flex-1" onClick={() => { setEditingProduct({ ...product }); setIsEditDialogOpen(true); }}>
                     <Edit className="h-4 w-4 mr-1" />
                     Edit
                   </Button>
@@ -257,6 +273,48 @@ export default function Products() {
               Cancel
             </Button>
             <Button onClick={handleAddProduct}>Add Product</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Product</DialogTitle>
+            <DialogDescription>Update product information.</DialogDescription>
+          </DialogHeader>
+          {editingProduct && (
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label>Product Name</Label>
+                <Input value={editingProduct.name} onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })} />
+              </div>
+              <div className="grid gap-2">
+                <Label>Category</Label>
+                <Select value={editingProduct.category_id || ""} onValueChange={(v) => setEditingProduct({ ...editingProduct, category_id: v })}>
+                  <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
+                  <SelectContent>
+                    {categories.map((cat) => (
+                      <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Cost Price (GHS)</Label>
+                  <Input type="number" value={editingProduct.cost_price} onChange={(e) => setEditingProduct({ ...editingProduct, cost_price: Number(e.target.value) })} />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Selling Price (GHS)</Label>
+                  <Input type="number" value={editingProduct.selling_price} onChange={(e) => setEditingProduct({ ...editingProduct, selling_price: Number(e.target.value) })} />
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleEditProduct}>Save Changes</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

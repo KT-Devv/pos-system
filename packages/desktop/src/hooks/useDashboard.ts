@@ -47,50 +47,45 @@ export function useDashboard() {
   });
   const [recentTransactions, setRecentTransactions] = useState<RecentTransaction[]>([]);
   const [lowStockItems, setLowStockItems] = useState<LowStockItem[]>([]);
-  const [bestSelling, setBestSelling] = useState<BestSellingProduct[]>([]);
+  const [bestSelling] = useState<BestSellingProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchDashboard = useCallback(async () => {
     setError(null);
     try {
-      const todayData = await api.sales.report('daily') as {
-        periodData: { sales: number; profit: number; transactions: number };
-        topProducts: Array<{ name: string; quantity: number; revenue: number }>;
-      };
+      const [todayResult, statsResult, products, lowStockRows, recentSales] = await Promise.all([
+        api.sales.todayStats().catch(() => ({ totalSales: 0, profit: 0, transactionCount: 0 })),
+        api.sales.stats('daily').catch(() => []),
+        api.products.list().catch(() => []),
+        api.inventory.lowStock().catch(() => []),
+        api.sales.list({ limit: 4 }).catch(() => []),
+      ]);
 
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().split('T')[0];
-      const yesterdayData = await api.sales.report('custom', yesterdayStr, yesterdayStr) as {
-        periodData: { sales: number; profit: number };
-      };
+      const todaySales = todayResult.totalSales || 0;
+      const todayProfit = todayResult.profit || 0;
 
-      const calcTrend = (current: number, previous: number) => {
-        if (previous === 0) return current > 0 ? 100 : 0;
-        return Math.round(((current - previous) / previous) * 100);
-      };
-
-      const products = await api.products.list() as Array<{ id: string; name: string; stock: number }>;
-      const lowStockRows = await api.inventory.lowStock() as Array<{ id: string; name: string; stock: number }>;
+      let salesTrend = 0;
+      let profitTrend = 0;
+      if (statsResult.length >= 2) {
+        const yesterdayEntry = statsResult[1];
+        const ydSales = yesterdayEntry?.totalSales || 0;
+        const ydProfit = yesterdayEntry?.profit || 0;
+        salesTrend = ydSales > 0 ? Math.round(((todaySales - ydSales) / ydSales) * 100) : todaySales > 0 ? 100 : 0;
+        profitTrend = ydProfit > 0 ? Math.round(((todayProfit - ydProfit) / ydProfit) * 100) : todayProfit > 0 ? 100 : 0;
+      }
 
       setStats({
-        todaySales: todayData.periodData.sales,
-        todayProfit: todayData.periodData.profit,
+        todaySales,
+        todayProfit,
         totalProducts: products.length,
         lowStockCount: lowStockRows.length,
-        salesTrend: calcTrend(todayData.periodData.sales, yesterdayData.periodData.sales),
-        profitTrend: calcTrend(todayData.periodData.profit, yesterdayData.periodData.profit),
+        salesTrend,
+        profitTrend,
       });
 
-      setLowStockItems(lowStockRows.slice(0, 4).map((p) => ({ id: p.id, name: p.name, stock: p.stock })));
-      setBestSelling((todayData.topProducts || []).slice(0, 4));
-
-      const recentSales = await api.sales.list({ limit: 4 }) as Array<{
-        id: string; total: number; payment_method: string; created_at: string; item_names: string;
-      }>;
-
-      setRecentTransactions(recentSales.map((s) => ({
+      setLowStockItems(lowStockRows.slice(0, 4).map((p: any) => ({ id: p.id, name: p.name, stock: p.stock })));
+      setRecentTransactions(recentSales.map((s: any) => ({
         id: s.id,
         items: s.item_names ? s.item_names.split(', ').slice(0, 2).join(', ') + (s.item_names.split(', ').length > 2 ? ' +more' : '') : 'Unknown items',
         total: Number(s.total),

@@ -30,9 +30,9 @@ export interface PaymentMethodSummary {
   percentage: number;
 }
 
-export function useReports(period: ReportPeriod, startDate?: string, endDate?: string) {
+export function useReports(period: ReportPeriod) {
   const [periodData, setPeriodData] = useState<PeriodData>({ sales: 0, profit: 0, transactions: 0, averageSale: 0 });
-  const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
+  const [topProducts] = useState<TopProduct[]>([]);
   const [dailySales, setDailySales] = useState<DailySaleSummary[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,22 +42,46 @@ export function useReports(period: ReportPeriod, startDate?: string, endDate?: s
     setLoading(true);
     setError(null);
     try {
-      const result = await api.sales.report(period, startDate, endDate) as {
-        periodData: PeriodData;
-        topProducts: TopProduct[];
-        dailySales: DailySaleSummary[];
-        paymentMethods: PaymentMethodSummary[];
-      };
-      setPeriodData(result.periodData);
-      setTopProducts(result.topProducts);
-      setDailySales(result.dailySales);
-      setPaymentMethods(result.paymentMethods);
+      const [statsResult, todayResult, recentSales] = await Promise.all([
+        api.sales.stats(period).catch(() => []),
+        api.sales.todayStats().catch(() => ({ totalSales: 0, profit: 0, transactionCount: 0 })),
+        api.sales.list({ limit: 50 }).catch(() => []),
+      ]);
+
+      const totalSales = statsResult.reduce((sum: number, s: any) => sum + (s.totalSales || 0), 0);
+      const totalTransactions = statsResult.reduce((sum: number, s: any) => sum + (s.transactionCount || 0), 0);
+
+      setPeriodData({
+        sales: todayResult.totalSales || totalSales,
+        profit: todayResult.profit || 0,
+        transactions: todayResult.transactionCount || totalTransactions,
+        averageSale: totalTransactions > 0 ? totalSales / totalTransactions : 0,
+      });
+
+      setDailySales(statsResult.map((s: any) => ({
+        date: s.period,
+        total: s.totalSales || 0,
+        profit: 0,
+        transactions: s.transactionCount || 0,
+      })));
+
+      const methodMap = new Map<string, number>();
+      for (const sale of recentSales) {
+        const method = sale.payment_method || 'unknown';
+        methodMap.set(method, (methodMap.get(method) || 0) + Number(sale.total || 0));
+      }
+      const totalMethodSales = Array.from(methodMap.values()).reduce((a, b) => a + b, 0);
+      setPaymentMethods(Array.from(methodMap.entries()).map(([method, amount]) => ({
+        method,
+        amount,
+        percentage: totalMethodSales > 0 ? Math.round((amount / totalMethodSales) * 100) : 0,
+      })));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load reports');
     } finally {
       setLoading(false);
     }
-  }, [period, startDate, endDate]);
+  }, [period]);
 
   useEffect(() => { fetchReports(); }, [fetchReports]);
 

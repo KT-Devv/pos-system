@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Plus, Search, Edit, Trash2, Package } from 'lucide-react';
 import { Button } from '@pos/shared/components/button';
 import { Input } from '@pos/shared/components/input';
@@ -38,42 +38,70 @@ export default function Products() {
   };
 
   useEffect(() => {
-    loadProducts();
     loadCategories();
+  }, []);
+
+  const searchRequestId = useRef(0);
+  useEffect(() => {
+    const requestId = ++searchRequestId.current;
+    const timer = setTimeout(async () => {
+      try {
+        const data = await api.products.list(search || undefined);
+        if (requestId === searchRequestId.current) {
+          setProducts(data as any[]);
+        }
+      } catch {
+        // ignore errors during rapid typing
+      }
+    }, 300);
+    return () => clearTimeout(timer);
   }, [search]);
 
   const handleAddProduct = async () => {
     if (!newProduct.name || !newProduct.selling_price) return;
-
-    const qrData = await QRCode.toDataURL(newProduct.name, { width: 200 });
-    await api.products.create({
-      ...newProduct,
-      qr_code: qrData,
-    });
-
-    setNewProduct({ name: '', category_id: '', cost_price: 0, selling_price: 0, stock: 0, barcode: '' });
-    setIsAddDialogOpen(false);
-    loadProducts();
+    try {
+      const qrData = await QRCode.toDataURL(newProduct.name, { width: 200 });
+      await api.products.create({
+        ...newProduct,
+        qr_code: qrData,
+      });
+      setNewProduct({ name: '', category_id: '', cost_price: 0, selling_price: 0, stock: 0, barcode: '' });
+      setIsAddDialogOpen(false);
+      loadProducts();
+    } catch (err) {
+      console.error('Failed to add product:', err);
+      alert('Failed to add product. Please try again.');
+    }
   };
 
   const handleEditProduct = async () => {
     if (!editingProduct) return;
-    await api.products.update(editingProduct.id, {
-      name: editingProduct.name,
-      category_id: editingProduct.category_id,
-      cost_price: editingProduct.cost_price,
-      selling_price: editingProduct.selling_price,
-      barcode: editingProduct.barcode,
-    });
-    setIsEditDialogOpen(false);
-    setEditingProduct(null);
-    loadProducts();
+    try {
+      await api.products.update(editingProduct.id, {
+        name: editingProduct.name,
+        category_id: editingProduct.category_id,
+        cost_price: editingProduct.cost_price,
+        selling_price: editingProduct.selling_price,
+        barcode: editingProduct.barcode,
+      });
+      setIsEditDialogOpen(false);
+      setEditingProduct(null);
+      loadProducts();
+    } catch (err) {
+      console.error('Failed to update product:', err);
+      alert('Failed to update product. Please try again.');
+    }
   };
 
   const handleDeleteProduct = async (id: string) => {
     if (confirm('Are you sure you want to delete this product?')) {
-      await api.products.delete(id);
-      loadProducts();
+      try {
+        await api.products.delete(id);
+        loadProducts();
+      } catch (err) {
+        console.error('Failed to delete product:', err);
+        alert('Failed to delete product. Please try again.');
+      }
     }
   };
 

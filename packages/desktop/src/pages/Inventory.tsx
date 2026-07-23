@@ -39,31 +39,34 @@ export default function Inventory() {
 
   const handleStockEntry = async () => {
     if (!newEntry.product_id || newEntry.quantity <= 0) return;
-
-    if (newEntry.type === 'in') {
-      await api.inventory.stockIn({
-        product_id: newEntry.product_id,
-        quantity: newEntry.quantity,
-        supplier_id: newEntry.supplier_id || undefined,
-        notes: newEntry.notes || undefined,
-      });
-    } else if (newEntry.type === 'out') {
-      await api.inventory.stockOut({
-        product_id: newEntry.product_id,
-        quantity: newEntry.quantity,
-        notes: newEntry.notes || undefined,
-      });
-    } else {
-      await api.inventory.adjust({
-        product_id: newEntry.product_id,
-        quantity: newEntry.quantity,
-        notes: newEntry.notes || undefined,
-      });
+    try {
+      if (newEntry.type === 'in') {
+        await api.inventory.stockIn({
+          product_id: newEntry.product_id,
+          quantity: newEntry.quantity,
+          supplier_id: newEntry.supplier_id || undefined,
+          notes: newEntry.notes || undefined,
+        });
+      } else if (newEntry.type === 'out') {
+        await api.inventory.stockOut({
+          product_id: newEntry.product_id,
+          quantity: newEntry.quantity,
+          notes: newEntry.notes || undefined,
+        });
+      } else {
+        await api.inventory.adjust({
+          product_id: newEntry.product_id,
+          quantity: newEntry.quantity,
+          notes: newEntry.notes || undefined,
+        });
+      }
+      setNewEntry({ product_id: '', type: 'in', quantity: 0, supplier_id: '', notes: '' });
+      setIsDialogOpen(false);
+      loadData();
+    } catch (err) {
+      console.error('Failed to record stock entry:', err);
+      alert('Failed to save stock entry. Please try again.');
     }
-
-    setNewEntry({ product_id: '', type: 'in', quantity: 0, supplier_id: '', notes: '' });
-    setIsDialogOpen(false);
-    loadData();
   };
 
   const filteredHistory = history.filter((entry) =>

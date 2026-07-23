@@ -19,14 +19,22 @@ export default function Customers() {
     setCustomers(data as any[]);
   };
 
-  useEffect(() => { loadCustomers(); }, [search]);
+  useEffect(() => {
+    const timer = setTimeout(() => { loadCustomers(); }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   const handleAddCustomer = async () => {
     if (!newCustomer.name || !newCustomer.phone) return;
-    await api.customers.create(newCustomer);
-    setNewCustomer({ name: '', phone: '', email: '' });
-    setIsAddDialogOpen(false);
-    loadCustomers();
+    try {
+      await api.customers.create(newCustomer);
+      setNewCustomer({ name: '', phone: '', email: '' });
+      setIsAddDialogOpen(false);
+      loadCustomers();
+    } catch (err) {
+      console.error('Failed to add customer:', err);
+      alert('Failed to add customer. Please try again.');
+    }
   };
 
   return (

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Search,
   Plus,
@@ -13,7 +13,6 @@ import {
 } from 'lucide-react';
 import { Button } from '@pos/shared/components/button';
 import { Input } from '@pos/shared/components/input';
-import { Card, CardContent } from '@pos/shared/components/card';
 import { Badge } from '@pos/shared/components/badge';
 import { Label } from '@pos/shared/components/label';
 import { formatCurrency, cn } from '@pos/shared/lib/utils';
@@ -35,15 +34,28 @@ export default function Sales() {
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
   const [_lastSaleId, setLastSaleId] = useState<string>('');
-  const handleSearch = async (value: string) => {
-    setSearch(value);
-    if (value.trim()) {
-      const results = await api.products.list(value);
-      setProducts(results as Product[]);
-    } else {
+  const searchRequestId = useRef(0);
+
+  useEffect(() => {
+    if (!search.trim()) {
       setProducts([]);
+      return;
     }
-  };
+    const requestId = ++searchRequestId.current;
+    const timer = setTimeout(async () => {
+      try {
+        const results = await api.products.list(search);
+        if (requestId === searchRequestId.current) {
+          setProducts(results as Product[]);
+        }
+      } catch {
+        if (requestId === searchRequestId.current) {
+          setProducts([]);
+        }
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   const handleScan = async (code: string) => {
     const product = await api.products.getByBarcode(code);
@@ -161,7 +173,7 @@ export default function Sales() {
             <Input
               placeholder="Search products..."
               value={search}
-              onChange={(e) => handleSearch(e.target.value)}
+              onChange={(e) => setSearch(e.target.value)}
               className="pl-12 h-14 text-lg bg-black/20 border-white/10 focus-visible:ring-primary/50 rounded-xl shadow-inner"
             />
           </div>

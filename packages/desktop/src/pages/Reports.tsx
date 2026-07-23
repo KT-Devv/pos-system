@@ -14,9 +14,19 @@ export default function Reports() {
   const [recentSales, setRecentSales] = useState<any[]>([]);
 
   useEffect(() => {
-    api.sales.stats(period).then(setStats);
-    api.sales.todayStats().then(setTodayStats);
-    api.sales.list({ limit: 7 }).then(setRecentSales);
+    let cancelled = false;
+    Promise.all([
+      api.sales.stats(period).catch(() => []),
+      api.sales.todayStats().catch(() => ({ totalSales: 0, profit: 0, transactionCount: 0 })),
+      api.sales.list({ limit: 7 }).catch(() => []),
+    ]).then(([statsResult, todayResult, salesResult]) => {
+      if (!cancelled) {
+        setStats(statsResult);
+        setTodayStats(todayResult);
+        setRecentSales(salesResult);
+      }
+    });
+    return () => { cancelled = true; };
   }, [period]);
 
   return (
@@ -35,7 +45,18 @@ export default function Reports() {
               <SelectItem value="monthly">Monthly</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline">
+          <Button variant="outline" onClick={() => {
+            const headers = ['Period', 'Transactions', 'Total Sales'];
+            const rows = stats.map((s: any) => [s.period, s.transactionCount, s.totalSales]);
+            const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `sales-report-${period}-${new Date().toISOString().slice(0, 10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }}>
             <Download className="h-4 w-4 mr-2" />
             Export
           </Button>

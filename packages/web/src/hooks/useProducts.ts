@@ -93,5 +93,23 @@ export function useProducts() {
     init();
   }, [fetchProducts, fetchCategories]);
 
-  return { products, categories, loading, error, addProduct, deleteProduct, refetch: fetchProducts };
+  const updateProduct = useCallback(async (id: string, updates: {
+    name?: string;
+    category_id?: string | null;
+    cost_price?: number;
+    selling_price?: number;
+    barcode?: string | null;
+  }) => {
+    try {
+      const { error } = await supabase.from("products").update(updates).eq("id", id);
+      if (error) throw error;
+      await fetchProducts();
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update product");
+      return false;
+    }
+  }, [fetchProducts]);
+
+  return { products, categories, loading, error, addProduct, updateProduct, deleteProduct, refetch: fetchProducts };
 }
