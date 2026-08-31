@@ -28,6 +28,15 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
   const handleComplete = async () => {
     setLoading(true);
     try {
+      if (adminName.trim().length === 0) {
+        alert('Please enter the admin name.');
+        return;
+      }
+      if (adminPin.length < 4 || adminPin.length > 6) {
+        alert('PIN must be 4 to 6 digits.');
+        setStep('admin');
+        return;
+      }
       await api.settings.setup({
         shop_name: shopName,
         shop_phone: shopPhone,
@@ -126,7 +135,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                 <Label htmlFor="adminPin">PIN Code (4-6 digits)</Label>
                 <Input id="adminPin" type="password" value={adminPin} onChange={(e) => setAdminPin(e.target.value)} placeholder="****" maxLength={6} />
               </div>
-              <Button className="w-full" onClick={() => setStep('printer')} disabled={!adminName || !adminPin}>
+              <Button className="w-full" onClick={() => setStep('printer')} disabled={!adminName.trim() || adminPin.length < 4}>
                 Next
               </Button>
             </div>

@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabase";
+import { getLowStockThreshold } from "../lib/settings";
 
-type SaleRow = { total: number; sale_items?: { quantity: number; price: number; cost_price: number }[] };
+type SaleRow = { total: number; discount?: number; sale_items?: { quantity: number; price: number; cost_price: number }[] };
 type ProductRow = { id: string; name: string; stock: number };
 type SaleItemRow = { product_id: string; quantity: number; price: number };
 type SaleSimpleRow = { id: string; total: number; payment_method: string; created_at: string; sale_items?: { product_id: string; quantity: number }[] };
@@ -70,30 +71,32 @@ export function useDashboard() {
       // Today's sales
       const { data: todaySales } = await supabase
         .from("sales")
-        .select("total, sale_items(quantity, price, cost_price)")
+        .select("total, discount, sale_items(quantity, price, cost_price)")
         .gte("created_at", todayStart);
 
       const todaySalesData = (todaySales || []) as SaleRow[];
       const todayTotal = todaySalesData.reduce((sum, s) => sum + Number(s.total), 0);
       const todayProfit = todaySalesData.reduce((sum, s) => {
-        return sum + (s.sale_items || []).reduce((itemSum, item) => {
+        const itemProfit = (s.sale_items || []).reduce((itemSum, item) => {
           return itemSum + (Number(item.price) - Number(item.cost_price)) * item.quantity;
         }, 0);
+        return sum + itemProfit - (Number(s.discount) || 0);
       }, 0);
 
       // Yesterday's sales for trend
       const { data: yesterdaySales } = await supabase
         .from("sales")
-        .select("total, sale_items(quantity, price, cost_price)")
+        .select("total, discount, sale_items(quantity, price, cost_price)")
         .gte("created_at", yesterdayStart)
         .lt("created_at", todayStart);
 
       const yesterdaySalesData = (yesterdaySales || []) as SaleRow[];
       const yesterdayTotal = yesterdaySalesData.reduce((sum, s) => sum + Number(s.total), 0);
       const yesterdayProfit = yesterdaySalesData.reduce((sum, s) => {
-        return sum + (s.sale_items || []).reduce((itemSum, item) => {
+        const itemProfit = (s.sale_items || []).reduce((itemSum, item) => {
           return itemSum + (Number(item.price) - Number(item.cost_price)) * item.quantity;
         }, 0);
+        return sum + itemProfit - (Number(s.discount) || 0);
       }, 0);
 
       const calcTrend = (current: number, previous: number) => {
@@ -104,7 +107,7 @@ export function useDashboard() {
       // Products
       const { data: products } = await supabase.from("products").select("id, name, stock");
       const allProducts = (products || []) as ProductRow[];
-      const lowStockList = allProducts.filter((p) => p.stock > 0 && p.stock <= 10);
+      const lowStockList = allProducts.filter((p) => p.stock > 0 && p.stock <= getLowStockThreshold());
       const outOfStockList = allProducts.filter((p) => p.stock === 0);
 
       setStats({

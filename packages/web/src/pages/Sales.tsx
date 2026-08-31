@@ -20,6 +20,7 @@ import type { CartItem, Product } from "@pos/shared/types";
 import { supabase } from "../lib/supabase";
 import { useCreateSale } from "../hooks/useSales";
 import { useAuth } from "../contexts/AuthContext";
+import { getLowStockThreshold } from "../lib/settings";
 
 type PaymentMethod = "cash" | "momo" | "card";
 
@@ -86,10 +87,14 @@ export default function Sales() {
     (sum, item) => sum + item.product.selling_price * item.quantity,
     0
   );
-  const total = subtotal - discount;
+  const total = Math.max(0, subtotal - discount);
 
   const completeSale = async () => {
     if (cart.length === 0) return;
+    if (discount < 0 || discount > subtotal) {
+      alert(`Discount cannot exceed the subtotal (${formatCurrency(subtotal)}).`);
+      return;
+    }
     if (!cashierId) {
       alert("No cashier user found. Please add a user in the database first.");
       return;
@@ -227,7 +232,7 @@ export default function Sales() {
                   <p className="text-lg font-bold text-primary mt-1">
                     {formatCurrency(product.selling_price)}
                   </p>
-                  <Badge variant={product.stock < 10 ? "destructive" : "secondary"} className="mt-2">
+                  <Badge variant={product.stock <= getLowStockThreshold() ? "destructive" : "secondary"} className="mt-2">
                     {product.stock} in stock
                   </Badge>
                 </div>
@@ -327,7 +332,11 @@ export default function Sales() {
                   id="discount"
                   type="number"
                   value={discount === 0 ? "" : discount}
-                  onChange={(e) => setDiscount(Number(e.target.value))}
+                  onChange={(e) => {
+                    const value = Number(e.target.value);
+                    if (!Number.isFinite(value) || value < 0) return;
+                    setDiscount(value);
+                  }}
                   className="w-24 text-right"
                   placeholder="0"
                 />

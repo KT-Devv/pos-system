@@ -7,7 +7,7 @@ import { Printer } from 'lucide-react';
 interface BarcodeLabelProps {
   open: boolean;
   onClose: () => void;
-  product: { name: string; barcode: string | null; price: number } | null;
+  product: { id: string; name: string; barcode: string | null; price: number } | null;
 }
 
 export default function BarcodeLabel({ open, onClose, product }: BarcodeLabelProps) {
@@ -16,7 +16,7 @@ export default function BarcodeLabel({ open, onClose, product }: BarcodeLabelPro
 
   useEffect(() => {
     if (!open || !product) { setQrDataUrl(null); return; }
-    const code = product.barcode || product.name;
+    const code = product.barcode || product.id;
     QRCode.toDataURL(code, { width: 128, margin: 1, color: { dark: '#000000', light: '#ffffff' } })
       .then(setQrDataUrl)
       .catch(() => setQrDataUrl(null));

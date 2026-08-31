@@ -16,6 +16,7 @@ export interface ReceiptData {
   cashierName: string;
   date: string;
   saleId: string;
+  currency: string;
 }
 
 export async function printReceipt(data: ReceiptData): Promise<boolean> {

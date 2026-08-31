@@ -29,6 +29,7 @@ import {
 } from "@pos/shared/components/select";
 import { formatCurrency } from "@pos/shared/lib/utils";
 import { useProducts } from "../hooks/useProducts";
+import { getLowStockThreshold } from "../lib/settings";
 
 const EMPTY_PRODUCT = { name: "", category_id: "", cost_price: 0, selling_price: 0, stock: 0 };
 
@@ -177,7 +178,7 @@ export default function Products() {
                     <Package className="h-5 w-5 text-muted-foreground" />
                     <CardTitle className="text-lg">{product.name}</CardTitle>
                   </div>
-                  <Badge variant={product.stock < 10 ? "destructive" : "secondary"}>
+                  <Badge variant={product.stock <= getLowStockThreshold() ? "destructive" : "secondary"}>
                     {product.stock} in stock
                   </Badge>
                 </div>

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabase";
+import { getLowStockThreshold } from "../lib/settings";
 
 export interface StockHistoryRow {
   id: string;
@@ -112,7 +113,7 @@ export function useInventoryStats() {
         const products = (data || []) as { stock: number }[];
         setStats({
           totalProducts: products.length,
-          lowStock: products.filter((p) => p.stock > 0 && p.stock <= 10).length,
+          lowStock: products.filter((p) => p.stock > 0 && p.stock <= getLowStockThreshold()).length,
           outOfStock: products.filter((p) => p.stock === 0).length,
         });
       } catch {

@@ -53,7 +53,7 @@ export default function ReceiptPreview({ open, onClose, data }: ReceiptPreviewPr
             {data.items.map((item, i) => (
               <div key={i} className="flex justify-between">
                 <span>{item.name} x{item.quantity}</span>
-                <span>{formatCurrency(item.price)}</span>
+                <span>{formatCurrency(item.price, data.currency)}</span>
               </div>
             ))}
           </div>
@@ -63,17 +63,17 @@ export default function ReceiptPreview({ open, onClose, data }: ReceiptPreviewPr
           <div className="space-y-1">
             <div className="flex justify-between">
               <span>Subtotal:</span>
-              <span>{formatCurrency(data.subtotal)}</span>
+              <span>{formatCurrency(data.subtotal, data.currency)}</span>
             </div>
             {data.discount > 0 && (
               <div className="flex justify-between text-green-600">
                 <span>Discount:</span>
-                <span>-{formatCurrency(data.discount)}</span>
+                <span>-{formatCurrency(data.discount, data.currency)}</span>
               </div>
             )}
             <div className="flex justify-between font-bold text-sm border-t pt-1">
               <span>TOTAL:</span>
-              <span>{formatCurrency(data.total)}</span>
+              <span>{formatCurrency(data.total, data.currency)}</span>
             </div>
           </div>
 

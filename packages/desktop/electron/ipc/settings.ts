@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron';
 import { getDatabase, saveDatabase } from '../db/index.js';
+import { hashPin } from '../lib/pin.js';
 import { randomUUID } from 'crypto';
 
 function queryAll(db: any, sql: string, params: any[] = []): any[] {
@@ -23,7 +24,7 @@ export function registerSettingsHandlers(): void {
     const db = await getDatabase();
     if (key) {
       const row = queryOne(db, 'SELECT value FROM settings WHERE key = ?', [key]);
-      return row?.value || null;
+      return row?.value ?? null;
     }
     const rows = queryAll(db, 'SELECT key, value FROM settings');
     return Object.fromEntries(rows.map((r: any) => [r.key, r.value]));
@@ -45,12 +46,13 @@ export function registerSettingsHandlers(): void {
 
     const settings: [string, string][] = [
       ['shop_name', setup.shop_name],
-      ['shop_phone', setup.shop_phone],
-      ['shop_address', setup.shop_address],
-      ['currency', setup.currency],
+      ['shop_phone', setup.shop_phone || ''],
+      ['shop_address', setup.shop_address || ''],
+      ['currency', setup.currency || 'GHS'],
       ['receipt_header', setup.shop_name],
-      ['printer_type', setup.printer_type],
-      ['printer_paper_size', setup.printer_paper_size],
+      ['printer_type', setup.printer_type || 'none'],
+      ['printer_paper_size', setup.printer_paper_size || '80'],
+      ['low_stock_threshold', setup.low_stock_threshold || '10'],
       ['setup_complete', 'true'],
     ];
 
@@ -62,10 +64,14 @@ export function registerSettingsHandlers(): void {
       );
     }
 
-    db.run(
-      'INSERT INTO users (id, name, pin, role) VALUES (?, ?, ?, ?)',
-      [randomUUID(), setup.admin_name, setup.admin_pin, 'admin']
-    );
+    // Create the admin user only once (idempotent), storing the PIN hashed.
+    const existing = queryOne(db, "SELECT COUNT(*) as count FROM users WHERE role = 'admin'");
+    if (!existing || Number(existing.count) === 0) {
+      db.run(
+        'INSERT INTO users (id, name, pin, role) VALUES (?, ?, ?, ?)',
+        [randomUUID(), setup.admin_name || 'Admin', hashPin(setup.admin_pin), 'admin']
+      );
+    }
 
     saveDatabase();
     return { success: true };

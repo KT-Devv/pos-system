@@ -10,6 +10,7 @@ import { formatCurrency } from '@pos/shared/lib/utils';
 import { useTodayStats } from '../hooks/useSales';
 import { useProducts } from '../hooks/useProducts';
 import { useLowStock } from '../hooks/useInventory';
+import { useSettings } from '../hooks/useSettings';
 import { useEffect, useState } from 'react';
 import { api } from '../lib/ipc';
 import { useNavigate } from 'react-router-dom';
@@ -18,6 +19,7 @@ export default function Dashboard() {
   const { stats } = useTodayStats();
   const { products } = useProducts();
   const { items: lowStock } = useLowStock();
+  const { settings } = useSettings();
   const [recentSales, setRecentSales] = useState<any[]>([]);
   const navigate = useNavigate();
 
@@ -50,7 +52,7 @@ export default function Dashboard() {
             </div>
           </div>
           <div>
-            <div className="text-3xl font-bold text-white mb-1">{formatCurrency(stats.totalSales)}</div>
+            <div className="text-3xl font-bold text-white mb-1">{formatCurrency(stats.totalSales, settings.currency)}</div>
             <p className="text-xs text-muted-foreground flex items-center gap-1">
               <span className="inline-block w-2 h-2 rounded-full bg-primary animate-pulse"></span>
               {stats.transactionCount} transactions today
@@ -69,7 +71,7 @@ export default function Dashboard() {
             </div>
           </div>
           <div>
-            <div className="text-3xl font-bold text-white mb-1">{formatCurrency(stats.profit)}</div>
+            <div className="text-3xl font-bold text-white mb-1">{formatCurrency(stats.profit, settings.currency)}</div>
             <p className="text-xs text-success flex items-center gap-1">
               Gross profit today
             </p>
@@ -143,7 +145,7 @@ export default function Dashboard() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="font-bold text-white mb-1">{formatCurrency(sale.total)}</p>
+                      <p className="font-bold text-white mb-1">{formatCurrency(sale.total, settings.currency)}</p>
                       <Badge variant="outline" className="text-[10px] uppercase tracking-wider bg-white/5 border-white/10">{sale.payment_method}</Badge>
                     </div>
                   </div>

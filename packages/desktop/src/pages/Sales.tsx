@@ -22,9 +22,11 @@ import QRScanner from '../components/QRScanner';
 import ReceiptPreview from '../components/ReceiptPreview';
 import type { ReceiptData } from '../hooks/useReceipt';
 import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../hooks/useSettings';
 
 export default function Sales() {
   const { user } = useAuth();
+  const { settings } = useSettings();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [search, setSearch] = useState('');
   const [products, setProducts] = useState<Product[]>([]);
@@ -33,8 +35,22 @@ export default function Sales() {
   const [showScanner, setShowScanner] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [productRefreshKey, setProductRefreshKey] = useState(0);
   const [_lastSaleId, setLastSaleId] = useState<string>('');
   const searchRequestId = useRef(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F2') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   useEffect(() => {
     if (!search.trim()) {
@@ -67,47 +83,57 @@ export default function Sales() {
   };
 
   const addToCart = (product: Product) => {
-    const existing = cart.find((item) => item.product.id === product.id);
-    if (existing) {
-      setCart(
-        cart.map((item) =>
+    setCart((prev) => {
+      const existing = prev.find((item) => item.product.id === product.id);
+      const onHand = Math.max(0, Number(product.stock) || 0);
+      if (existing) {
+        if (existing.quantity >= onHand) return prev;
+        return prev.map((item) =>
           item.product.id === product.id
             ? { ...item, quantity: item.quantity + 1 }
             : item
-        )
-      );
-    } else {
-      setCart([...cart, { product, quantity: 1 }]);
-    }
+        );
+      }
+      if (onHand < 1) return prev;
+      return [...prev, { product, quantity: 1 }];
+    });
     setSearch('');
     setProducts([]);
   };
 
   const updateQuantity = (productId: string, change: number) => {
-    setCart(
-      cart
-        .map((item) =>
-          item.product.id === productId
-            ? { ...item, quantity: item.quantity + change }
-            : item
-        )
+    setCart((prev) =>
+      prev
+        .map((item) => {
+          if (item.product.id !== productId) return item;
+          const current = item.quantity + change;
+          const onHand = Math.max(0, Number(item.product.stock) || 0);
+          if (current <= 0) return { ...item, quantity: 0 };
+          if (current > onHand) return item;
+          return { ...item, quantity: current };
+        })
         .filter((item) => item.quantity > 0)
     );
   };
 
   const removeFromCart = (productId: string) => {
-    setCart(cart.filter((item) => item.product.id !== productId));
+    setCart((prev) => prev.filter((item) => item.product.id !== productId));
   };
 
   const subtotal = cart.reduce(
     (sum, item) => sum + item.product.selling_price * item.quantity,
     0
   );
-  const total = subtotal - discount;
+  const total = Math.max(0, subtotal - discount);
 
   const completeSale = async () => {
-    if (cart.length === 0) return;
+    if (cart.length === 0 || saving) return;
+    if (discount < 0 || discount > subtotal) {
+      alert(`Discount cannot exceed the subtotal (${formatCurrency(subtotal, settings.currency)}).`);
+      return;
+    }
 
+    setSaving(true);
     try {
       const sale = await api.sales.create({
         cashier_id: user?.id || 'admin',
@@ -121,14 +147,19 @@ export default function Sales() {
           cost_price: item.product.cost_price,
         })),
       });
-
-      const settings = await api.settings.get();
       const saleData = sale as any;
 
+      let shopSettings: any = {};
+      try {
+        shopSettings = (await api.settings.get()) || {};
+      } catch {
+        // Non-critical: falls back to defaults below
+      }
+
       setReceiptData({
-        shopName: settings.shop_name || "Mom's Shop",
-        shopPhone: settings.shop_phone || '',
-        shopAddress: settings.shop_address || '',
+        shopName: shopSettings.shop_name || "Mom's Shop",
+        shopPhone: shopSettings.shop_phone || '',
+        shopAddress: shopSettings.shop_address || '',
         items: cart.map((item) => ({
           name: item.product.name,
           quantity: item.quantity,
@@ -141,12 +172,16 @@ export default function Sales() {
         cashierName: user?.name || 'Admin',
         date: new Date().toLocaleString(),
         saleId: saleData.id,
+        currency: settings.currency,
       });
-      setLastSaleId(saleData.id);
+      setLastSaleId(saleData?.id ?? '');
+      setProductRefreshKey((k) => k + 1);
       setShowReceipt(true);
     } catch (error) {
       console.error('Sale failed:', error);
       alert('Failed to complete sale. Please try again.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -171,9 +206,16 @@ export default function Sales() {
           <div className="relative flex-1">
             <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground" />
             <Input
-              placeholder="Search products..."
+              ref={searchInputRef}
+              placeholder="Search products... (or scan barcode)"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && search.trim()) {
+                  e.preventDefault();
+                  handleScan(search.trim());
+                }
+              }}
               className="pl-12 h-14 text-lg bg-black/20 border-white/10 focus-visible:ring-primary/50 rounded-xl shadow-inner"
             />
           </div>
@@ -209,9 +251,9 @@ export default function Sales() {
                   <div className="p-5 text-center">
                     <h3 className="font-semibold text-white mb-2">{product.name}</h3>
                     <p className="text-xl font-bold text-primary mb-3">
-                      {formatCurrency(product.selling_price)}
+                      {formatCurrency(product.selling_price, settings.currency)}
                     </p>
-                    <Badge variant={product.stock < 10 ? 'destructive' : 'outline'} className={cn("mt-2", product.stock >= 10 && "bg-white/5 border-white/10 text-muted-foreground")}>
+                    <Badge variant={product.stock <= settings.lowStockThreshold ? 'destructive' : 'outline'} className={cn("mt-2", product.stock > settings.lowStockThreshold && "bg-white/5 border-white/10 text-muted-foreground")}>
                       {product.stock} in stock
                     </Badge>
                   </div>
@@ -224,7 +266,7 @@ export default function Sales() {
         {/* Quick Product Grid */}
         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">All Products</h3>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          <QuickProducts onSelect={addToCart} />
+          <QuickProducts onSelect={addToCart} refreshKey={productRefreshKey} />
         </div>
       </div>
 
@@ -256,7 +298,7 @@ export default function Sales() {
                   <div className="flex-1 pr-4">
                     <h4 className="font-semibold text-white leading-tight mb-1">{item.product.name}</h4>
                     <p className="text-sm text-primary font-medium">
-                      {formatCurrency(item.product.selling_price)}
+                      {formatCurrency(item.product.selling_price, settings.currency)}
                     </p>
                   </div>
                   <Button
@@ -295,7 +337,7 @@ export default function Sales() {
                     </Button>
                   </div>
                   <span className="font-bold">
-                    {formatCurrency(item.product.selling_price * item.quantity)}
+                    {formatCurrency(item.product.selling_price * item.quantity, settings.currency)}
                   </span>
                 </div>
               </div>
@@ -309,17 +351,22 @@ export default function Sales() {
             <div className="space-y-3 bg-black/20 p-4 rounded-xl border border-white/5">
               <div className="flex justify-between text-muted-foreground">
                 <span>Subtotal:</span>
-                <span className="text-white">{formatCurrency(subtotal)}</span>
+                <span className="text-white">{formatCurrency(subtotal, settings.currency)}</span>
               </div>
                 <div className="flex justify-between items-center">
                 <Label htmlFor="discount" className="text-muted-foreground">Discount:</Label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">GH₵</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">{currencySymbol(settings.currency)}</span>
                   <Input
                     id="discount"
                     type="number"
+                    min="0"
                     value={discount === 0 ? '' : discount}
-                    onChange={(e) => setDiscount(Number(e.target.value))}
+                    onChange={(e) => {
+                      const value = Number(e.target.value);
+                      if (!Number.isFinite(value) || value < 0) return;
+                      setDiscount(value);
+                    }}
                     className="w-28 text-right pl-8 bg-black/40 border-white/10 focus-visible:ring-primary/50"
                     placeholder="0.00"
                   />
@@ -327,7 +374,7 @@ export default function Sales() {
               </div>
               <div className="flex justify-between items-center text-xl font-bold border-t border-white/10 pt-3 mt-3">
                 <span className="text-white">Total:</span>
-                <span className="text-primary text-2xl">{formatCurrency(total)}</span>
+                <span className="text-primary text-2xl">{formatCurrency(total, settings.currency)}</span>
               </div>
             </div>
 
@@ -378,11 +425,12 @@ export default function Sales() {
             </div>
 
             <Button 
-              className="w-full h-14 text-lg font-bold shadow-[0_0_20px_rgba(99,102,241,0.2)] hover:shadow-[0_0_25px_rgba(99,102,241,0.4)] transition-all bg-gradient-to-r from-primary to-purple-600 border-0" 
+              className="w-full h-14 text-lg font-bold shadow-[0_0_20px_rgba(99,102,241,0.2)] hover:shadow-[0_0_25px_rgba(99,102,241,0.4)] transition-all bg-gradient-to-r from-primary to-purple-600 border-0 disabled:opacity-70" 
               onClick={completeSale}
+              disabled={saving}
             >
               <Receipt className="h-5 w-5 mr-2 animate-pulse" />
-              Complete Sale
+              {saving ? 'Saving...' : 'Complete Sale'}
             </Button>
           </div>
         )}
@@ -402,12 +450,13 @@ export default function Sales() {
 }
 
 // Quick Products Component (loads all products for grid view)
-function QuickProducts({ onSelect }: { onSelect: (product: Product) => void }) {
+function QuickProducts({ onSelect, refreshKey }: { onSelect: (product: Product) => void; refreshKey: number }) {
   const [products, setProducts] = useState<Product[]>([]);
+  const { settings } = useSettings();
 
   useEffect(() => {
     api.products.list().then((data: Product[]) => setProducts(data));
-  }, []);
+  }, [refreshKey]);
 
   return (
     <>
@@ -432,11 +481,27 @@ function QuickProducts({ onSelect }: { onSelect: (product: Product) => void }) {
                 <span className="text-2xl group-hover:scale-110 transition-transform">📦</span>
               </div>
               <h3 className="font-semibold text-white mb-1 line-clamp-1">{product.name}</h3>
-              <p className="text-primary font-bold">{formatCurrency(product.selling_price)}</p>
+              <p className="text-primary font-bold">{formatCurrency(product.selling_price, settings.currency)}</p>
             </div>
           </div>
         </div>
       ))}
     </>
   );
+}
+
+function currencySymbol(currency: string): string {
+  try {
+    return (
+      new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency,
+        minimumFractionDigits: 0,
+      })
+        .formatToParts(0)
+        .find((p) => p.type === "currency")?.value || currency
+    );
+  } catch {
+    return currency;
+  }
 }

@@ -19,6 +19,23 @@ interface ReceiptData {
   cashierName: string;
   date: string;
   saleId: string;
+  currency: string;
+}
+
+function currencySymbol(currency: string): string {
+  try {
+    return (
+      new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency,
+        minimumFractionDigits: 0,
+      })
+        .formatToParts(0)
+        .find((p) => p.type === "currency")?.value || currency
+    );
+  } catch {
+    return currency;
+  }
 }
 
 export function registerReceiptHandlers(): void {
@@ -80,6 +97,8 @@ async function printThermal(data: ReceiptData): Promise<{ success: boolean; erro
       interface: 'usb',
     });
 
+    const sym = currencySymbol(data.currency);
+
     await printer.alignCenter();
     await printer.bold(true);
     await printer.setTextSize(2, 2);
@@ -99,18 +118,18 @@ async function printThermal(data: ReceiptData): Promise<{ success: boolean; erro
 
     for (const item of data.items) {
       const line = `${item.name} x${item.quantity}`;
-      const price = `GHS ${item.price.toFixed(2)}`;
+      const price = `${sym} ${item.price.toFixed(2)}`;
       await printer.leftRight(line, price);
     }
 
     await printer.drawLine();
     await printer.alignRight();
-    await printer.println(`Subtotal: GHS ${data.subtotal.toFixed(2)}`);
+    await printer.println(`Subtotal: ${sym} ${data.subtotal.toFixed(2)}`);
     if (data.discount > 0) {
-      await printer.println(`Discount: -GHS ${data.discount.toFixed(2)}`);
+      await printer.println(`Discount: -${sym} ${data.discount.toFixed(2)}`);
     }
     await printer.bold(true);
-    await printer.println(`TOTAL: GHS ${data.total.toFixed(2)}`);
+    await printer.println(`TOTAL: ${sym} ${data.total.toFixed(2)}`);
     await printer.bold(false);
     await printer.drawLine();
     await printer.alignCenter();
@@ -169,6 +188,8 @@ async function printPDF(data: ReceiptData): Promise<{ success: boolean; filePath
     const margin = 5;
     let y = 10;
 
+    const sym = currencySymbol(data.currency);
+
     doc.setFontSize(16);
     doc.setFont('helvetica', 'bold');
     doc.text(data.shopName, pageWidth / 2, y, { align: 'center' });
@@ -204,7 +225,7 @@ async function printPDF(data: ReceiptData): Promise<{ success: boolean; filePath
     doc.setFontSize(7);
     for (const item of data.items) {
       doc.text(`${item.name} x${item.quantity}`, margin, y);
-      doc.text(`GHS ${item.price.toFixed(2)}`, pageWidth - margin, y, { align: 'right' });
+      doc.text(`${sym} ${item.price.toFixed(2)}`, pageWidth - margin, y, { align: 'right' });
       y += 4;
     }
 
@@ -213,19 +234,19 @@ async function printPDF(data: ReceiptData): Promise<{ success: boolean; filePath
     y += 5;
 
     doc.text(`Subtotal:`, margin, y);
-    doc.text(`GHS ${data.subtotal.toFixed(2)}`, pageWidth - margin, y, { align: 'right' });
+    doc.text(`${sym} ${data.subtotal.toFixed(2)}`, pageWidth - margin, y, { align: 'right' });
     y += 4;
 
     if (data.discount > 0) {
       doc.text(`Discount:`, margin, y);
-      doc.text(`-GHS ${data.discount.toFixed(2)}`, pageWidth - margin, y, { align: 'right' });
+      doc.text(`-${sym} ${data.discount.toFixed(2)}`, pageWidth - margin, y, { align: 'right' });
       y += 4;
     }
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.text(`TOTAL:`, margin, y);
-    doc.text(`GHS ${data.total.toFixed(2)}`, pageWidth - margin, y, { align: 'right' });
+    doc.text(`${sym} ${data.total.toFixed(2)}`, pageWidth - margin, y, { align: 'right' });
     y += 6;
 
     doc.line(margin, y, pageWidth - margin, y);

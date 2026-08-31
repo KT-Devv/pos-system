@@ -6,8 +6,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { formatCurrency } from '@pos/shared/lib/utils';
 import { Badge } from '@pos/shared/components/badge';
 import { api } from '../lib/ipc';
+import { useSettings } from '../hooks/useSettings';
 
 export default function Reports() {
+  const { settings } = useSettings();
   const [period, setPeriod] = useState('daily');
   const [stats, setStats] = useState<any[]>([]);
   const [todayStats, setTodayStats] = useState({ totalSales: 0, profit: 0, transactionCount: 0 });
@@ -70,7 +72,7 @@ export default function Reports() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(todayStats.totalSales)}</div>
+            <div className="text-2xl font-bold">{formatCurrency(todayStats.totalSales, settings.currency)}</div>
           </CardContent>
         </Card>
         <Card>
@@ -79,7 +81,7 @@ export default function Reports() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(todayStats.profit)}</div>
+            <div className="text-2xl font-bold">{formatCurrency(todayStats.profit, settings.currency)}</div>
           </CardContent>
         </Card>
         <Card>
@@ -99,8 +101,8 @@ export default function Reports() {
           <CardContent>
             <div className="text-2xl font-bold">
               {todayStats.transactionCount > 0
-                ? formatCurrency(todayStats.totalSales / todayStats.transactionCount)
-                : formatCurrency(0)}
+                ? formatCurrency(todayStats.totalSales / todayStats.transactionCount, settings.currency)
+                : formatCurrency(0, settings.currency)}
             </div>
           </CardContent>
         </Card>
@@ -122,7 +124,7 @@ export default function Reports() {
                       <p className="font-medium">{s.period}</p>
                       <p className="text-sm text-muted-foreground">{s.transactionCount} transactions</p>
                     </div>
-                    <p className="font-bold">{formatCurrency(s.totalSales)}</p>
+                    <p className="font-bold">{formatCurrency(s.totalSales, settings.currency)}</p>
                   </div>
                 ))
               )}
@@ -148,7 +150,7 @@ export default function Reports() {
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="font-bold">{formatCurrency(sale.total)}</p>
+                      <p className="font-bold">{formatCurrency(sale.total, settings.currency)}</p>
                       <Badge variant="outline">{sale.payment_method}</Badge>
                     </div>
                   </div>

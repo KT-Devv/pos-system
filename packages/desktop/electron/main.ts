@@ -23,7 +23,7 @@ function createWindow(): void {
       preload: path.join(__dirname, '../preload/preload.mjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
     icon: path.join(__dirname, '../public/icon.png'),
     show: false,
@@ -71,7 +71,6 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  closeDatabase();
   if (process.platform !== 'darwin') {
     app.quit();
   }

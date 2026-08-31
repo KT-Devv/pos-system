@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron';
 import { getDatabase, saveDatabase } from '../db/index.js';
+import { parseLimit, runTransaction } from '../lib/db-helpers.js';
 import { randomUUID } from 'crypto';
 
 function queryAll(db: any, sql: string, params: any[] = []): any[] {
@@ -18,33 +19,80 @@ function queryOne(db: any, sql: string, params: any[] = []): any {
   return results[0] || null;
 }
 
+function verifyStock(db: any, items: any[]): void {
+  const stockQuery = db.prepare('SELECT stock FROM products WHERE id = ?');
+  try {
+    for (const item of items) {
+      const quantity = Math.floor(Number(item.quantity));
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        throw new Error('Invalid item quantity');
+      }
+      stockQuery.bind([item.product_id]);
+      let row: any = null;
+      if (stockQuery.step()) row = stockQuery.getAsObject();
+      stockQuery.reset();
+      const available = row ? Number(row.stock) : 0;
+      if (quantity > available) {
+        throw new Error(`Insufficient stock for product ${item.product_id}: only ${available} available`);
+      }
+    }
+  } finally {
+    stockQuery.free();
+  }
+}
+
 export function registerSalesHandlers(): void {
   ipcMain.handle('sales:create', async (_event, sale: any) => {
     const db = await getDatabase();
     const saleId = randomUUID();
 
-    db.run(
-      `INSERT INTO sales (id, cashier_id, total, discount, payment_method)
-       VALUES (?, ?, ?, ?, ?)`,
-      [saleId, sale.cashier_id, sale.total, sale.discount, sale.payment_method]
-    );
-
-    for (const item of sale.items) {
-      db.run(
-        `INSERT INTO sale_items (id, sale_id, product_id, quantity, price, cost_price)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [randomUUID(), saleId, item.product_id, item.quantity, item.price, item.cost_price]
-      );
-      db.run(
-        `UPDATE products SET stock = stock - ? WHERE id = ?`,
-        [item.quantity, item.product_id]
-      );
-      db.run(
-        `INSERT INTO stock_history (id, product_id, type, quantity, notes)
-         VALUES (?, ?, 'out', ?, ?)`,
-        [randomUUID(), item.product_id, item.quantity, `Sale #${saleId.slice(0, 8)}`]
-      );
+    const items: any[] = Array.isArray(sale?.items) ? sale.items : [];
+    if (items.length === 0) {
+      throw new Error('Sale must contain at least one item');
     }
+
+    const cashierId = sale.cashier_id;
+    if (!cashierId) throw new Error('Cashier is required');
+
+    const paymentMethod = sale.payment_method;
+    if (!['cash', 'momo', 'card'].includes(paymentMethod)) {
+      throw new Error('Invalid payment method');
+    }
+
+    const discount = Number(sale.discount) || 0;
+    if (discount < 0) throw new Error('Discount cannot be negative');
+
+    // Verify stock sufficiency before writing anything (frees statement on error too)
+    verifyStock(db, items);
+
+    const total = Number(sale.total);
+    if (!Number.isFinite(total) || total < 0) throw new Error('Invalid sale total');
+
+    runTransaction(db, () => {
+      db.run(
+        `INSERT INTO sales (id, cashier_id, total, discount, payment_method)
+         VALUES (?, ?, ?, ?, ?)`,
+        [saleId, cashierId, total, discount, paymentMethod]
+      );
+
+      for (const item of items) {
+        const quantity = Math.floor(Number(item.quantity));
+        db.run(
+          `INSERT INTO sale_items (id, sale_id, product_id, quantity, price, cost_price)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [randomUUID(), saleId, item.product_id, quantity, item.price, item.cost_price]
+        );
+        db.run(
+          `UPDATE products SET stock = stock - ? WHERE id = ?`,
+          [quantity, item.product_id]
+        );
+        db.run(
+          `INSERT INTO stock_history (id, product_id, type, quantity, notes)
+           VALUES (?, ?, 'out', ?, ?)`,
+          [randomUUID(), item.product_id, quantity, `Sale #${saleId.slice(0, 8)}`]
+        );
+      }
+    });
 
     saveDatabase();
     return queryOne(db, 'SELECT * FROM sales WHERE id = ?', [saleId]);
@@ -61,16 +109,18 @@ export function registerSalesHandlers(): void {
       params.push(filters.startDate);
     }
     if (filters?.endDate) {
-      conditions.push("s.created_at <= ?");
-      params.push(filters.endDate);
+      conditions.push("s.created_at < date(?, '+1 day')");
+      params.push(String(filters.endDate).slice(0, 10));
     }
 
     if (conditions.length > 0) {
       sql += ` WHERE ${conditions.join(' AND ')}`;
     }
     sql += ` ORDER BY s.created_at DESC`;
-    if (filters?.limit) {
-      sql += ` LIMIT ${filters.limit}`;
+    const limit = parseLimit(filters?.limit, 100);
+    if (limit > 0) {
+      sql += ` LIMIT ?`;
+      params.push(limit);
     }
 
     return queryAll(db, sql, params);
@@ -91,22 +141,28 @@ export function registerSalesHandlers(): void {
 
   ipcMain.handle('sales:todayStats', async () => {
     const db = await getDatabase();
-    const today = new Date().toISOString().split('T')[0];
+
+    // Local-day boundaries (the shop's day, not UTC)
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startIso = start.toISOString();
+    const endIso = new Date(start.getTime() + 86400000).toISOString();
+
     const stats = queryOne(db,
       `SELECT
-        COALESCE(SUM(total), 0) as totalSales,
-        COALESCE(SUM(total - discount), 0) as netSales,
+        COALESCE(SUM(total + discount), 0) as totalSales,
+        COALESCE(SUM(total), 0) as netSales,
         COUNT(*) as transactionCount
-       FROM sales WHERE DATE(created_at) = ?`,
-      [today]
+       FROM sales WHERE created_at >= ? AND created_at < ?`,
+      [startIso, endIso]
     );
 
     const profit = queryOne(db,
-      `SELECT COALESCE(SUM(si.quantity * (si.price - si.cost_price)), 0) as totalProfit
+      `SELECT COALESCE(SUM(si.quantity * (si.price - si.cost_price)), 0) - COALESCE(SUM(s.discount), 0) as totalProfit
        FROM sale_items si
        JOIN sales s ON si.sale_id = s.id
-       WHERE DATE(s.created_at) = ?`,
-      [today]
+       WHERE s.created_at >= ? AND s.created_at < ?`,
+      [startIso, endIso]
     );
 
     return { ...stats, profit: profit?.totalProfit || 0 };
@@ -116,17 +172,25 @@ export function registerSalesHandlers(): void {
     const db = await getDatabase();
     let dateFormat: string;
     switch (period) {
-      case 'daily': dateFormat = '%Y-%m-%d'; break;
-      case 'weekly': dateFormat = '%Y-W%W'; break;
-      case 'monthly': dateFormat = '%Y-%m'; break;
-      default: dateFormat = '%Y-%m-%d';
+      case 'daily': dateFormat = "%Y-%m-%d"; break;
+      case 'weekly': dateFormat = "%G-W%V"; break;
+      case 'monthly': dateFormat = "%Y-%m"; break;
+      default: dateFormat = "%Y-%m-%d";
     }
     return queryAll(db,
       `SELECT
-        strftime('${dateFormat}', created_at) as period,
+        strftime('${dateFormat}', created_at, 'localtime') as period,
         SUM(total) as totalSales,
-        COUNT(*) as transactionCount
+        COUNT(*) as transactionCount,
+        SUM(sale_profit.profit) as profit
        FROM sales
+       LEFT JOIN (
+         SELECT s2.id as sale_id,
+           SUM(si.quantity * (si.price - si.cost_price)) - s2.discount as profit
+         FROM sale_items si
+         JOIN sales s2 ON si.sale_id = s2.id
+         GROUP BY s2.id
+       ) sale_profit ON sale_profit.sale_id = sales.id
        GROUP BY period
        ORDER BY period DESC
        LIMIT 30`

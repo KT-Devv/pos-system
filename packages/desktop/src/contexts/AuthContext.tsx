@@ -9,6 +9,7 @@ export interface AuthUser {
 
 interface AuthContextType {
   user: AuthUser | null;
+  sessionToken: string | null;
   login: (pin: string) => Promise<boolean>;
   logout: () => void;
   loading: boolean;
@@ -18,16 +19,20 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const login = async (pin: string): Promise<boolean> => {
     setLoading(true);
     try {
       const result = await api.auth.login(pin);
-      if (result) {
-        setUser({ id: result.id, name: result.name, role: result.role });
+      if (result?.user) {
+        setUser(result.user);
+        setSessionToken(result.sessionToken);
         return true;
       }
+      setUser(null);
+      setSessionToken(null);
       return false;
     } finally {
       setLoading(false);
@@ -35,11 +40,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
+    if (sessionToken) {
+      api.auth.logout(sessionToken).catch(() => undefined);
+    }
+    setSessionToken(null);
     setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, sessionToken, login, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );

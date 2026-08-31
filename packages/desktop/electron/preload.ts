@@ -3,6 +3,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 export interface ElectronAPI {
   auth: {
     login: (pin: string) => Promise<any>;
+    me: (token: string) => Promise<any>;
+    logout: (token: string) => Promise<any>;
   };
   products: {
     list: (search?: string) => Promise<any[]>;
@@ -57,6 +59,8 @@ export interface ElectronAPI {
 contextBridge.exposeInMainWorld('electronAPI', {
   auth: {
     login: (pin: string) => ipcRenderer.invoke('auth:login', pin),
+    me: (token: string) => ipcRenderer.invoke('auth:me', token),
+    logout: (token: string) => ipcRenderer.invoke('auth:logout', token),
   },
   products: {
     list: (search?: string) => ipcRenderer.invoke('products:list', search),

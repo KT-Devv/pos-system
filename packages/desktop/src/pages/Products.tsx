@@ -9,11 +9,24 @@ import { Label } from '@pos/shared/components/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@pos/shared/components/select';
 import { formatCurrency } from '@pos/shared/lib/utils';
 import { api } from '../lib/ipc';
+import { useSettings } from '../hooks/useSettings';
 import QRCode from 'qrcode';
 
-const EMPTY_PRODUCT = { name: '', category_id: '', cost_price: 0, selling_price: 0, stock: 0, barcode: '' };
+const NONE = '__none__';
+
+interface ProductForm {
+  name: string;
+  category_id: string;
+  cost_price: number;
+  selling_price: number;
+  stock: number;
+  barcode: string;
+}
+
+const EMPTY_PRODUCT: ProductForm = { name: '', category_id: NONE, cost_price: 0, selling_price: 0, stock: 0, barcode: '' };
 
 export default function Products() {
+  const { settings } = useSettings();
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [search, setSearch] = useState('');
@@ -21,7 +34,7 @@ export default function Products() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
-  const [newProduct, setNewProduct] = useState(EMPTY_PRODUCT);
+  const [newProduct, setNewProduct] = useState<ProductForm>(EMPTY_PRODUCT);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const loadProducts = async () => {
@@ -54,7 +67,7 @@ export default function Products() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  const validateProduct = (product: typeof EMPTY_PRODUCT): Record<string, string> => {
+  const validateProduct = (product: ProductForm): Record<string, string> => {
     const errors: Record<string, string> = {};
     if (!product.name.trim()) errors.name = 'Product name is required';
     if (!product.selling_price || product.selling_price <= 0) errors.selling_price = 'Selling price must be greater than 0';
@@ -89,9 +102,14 @@ export default function Products() {
     }
     setLoading(true);
     try {
-      const qrData = await QRCode.toDataURL(newProduct.name, { width: 200 });
+      const qrData = await QRCode.toDataURL(newProduct.barcode || newProduct.name, { width: 200 });
       await api.products.create({
-        ...newProduct,
+        name: newProduct.name,
+        category_id: newProduct.category_id === NONE ? null : newProduct.category_id,
+        cost_price: newProduct.cost_price,
+        selling_price: newProduct.selling_price,
+        stock: newProduct.stock,
+        barcode: newProduct.barcode || null,
         qr_code: qrData,
       });
       setIsAddDialogOpen(false);
@@ -115,11 +133,14 @@ export default function Products() {
     try {
       await api.products.update(editingProduct.id, {
         name: editingProduct.name,
-        category_id: editingProduct.category_id,
+        category_id:
+          !editingProduct.category_id || editingProduct.category_id === NONE
+            ? null
+            : editingProduct.category_id,
         cost_price: editingProduct.cost_price,
         selling_price: editingProduct.selling_price,
         stock: editingProduct.stock,
-        barcode: editingProduct.barcode,
+        barcode: editingProduct.barcode || null,
       });
       setIsEditDialogOpen(false);
       loadProducts();
@@ -144,9 +165,12 @@ export default function Products() {
   };
 
   const openEditDialog = (product: any) => {
-    setEditingProduct({ ...product });
+    setEditingProduct({ ...product, category_id: product.category_id || NONE });
     setIsEditDialogOpen(true);
   };
+
+  const getCategorySelectValue = (val: any) => val || NONE;
+  const parseCategorySelectValue = (val: string) => val === NONE ? '' : val;
 
   return (
     <div className="p-6">
@@ -182,7 +206,7 @@ export default function Products() {
                   <Package className="h-5 w-5 text-muted-foreground" />
                   <CardTitle className="text-lg">{product.name}</CardTitle>
                 </div>
-                <Badge variant={product.stock < 10 ? 'destructive' : 'secondary'}>
+                <Badge variant={product.stock <= settings.lowStockThreshold ? 'destructive' : 'secondary'}>
                   {product.stock} in stock
                 </Badge>
               </div>
@@ -195,16 +219,16 @@ export default function Products() {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Cost Price:</span>
-                  <span>{formatCurrency(product.cost_price)}</span>
+                  <span>{formatCurrency(product.cost_price, settings.currency)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Selling Price:</span>
-                  <span className="font-bold">{formatCurrency(product.selling_price)}</span>
+                  <span className="font-bold">{formatCurrency(product.selling_price, settings.currency)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Profit:</span>
                   <span className="text-green-600">
-                    {formatCurrency(product.selling_price - product.cost_price)}
+                    {formatCurrency(product.selling_price - product.cost_price, settings.currency)}
                   </span>
                 </div>
               </div>
@@ -246,6 +270,7 @@ export default function Products() {
               <Select value={newProduct.category_id} onValueChange={(v) => setNewProduct({ ...newProduct, category_id: v })}>
                 <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value={NONE}>No Category</SelectItem>
                   {categories.map((cat: any) => (
                     <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                   ))}
@@ -254,7 +279,7 @@ export default function Products() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="add-cost">Cost Price (GHS)</Label>
+                <Label htmlFor="add-cost">Cost Price ({settings.currency})</Label>
                 <Input
                   id="add-cost"
                   type="number"
@@ -268,7 +293,7 @@ export default function Products() {
                 {formErrors.cost_price && <p className="text-sm text-destructive">{formErrors.cost_price}</p>}
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="add-selling">Selling Price (GHS) *</Label>
+                <Label htmlFor="add-selling">Selling Price ({settings.currency}) *</Label>
                 <Input
                   id="add-selling"
                   type="number"
@@ -337,9 +362,10 @@ export default function Products() {
               </div>
               <div className="grid gap-2">
                 <Label>Category</Label>
-                <Select value={editingProduct.category_id} onValueChange={(v) => setEditingProduct({ ...editingProduct, category_id: v })}>
+                <Select value={getCategorySelectValue(editingProduct.category_id)} onValueChange={(v) => setEditingProduct({ ...editingProduct, category_id: parseCategorySelectValue(v) })}>
                   <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
                   <SelectContent>
+                    <SelectItem value={NONE}>No Category</SelectItem>
                     {categories.map((cat: any) => (
                       <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                     ))}
@@ -348,7 +374,7 @@ export default function Products() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="edit-cost">Cost Price (GHS)</Label>
+                  <Label htmlFor="edit-cost">Cost Price ({settings.currency})</Label>
                   <Input
                     id="edit-cost"
                     type="number"
@@ -361,7 +387,7 @@ export default function Products() {
                   {formErrors.cost_price && <p className="text-sm text-destructive">{formErrors.cost_price}</p>}
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="edit-selling">Selling Price (GHS) *</Label>
+                  <Label htmlFor="edit-selling">Selling Price ({settings.currency}) *</Label>
                   <Input
                     id="edit-selling"
                     type="number"

@@ -35,7 +35,12 @@ export default function Settings() {
       const entries = Object.entries(draft);
       for (const [key, value] of entries) {
         if (settings[key] !== value) {
-          await api.settings.set(key, value);
+          let toSave = value;
+          if (key === 'low_stock_threshold') {
+            const num = Number(value);
+            toSave = String(Number.isFinite(num) && num >= 0 ? Math.round(num) : 10);
+          }
+          await api.settings.set(key, toSave);
         }
       }
       setSettings({ ...draft });

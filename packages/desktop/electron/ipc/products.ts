@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron';
 import { getDatabase, saveDatabase } from '../db/index.js';
+import { assertNonNegativeNumber } from '../lib/db-helpers.js';
 import { randomUUID } from 'crypto';
 
 function queryAll(db: any, sql: string, params: any[] = []): any[] {
@@ -16,6 +17,11 @@ function queryAll(db: any, sql: string, params: any[] = []): any[] {
 function queryOne(db: any, sql: string, params: any[] = []): any {
   const results = queryAll(db, sql, params);
   return results[0] || null;
+}
+
+function cleanBarcode(barcode: unknown): string | null {
+  const b = typeof barcode === 'string' ? barcode.trim() : '';
+  return b || null;
 }
 
 export function registerProductHandlers(): void {
@@ -47,23 +53,30 @@ export function registerProductHandlers(): void {
     );
   });
 
-  ipcMain.handle('products:getByBarcode', async (_event, barcode: string) => {
+  ipcMain.handle('products:getByBarcode', async (_event, code: string) => {
     const db = await getDatabase();
+    // Match by barcode, product id, or name (labels may encode any of these)
     return queryOne(db,
       `SELECT p.*, c.name as category_name FROM products p
        LEFT JOIN categories c ON p.category_id = c.id
-       WHERE p.barcode = ?`,
-      [barcode]
+       WHERE p.barcode = ? OR p.id = ? OR p.name = ?`,
+      [code, code, code]
     );
   });
 
   ipcMain.handle('products:create', async (_event, product: any) => {
+    if (!product?.name || !String(product.name).trim()) throw new Error('Product name is required');
+    const costPrice = assertNonNegativeNumber(product.cost_price, 'cost price');
+    const sellingPrice = assertNonNegativeNumber(product.selling_price, 'selling price');
+    if (sellingPrice <= 0) throw new Error('Selling price must be greater than 0');
+    const stock = typeof product.stock === 'number' ? Math.trunc(product.stock) : (parseInt(String(product.stock), 10) || 0);
+    if (!Number.isFinite(stock) || stock < 0) throw new Error('Stock must be a non-negative integer');
     const db = await getDatabase();
     const id = randomUUID();
     db.run(
       `INSERT INTO products (id, name, category_id, cost_price, selling_price, stock, barcode, qr_code, image)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, product.name, product.category_id || null, product.cost_price, product.selling_price, product.stock || 0, product.barcode || null, product.qr_code || null, product.image || null]
+      [id, product.name, product.category_id || null, costPrice, sellingPrice, stock, cleanBarcode(product.barcode), product.qr_code || null, product.image || null]
     );
     saveDatabase();
     return queryOne(db, 'SELECT * FROM products WHERE id = ?', [id]);
@@ -74,12 +87,30 @@ export function registerProductHandlers(): void {
     const fields: string[] = [];
     const values: any[] = [];
 
-    if (product.name !== undefined) { fields.push('name = ?'); values.push(product.name); }
-    if (product.category_id !== undefined) { fields.push('category_id = ?'); values.push(product.category_id); }
-    if (product.cost_price !== undefined) { fields.push('cost_price = ?'); values.push(product.cost_price); }
-    if (product.selling_price !== undefined) { fields.push('selling_price = ?'); values.push(product.selling_price); }
-    if (product.stock !== undefined) { fields.push('stock = ?'); values.push(product.stock); }
-    if (product.barcode !== undefined) { fields.push('barcode = ?'); values.push(product.barcode); }
+    if (product.name !== undefined) {
+      const name = String(product.name).trim();
+      if (!name) throw new Error('Product name is required');
+      fields.push('name = ?'); values.push(name);
+    }
+    if (product.category_id !== undefined) {
+      fields.push('category_id = ?'); values.push(product.category_id || null);
+    }
+    if (product.cost_price !== undefined) {
+      fields.push('cost_price = ?'); values.push(assertNonNegativeNumber(product.cost_price, 'cost price'));
+    }
+    if (product.selling_price !== undefined) {
+      const sp = assertNonNegativeNumber(product.selling_price, 'selling price');
+      if (sp <= 0) throw new Error('Selling price must be greater than 0');
+      fields.push('selling_price = ?'); values.push(sp);
+    }
+    if (product.stock !== undefined) {
+      const stock = typeof product.stock === 'number' ? Math.trunc(product.stock) : (parseInt(String(product.stock), 10) || 0);
+      if (!Number.isFinite(stock) || stock < 0) throw new Error('Stock must be a non-negative integer');
+      fields.push('stock = ?'); values.push(stock);
+    }
+    if (product.barcode !== undefined) {
+      fields.push('barcode = ?'); values.push(cleanBarcode(product.barcode));
+    }
     if (product.qr_code !== undefined) { fields.push('qr_code = ?'); values.push(product.qr_code); }
     if (product.image !== undefined) { fields.push('image = ?'); values.push(product.image); }
 
@@ -101,7 +132,7 @@ export function registerProductHandlers(): void {
   ipcMain.handle('products:stats', async () => {
     const db = await getDatabase();
     const total = queryOne(db, 'SELECT COUNT(*) as count FROM products');
-    const lowStock = queryOne(db, `SELECT COUNT(*) as count FROM products WHERE stock <= CAST((SELECT value FROM settings WHERE key = 'low_stock_threshold') AS INTEGER)`);
+    const lowStock = queryOne(db, `SELECT COUNT(*) as count FROM products WHERE stock <= COALESCE(CAST((SELECT value FROM settings WHERE key = 'low_stock_threshold') AS INTEGER), 10)`);
     const outOfStock = queryOne(db, 'SELECT COUNT(*) as count FROM products WHERE stock = 0');
     return { total: total?.count || 0, lowStock: lowStock?.count || 0, outOfStock: outOfStock?.count || 0 };
   });

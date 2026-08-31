@@ -10,7 +10,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { formatDateTime } from '@pos/shared/lib/utils';
 import { api } from '../lib/ipc';
 
-const EMPTY_ENTRY = { product_id: '', type: 'in' as 'in' | 'out' | 'adjustment', quantity: 0, supplier_id: '', notes: '' };
+const NONE = '__none__';
+
+interface StockEntryForm {
+  product_id: string;
+  type: 'in' | 'out' | 'adjustment';
+  quantity: number;
+  supplier_id: string;
+  notes: string;
+}
+
+const EMPTY_ENTRY: StockEntryForm = { product_id: NONE, type: 'in', quantity: 0, supplier_id: NONE, notes: '' };
 
 export default function Inventory() {
   const [history, setHistory] = useState<any[]>([]);
@@ -18,7 +28,7 @@ export default function Inventory() {
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [newEntry, setNewEntry] = useState(EMPTY_ENTRY);
+  const [newEntry, setNewEntry] = useState<StockEntryForm>(EMPTY_ENTRY);
   const [loading, setLoading] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
@@ -44,10 +54,14 @@ export default function Inventory() {
     if (!isDialogOpen) resetForm();
   }, [isDialogOpen, resetForm]);
 
-  const validateEntry = (entry: typeof EMPTY_ENTRY): Record<string, string> => {
+  const validateEntry = (entry: StockEntryForm): Record<string, string> => {
     const errors: Record<string, string> = {};
-    if (!entry.product_id) errors.product_id = 'Product is required';
-    if (entry.quantity <= 0) errors.quantity = 'Quantity must be greater than 0';
+    if (!entry.product_id || entry.product_id === NONE) errors.product_id = 'Product is required';
+    if (entry.type === 'adjustment' && entry.quantity === 0) {
+      errors.quantity = 'Adjustment quantity must be non-zero (use a negative value to reduce stock)';
+    } else if (entry.type !== 'adjustment' && entry.quantity <= 0) {
+      errors.quantity = 'Quantity must be greater than 0';
+    }
     return errors;
   };
 
@@ -63,7 +77,7 @@ export default function Inventory() {
         await api.inventory.stockIn({
           product_id: newEntry.product_id,
           quantity: newEntry.quantity,
-          supplier_id: newEntry.supplier_id || undefined,
+          supplier_id: newEntry.supplier_id === NONE ? undefined : newEntry.supplier_id,
           notes: newEntry.notes || undefined,
         });
       } else if (newEntry.type === 'out') {
@@ -144,7 +158,7 @@ export default function Inventory() {
                   </div>
                   <div className="text-right">
                     <Badge variant={entry.type === 'in' ? 'success' : entry.type === 'out' ? 'destructive' : 'warning'}>
-                      {entry.type === 'in' ? '+' : entry.type === 'out' ? '-' : '±'}{entry.quantity}
+                      {entry.type === 'in' ? '+' : entry.type === 'out' ? '-' : '\u00B1'}{entry.quantity}
                     </Badge>
                     <p className="text-xs text-muted-foreground mt-1">
                       {formatDateTime(entry.created_at)}
@@ -192,10 +206,11 @@ export default function Inventory() {
               <Label>Quantity *</Label>
               <Input
                 type="number"
-                min="1"
+                min={newEntry.type === 'adjustment' ? undefined : 1}
+                step={newEntry.type === 'adjustment' ? 1 : 1}
                 value={newEntry.quantity || ''}
                 onChange={(e) => setNewEntry({ ...newEntry, quantity: Number(e.target.value) || 0 })}
-                placeholder="0"
+                placeholder={newEntry.type === 'adjustment' ? 'e.g. 5 or -5' : '0'}
                 className={formErrors.quantity ? 'border-destructive' : ''}
               />
               {formErrors.quantity && <p className="text-sm text-destructive">{formErrors.quantity}</p>}
@@ -206,6 +221,7 @@ export default function Inventory() {
                 <Select value={newEntry.supplier_id} onValueChange={(v) => setNewEntry({ ...newEntry, supplier_id: v })}>
                   <SelectTrigger><SelectValue placeholder="Select supplier" /></SelectTrigger>
                   <SelectContent>
+                    <SelectItem value={NONE}>No Supplier</SelectItem>
                     {suppliers.map((s: any) => (
                       <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
                     ))}
