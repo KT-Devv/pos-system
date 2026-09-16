@@ -6,6 +6,8 @@ A modern Point of Sale (POS) system built for small businesses in Ghana.
 
 - **Frontend**: React + TypeScript + Vite + Tailwind CSS
 - **Backend**: Supabase (PostgreSQL + Auth + Storage)
+- **Next web client**: Next.js + Supabase SSR
+- **Desktop client**: Tauri + Rust + SQLite offline queue
 - **UI Components**: Radix UI + shadcn/ui patterns
 
 ## Features
@@ -73,7 +75,8 @@ npm run dev
 packages/
 ├── shared/               # Domain types, validation, and reusable UI
 ├── web/                  # Browser client
-└── desktop/              # Electron desktop client and offline storage
+├── next-web/             # Next.js web client
+└── desktop/              # Tauri desktop client (Electron retained during migration)
 database/
 └── schema.v2.sql         # Fresh Supabase schema
 ```

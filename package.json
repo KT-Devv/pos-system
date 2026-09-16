@@ -6,9 +6,13 @@
   ],
   "scripts": {
     "dev:web": "npm run dev --workspace=packages/web",
+    "dev:next": "npm run dev --workspace=packages/next-web",
     "dev:desktop": "npm run dev --workspace=packages/desktop",
+    "dev:tauri": "npm run tauri:dev --workspace=packages/desktop",
     "build:web": "npm run build --workspace=packages/web",
+    "build:next": "npm run build --workspace=packages/next-web",
     "build:desktop": "npm run build --workspace=packages/desktop",
+    "build:tauri": "npm run tauri:build --workspace=packages/desktop",
     "build:shared": "npm run build --workspace=packages/shared"
   }
 }

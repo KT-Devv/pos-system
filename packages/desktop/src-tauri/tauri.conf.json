@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "POS System",
+  "version": "1.0.0",
+  "identifier": "com.pos.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev --workspace=packages/next-web",
+    "beforeBuildCommand": "npm run build --workspace=packages/next-web",
+    "devUrl": "http://localhost:3000",
+    "frontendDist": "../../next-web/out"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "POS System",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 700,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' ipc: http://localhost:5173 https://*.supabase.co; connect-src 'self' ipc: http://localhost:5173 https://*.supabase.co wss://*.supabase.co; img-src 'self' data: blob: https:;"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all"
+  },
+  "plugins": {
+    "sql": {
+      "preload": ["sqlite:pos.db"]
+    }
+  }
+}

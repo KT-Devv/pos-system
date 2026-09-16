@@ -8,7 +8,9 @@
   "main": "out/main/main.js",
   "scripts": {
     "dev": "electron-vite dev -c electron-vite.config.ts",
+    "tauri:dev": "tauri dev --config src-tauri/tauri.conf.json",
     "build": "electron-vite build -c electron-vite.config.ts",
+    "tauri:build": "tauri build --config src-tauri/tauri.conf.json",
     "build:win": "electron-vite build -c electron-vite.config.ts && electron-builder --win",
     "build:mac": "electron-vite build -c electron-vite.config.ts && electron-builder --mac",
     "preview": "electron-vite preview -c electron-vite.config.ts"
@@ -26,6 +28,7 @@
     "sql.js": "^1.11.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.5.0",
     "@tailwindcss/vite": "^4.3.2",
     "@types/node": "^24.13.2",
     "@types/qrcode": "^1.5.0",

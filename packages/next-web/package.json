@@ -1,0 +1,27 @@
+{
+  "name": "@pos/next-web",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.9.0",
+    "@pos/shared": "*",
+    "@supabase/ssr": "^0.7.0",
+    "@supabase/supabase-js": "^2.110.2",
+    "next": "^15.5.7",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "~5.6.0"
+  }
+}
