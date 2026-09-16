@@ -29,11 +29,18 @@ export function useProducts() {
     try {
       const { data, error } = await supabase
         .from("products")
-        .select("*, categories(id, name)")
+        .select("id,name,category_id,cost_price,selling_price,stock,barcode,image:image_url,created_at,categories(id, name)")
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setProducts(data || []);
+      setProducts(
+        ((data || []) as unknown as ProductRow[]).map((product) => ({
+          ...product,
+          categories: Array.isArray(product.categories)
+            ? product.categories[0] ?? null
+            : product.categories,
+        })),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch products");
     }

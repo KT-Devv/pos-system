@@ -5,7 +5,6 @@ import type { User, Session } from '@supabase/supabase-js';
 export interface UserProfile {
   id: string;
   name: string;
-  email: string;
   role: 'admin' | 'cashier';
 }
 
@@ -22,8 +21,8 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 async function fetchProfile(userId: string): Promise<UserProfile | null> {
   const { data, error } = await supabase
-    .from('users')
-    .select('id, name, email, role')
+    .from('profiles')
+    .select('id, name, role')
     .eq('id', userId)
     .single();
   if (error) return null;
@@ -34,10 +33,9 @@ async function ensureProfile(user: User, name?: string): Promise<UserProfile | n
   let profile = await fetchProfile(user.id);
   if (!profile) {
     const displayName = name || user.email?.split('@')[0] || 'User';
-    const { error } = await supabase.from('users').insert({
+    const { error } = await supabase.from('profiles').insert({
       id: user.id,
       name: displayName,
-      email: user.email || '',
       role: 'admin',
     });
     if (!error) {

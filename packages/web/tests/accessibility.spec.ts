@@ -25,7 +25,7 @@ test('site-wide accessibility audit (axe)', async ({ page }) => {
   }
 
   const outDir = 'reports/accessibility';
-  try { fs.mkdirSync(outDir, { recursive: true }); } catch (e) {}
+  try { fs.mkdirSync(outDir, { recursive: true }); } catch {}
   fs.writeFileSync(`${outDir}/web-axe.json`, JSON.stringify(summary, null, 2));
 
   // simple assertion: the test will not fail on violations but will save the report

@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
 import { getDatabase, saveDatabase } from '../db/index.js';
-import { parseLimit, runTransaction } from '../lib/db-helpers.js';
+import { assertPositiveInt, parseLimit, runTransaction } from '../lib/db-helpers.js';
 import { randomUUID } from 'crypto';
 
 function queryAll(db: any, sql: string, params: any[] = []): any[] {
@@ -22,10 +22,7 @@ function queryOne(db: any, sql: string, params: any[] = []): any {
 export function registerInventoryHandlers(): void {
   ipcMain.handle('inventory:stockIn', async (_event, entry: any) => {
     const db = await getDatabase();
-    const quantity = Number(entry.quantity);
-    if (!Number.isFinite(quantity) || quantity <= 0) {
-      throw new Error('Stock-in quantity must be a positive number');
-    }
+    const quantity = assertPositiveInt(entry.quantity, 'stock-in quantity');
     if (!entry.product_id) throw new Error('Product is required');
     const id = randomUUID();
 
@@ -47,10 +44,7 @@ export function registerInventoryHandlers(): void {
 
   ipcMain.handle('inventory:stockOut', async (_event, entry: any) => {
     const db = await getDatabase();
-    const quantity = Number(entry.quantity);
-    if (!Number.isFinite(quantity) || quantity <= 0) {
-      throw new Error('Stock-out quantity must be a positive number');
-    }
+    const quantity = assertPositiveInt(entry.quantity, 'stock-out quantity');
     if (!entry.product_id) throw new Error('Product is required');
     const row = queryOne(db, 'SELECT stock FROM products WHERE id = ?', [entry.product_id]);
     const available = row ? Number(row.stock) : 0;
@@ -95,7 +89,7 @@ export function registerInventoryHandlers(): void {
       db.run(
         `INSERT INTO stock_history (id, product_id, type, quantity, notes)
          VALUES (?, ?, 'adjustment', ?, ?)`,
-        [id, entry.product_id, Math.abs(delta), entry.notes || null]
+        [id, entry.product_id, delta, entry.notes || null]
       );
       db.run(
         `UPDATE products SET stock = ? WHERE id = ?`,

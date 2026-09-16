@@ -31,7 +31,7 @@ export function useStockHistory() {
   const fetchStockHistory = useCallback(async () => {
     try {
       const { data, error } = await supabase
-        .from("stock_history")
+        .from("stock_movements")
         .select("*, products(id, name), suppliers(id, name)")
         .order("created_at", { ascending: false });
 
@@ -87,7 +87,7 @@ export function useCreateStockEntry() {
     setCreating(true);
     setError(null);
     try {
-      const { error } = await supabase.from("stock_history").insert(entry);
+      const { error } = await supabase.from("stock_movements").insert(entry);
       if (error) throw error;
       return true;
     } catch (err) {

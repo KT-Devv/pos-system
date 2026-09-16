@@ -20,20 +20,31 @@ function queryOne(db: any, sql: string, params: any[] = []): any {
 }
 
 function verifyStock(db: any, items: any[]): void {
+  const requested = new Map<string, number>();
+  for (const item of items) {
+    const quantity = Math.floor(Number(item.quantity));
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      throw new Error('Invalid item quantity');
+    }
+    if (!item.product_id) {
+      throw new Error('Product is required');
+    }
+    requested.set(item.product_id, (requested.get(item.product_id) || 0) + quantity);
+  }
+
   const stockQuery = db.prepare('SELECT stock FROM products WHERE id = ?');
   try {
-    for (const item of items) {
-      const quantity = Math.floor(Number(item.quantity));
-      if (!Number.isFinite(quantity) || quantity <= 0) {
-        throw new Error('Invalid item quantity');
-      }
-      stockQuery.bind([item.product_id]);
+    for (const [productId, quantity] of requested) {
+      stockQuery.bind([productId]);
       let row: any = null;
       if (stockQuery.step()) row = stockQuery.getAsObject();
       stockQuery.reset();
+      if (!row) {
+        throw new Error(`Product not found: ${productId}`);
+      }
       const available = row ? Number(row.stock) : 0;
       if (quantity > available) {
-        throw new Error(`Insufficient stock for product ${item.product_id}: only ${available} available`);
+        throw new Error(`Insufficient stock for product ${productId}: only ${available} available`);
       }
     }
   } finally {
@@ -59,14 +70,36 @@ export function registerSalesHandlers(): void {
       throw new Error('Invalid payment method');
     }
 
-    const discount = Number(sale.discount) || 0;
-    if (discount < 0) throw new Error('Discount cannot be negative');
+    const requestedDiscount =
+      sale.discount === undefined || sale.discount === null
+        ? 0
+        : Number(sale.discount);
+    if (!Number.isFinite(requestedDiscount) || requestedDiscount < 0) {
+      throw new Error('Discount must be a finite non-negative number');
+    }
 
     // Verify stock sufficiency before writing anything (frees statement on error too)
     verifyStock(db, items);
 
-    const total = Number(sale.total);
-    if (!Number.isFinite(total) || total < 0) throw new Error('Invalid sale total');
+    const normalizedItems = items.map((item) => {
+      const product = queryOne(
+        db,
+        'SELECT selling_price, cost_price FROM products WHERE id = ?',
+        [item.product_id],
+      );
+      if (!product) throw new Error(`Product not found: ${item.product_id}`);
+      return {
+        ...item,
+        price: Number(product.selling_price),
+        cost_price: Number(product.cost_price),
+      };
+    });
+    const subtotal = normalizedItems.reduce(
+      (sum, item) => sum + item.price * Math.floor(Number(item.quantity)),
+      0,
+    );
+    const discount = Math.min(requestedDiscount, subtotal);
+    const total = Math.max(0, subtotal - discount);
 
     runTransaction(db, () => {
       db.run(
@@ -75,7 +108,7 @@ export function registerSalesHandlers(): void {
         [saleId, cashierId, total, discount, paymentMethod]
       );
 
-      for (const item of items) {
+      for (const item of normalizedItems) {
         const quantity = Math.floor(Number(item.quantity));
         db.run(
           `INSERT INTO sale_items (id, sale_id, product_id, quantity, price, cost_price)

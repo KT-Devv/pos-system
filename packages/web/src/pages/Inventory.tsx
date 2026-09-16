@@ -66,9 +66,9 @@ export default function Inventory() {
   const validateEntry = (entry: typeof EMPTY_ENTRY): Record<string, string> => {
     const errors: Record<string, string> = {};
     if (!entry.product_id) errors.product_id = "Product is required";
-    const qty = parseInt(entry.quantity, 10);
-    if (isNaN(qty)) {
-      errors.quantity = "Quantity must be a valid number";
+    const qty = Number(entry.quantity);
+    if (!Number.isInteger(qty)) {
+      errors.quantity = "Quantity must be a whole number";
     } else if (entry.type === "adjustment" && qty === 0) {
       errors.quantity = "Adjustment quantity cannot be zero";
     } else if (entry.type !== "adjustment" && qty <= 0) {
@@ -87,11 +87,11 @@ export default function Inventory() {
       setFormErrors(errors);
       return;
     }
-    const qty = parseInt(newStockEntry.quantity, 10);
+    const qty = Number(newStockEntry.quantity);
     const ok = await createStockEntry({
       product_id: newStockEntry.product_id,
       type: newStockEntry.type,
-      quantity: newStockEntry.type === "out" ? -Math.abs(qty) : qty,
+      quantity: newStockEntry.type === "out" ? Math.abs(qty) : qty,
       supplier_id: newStockEntry.supplier_id || null,
       notes: newStockEntry.notes || null,
     });

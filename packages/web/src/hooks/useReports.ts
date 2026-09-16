@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 
-type SaleRow = { total: number; discount?: number; sale_items?: { quantity: number; price: number; cost_price: number }[] };
+type SaleRow = { total: number; discount?: number; sale_lines?: { quantity: number; price: number; cost_price: number }[] };
 type SaleItemRow = { product_id: string; quantity: number; price: number; cost_price: number };
-type SaleWithDate = { total: number; discount?: number; created_at: string; sale_items?: { quantity: number; price: number; cost_price: number }[] };
+type SaleWithDate = { total: number; discount?: number; created_at: string; sale_lines?: { quantity: number; price: number; cost_price: number }[] };
 type PaymentRow = { payment_method: string; total: number };
 
 export interface PeriodData {
@@ -60,14 +60,14 @@ export function useReports(period: "daily" | "weekly" | "monthly") {
       // Period sales data
       const { data: periodSales } = await supabase
         .from("sales")
-        .select("total, discount, sale_items(quantity, price, cost_price)")
+        .select("total, discount, sale_lines(quantity, price:unit_price, cost_price:unit_cost)")
         .gte("created_at", startIso);
 
       const periodSalesData = (periodSales || []) as SaleRow[];
       const totalSales = periodSalesData.reduce((sum, s) => sum + Number(s.total), 0);
       const totalTransactions = periodSalesData.length;
       const totalProfit = periodSalesData.reduce((sum, s) => {
-        const itemProfit = (s.sale_items || []).reduce((itemSum, item) => {
+        const itemProfit = (s.sale_lines || []).reduce((itemSum, item) => {
           return itemSum + (Number(item.price) - Number(item.cost_price)) * item.quantity;
         }, 0);
         return sum + itemProfit - (Number(s.discount) || 0);
@@ -82,8 +82,8 @@ export function useReports(period: "daily" | "weekly" | "monthly") {
 
       // Top products this period
       const { data: items } = await supabase
-        .from("sale_items")
-        .select("product_id, quantity, price, cost_price, sales!inner(created_at)")
+        .from("sale_lines")
+        .select("product_id, quantity, price:unit_price, cost_price:unit_cost, sales!inner(created_at)")
         .gte("sales.created_at", startIso);
 
       const itemsData = (items || []) as SaleItemRow[];
@@ -124,7 +124,7 @@ export function useReports(period: "daily" | "weekly" | "monthly") {
 
       const { data: recentSales } = await supabase
         .from("sales")
-        .select("total, discount, created_at, sale_items(quantity, price, cost_price)")
+        .select("total, discount, created_at, sale_lines(quantity, price:unit_price, cost_price:unit_cost)")
         .gte("created_at", fiveDaysAgo.toISOString())
         .order("created_at", { ascending: false });
 
@@ -135,7 +135,7 @@ export function useReports(period: "daily" | "weekly" | "monthly") {
         if (!dayMap[day]) dayMap[day] = { total: 0, profit: 0, count: 0 };
         dayMap[day].total += Number(s.total);
         dayMap[day].count += 1;
-        const itemProfit = (s.sale_items || []).reduce((sum, item) => {
+        const itemProfit = (s.sale_lines || []).reduce((sum, item) => {
           return sum + (Number(item.price) - Number(item.cost_price)) * item.quantity;
         }, 0);
         dayMap[day].profit += itemProfit - (Number(s.discount) || 0);

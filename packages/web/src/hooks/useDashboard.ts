@@ -2,10 +2,10 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import { getLowStockThreshold } from "../lib/settings";
 
-type SaleRow = { total: number; discount?: number; sale_items?: { quantity: number; price: number; cost_price: number }[] };
+type SaleRow = { total: number; discount?: number; sale_lines?: { quantity: number; price: number; cost_price: number }[] };
 type ProductRow = { id: string; name: string; stock: number };
 type SaleItemRow = { product_id: string; quantity: number; price: number };
-type SaleSimpleRow = { id: string; total: number; payment_method: string; created_at: string; sale_items?: { product_id: string; quantity: number }[] };
+type SaleSimpleRow = { id: string; total: number; payment_method: string; created_at: string; sale_lines?: { product_id: string; quantity: number }[] };
 
 export interface DashboardStats {
   todaySales: number;
@@ -71,13 +71,13 @@ export function useDashboard() {
       // Today's sales
       const { data: todaySales } = await supabase
         .from("sales")
-        .select("total, discount, sale_items(quantity, price, cost_price)")
+        .select("total, discount, sale_lines(quantity, price:unit_price, cost_price:unit_cost)")
         .gte("created_at", todayStart);
 
       const todaySalesData = (todaySales || []) as SaleRow[];
       const todayTotal = todaySalesData.reduce((sum, s) => sum + Number(s.total), 0);
       const todayProfit = todaySalesData.reduce((sum, s) => {
-        const itemProfit = (s.sale_items || []).reduce((itemSum, item) => {
+        const itemProfit = (s.sale_lines || []).reduce((itemSum, item) => {
           return itemSum + (Number(item.price) - Number(item.cost_price)) * item.quantity;
         }, 0);
         return sum + itemProfit - (Number(s.discount) || 0);
@@ -86,14 +86,14 @@ export function useDashboard() {
       // Yesterday's sales for trend
       const { data: yesterdaySales } = await supabase
         .from("sales")
-        .select("total, discount, sale_items(quantity, price, cost_price)")
+        .select("total, discount, sale_lines(quantity, price:unit_price, cost_price:unit_cost)")
         .gte("created_at", yesterdayStart)
         .lt("created_at", todayStart);
 
       const yesterdaySalesData = (yesterdaySales || []) as SaleRow[];
       const yesterdayTotal = yesterdaySalesData.reduce((sum, s) => sum + Number(s.total), 0);
       const yesterdayProfit = yesterdaySalesData.reduce((sum, s) => {
-        const itemProfit = (s.sale_items || []).reduce((itemSum, item) => {
+        const itemProfit = (s.sale_lines || []).reduce((itemSum, item) => {
           return itemSum + (Number(item.price) - Number(item.cost_price)) * item.quantity;
         }, 0);
         return sum + itemProfit - (Number(s.discount) || 0);
@@ -132,8 +132,8 @@ export function useDashboard() {
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
       const { data: saleItems } = await supabase
-        .from("sale_items")
-        .select("product_id, quantity, price, sales!inner(created_at)")
+        .from("sale_lines")
+        .select("product_id, quantity, price:unit_price, sales!inner(created_at)")
         .gte("sales.created_at", thirtyDaysAgo.toISOString());
 
       const saleItemsData = (saleItems || []) as SaleItemRow[];
@@ -169,7 +169,7 @@ export function useDashboard() {
       // Recent transactions with product names
       const { data: recent } = await supabase
         .from("sales")
-        .select("id, total, payment_method, created_at, sale_items(product_id, quantity)")
+        .select("id, total, payment_method, created_at, sale_lines(product_id, quantity)")
         .order("created_at", { ascending: false })
         .limit(4);
 
@@ -178,7 +178,7 @@ export function useDashboard() {
       // Resolve product names for recent transaction items
       const allProductIds = new Set<string>();
       for (const s of recentData) {
-        for (const i of s.sale_items || []) allProductIds.add(i.product_id);
+        for (const i of s.sale_lines || []) allProductIds.add(i.product_id);
       }
 
       let pnMap: Record<string, string> = {};
@@ -193,7 +193,7 @@ export function useDashboard() {
       setRecentTransactions(
         recentData.map((s) => ({
           id: s.id,
-          items: (s.sale_items || []).slice(0, 2).map((i) => pnMap[i.product_id] || i.product_id).join(", ") + ((s.sale_items || []).length > 2 ? " +more" : ""),
+          items: (s.sale_lines || []).slice(0, 2).map((i) => pnMap[i.product_id] || i.product_id).join(", ") + ((s.sale_lines || []).length > 2 ? " +more" : ""),
           total: Number(s.total),
           created_at: s.created_at,
           payment_method: s.payment_method,

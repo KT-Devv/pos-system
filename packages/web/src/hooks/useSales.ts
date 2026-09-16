@@ -8,8 +8,8 @@ export interface SaleRow {
   discount: number;
   payment_method: "cash" | "momo" | "card";
   created_at: string;
-  users?: { name: string } | null;
-  sale_items?: {
+  profiles?: { name: string } | null;
+  sale_lines?: {
     id: string;
     product_id: string;
     quantity: number;
@@ -26,7 +26,7 @@ export function useRecentSales(limit = 5) {
     try {
       const { data, error } = await supabase
         .from("sales")
-        .select("*, users(name), sale_items(id, product_id, quantity, price)")
+        .select("*, profiles(name), sale_lines(id, product_id, quantity, price:unit_price)")
         .order("created_at", { ascending: false })
         .limit(limit);
 
@@ -53,40 +53,31 @@ export function useCreateSale() {
   const createSale = useCallback(async (
     cashierId: string,
     items: { product_id: string; quantity: number; price: number; cost_price: number }[],
-    total: number,
+    _total: number,
     discount: number,
     paymentMethod: "cash" | "momo" | "card"
   ) => {
     setCreating(true);
     setError(null);
     try {
-      const { data: sale, error: saleError } = await supabase
+      const { data: saleId, error } = await supabase.rpc("create_sale", {
+        p_cashier_id: cashierId,
+        p_customer_id: null,
+        p_payment_method: paymentMethod,
+        p_discount: discount,
+        p_lines: items.map((item) => ({
+          product_id: item.product_id,
+          quantity: item.quantity,
+        })),
+      });
+      if (error) throw error;
+
+      const { data: sale, error: fetchError } = await supabase
         .from("sales")
-        .insert({
-          cashier_id: cashierId,
-          total,
-          discount,
-          payment_method: paymentMethod,
-        })
-        .select()
+        .select("*")
+        .eq("id", saleId)
         .single();
-
-      if (saleError) throw saleError;
-
-      const saleItems = items.map((item) => ({
-        sale_id: sale.id,
-        product_id: item.product_id,
-        quantity: item.quantity,
-        price: item.price,
-        cost_price: item.cost_price,
-      }));
-
-      const { error: itemsError } = await supabase
-        .from("sale_items")
-        .insert(saleItems);
-
-      if (itemsError) throw itemsError;
-
+      if (fetchError) throw fetchError;
       return sale;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create sale");
