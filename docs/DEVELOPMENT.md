@@ -3,7 +3,7 @@
 ## Quick Start
 
 ```bash
-cd frontend
+cd packages/web
 npm install
 npm run dev
 ```
@@ -54,14 +54,14 @@ Currently using local state with `useState`. For production:
 
 ## Connecting to Supabase
 
-1. Create `.env` file in `frontend/`:
+1. Create `.env` file in `packages/web/`:
 
 ```
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-2. Run the SQL schema in Supabase SQL Editor
+2. Run `database/schema.v2.sql` in the Supabase SQL Editor
 
 3. Enable Email Authentication in Supabase Dashboard
 
@@ -106,14 +106,6 @@ Deploy the `dist/` folder to Vercel.
 Connect your GitHub repo and set:
 - Build command: `npm run build`
 - Publish directory: `dist`
-
-## Next Steps
-
-1. Implement Supabase authentication
-2. Connect pages to real database
-3. Add form validation with Zod
-4. Implement receipt printing
-5. Add offline support with service workers
 
 ## Accessibility Testing
 

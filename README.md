@@ -41,7 +41,7 @@ A modern Point of Sale (POS) system built for small businesses in Ghana.
 1. Clone the repository
 ```bash
 git clone <your-repo-url>
-cd pos-system/frontend
+cd pos-system
 ```
 
 2. Install dependencies
@@ -63,23 +63,19 @@ npm run dev
 ### Supabase Setup
 
 1. Create a new project at [supabase.com](https://supabase.com)
-2. Go to SQL Editor and run the schema from `database/schema.sql`
+2. Go to SQL Editor and run the fresh schema from `database/schema.v2.sql`
 3. Enable Email Auth in Authentication settings
 4. Copy your project URL and anon key to `.env`
 
 ## Project Structure
 
 ```
-frontend/
-├── src/
-│   ├── components/ui/    # Reusable UI components
-│   ├── layouts/          # App layout with sidebar
-│   ├── pages/            # Page components
-│   ├── lib/              # Utilities and Supabase client
-│   ├── types/            # TypeScript type definitions
-│   └── hooks/            # Custom React hooks
-├── database/             # SQL schemas
-└── docs/                 # Documentation
+packages/
+├── shared/               # Domain types, validation, and reusable UI
+├── web/                  # Browser client
+└── desktop/              # Electron desktop client and offline storage
+database/
+└── schema.v2.sql         # Fresh Supabase schema
 ```
 
 ## Currency
