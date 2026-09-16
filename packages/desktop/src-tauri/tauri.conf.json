@@ -4,8 +4,8 @@
   "version": "1.0.0",
   "identifier": "com.pos.desktop",
   "build": {
-    "beforeDevCommand": "npm run dev --workspace=packages/next-web",
-    "beforeBuildCommand": "npm run build --workspace=packages/next-web",
+    "beforeDevCommand": "cd ../.. && npm run dev --workspace=packages/next-web",
+    "beforeBuildCommand": "cd ../.. && npm run build --workspace=packages/next-web",
     "devUrl": "http://localhost:3000",
     "frontendDist": "../../next-web/out"
   },
