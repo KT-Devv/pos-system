@@ -75,3 +75,24 @@ export type {
   PaymentMethod,
   UserRole,
 } from "./types";
+
+export type {
+  User as DomainUser,
+  Category as DomainCategory,
+  Product as DomainProduct,
+  Customer as DomainCustomer,
+  SaleLine,
+  Sale as DomainSale,
+  StockMovement,
+  CreateSaleInput,
+  ProductInput,
+  PaymentMethod as DomainPaymentMethod,
+  StockMovementType,
+} from "./domain";
+
+export {
+  calculateSaleTotal,
+  roundCurrency,
+  validateProductInput,
+  validateSaleInput,
+} from "./domain";
