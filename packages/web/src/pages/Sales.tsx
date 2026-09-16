@@ -331,14 +331,20 @@ export default function Sales() {
                 <Input
                   id="discount"
                   type="number"
+                  min="0"
+                  step="0.01"
                   value={discount === 0 ? "" : discount}
                   onChange={(e) => {
-                    const value = Number(e.target.value);
-                    if (!Number.isFinite(value) || value < 0) return;
-                    setDiscount(value);
+                    const raw = e.target.value;
+                    if (raw === "") {
+                      setDiscount(0);
+                    } else {
+                      const val = parseFloat(raw);
+                      setDiscount(isNaN(val) || val < 0 ? 0 : val);
+                    }
                   }}
                   className="w-24 text-right"
-                  placeholder="0"
+                  placeholder="0.00"
                 />
               </div>
               <div className="flex justify-between text-lg font-bold border-t pt-2">

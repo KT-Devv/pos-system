@@ -40,7 +40,6 @@ export default function Customers() {
   const validateCustomer = (customer: typeof EMPTY_CUSTOMER): Record<string, string> => {
     const errors: Record<string, string> = {};
     if (!customer.name.trim()) errors.name = 'Customer name is required';
-    if (!customer.phone.trim()) errors.phone = 'Phone number is required';
     return errors;
   };
 
@@ -52,7 +51,11 @@ export default function Customers() {
     }
     setLoading(true);
     try {
-      await api.customers.create(newCustomer);
+      await api.customers.create({
+        name: newCustomer.name.trim(),
+        phone: newCustomer.phone.trim() || undefined,
+        email: newCustomer.email.trim() || undefined,
+      });
       setIsAddDialogOpen(false);
       loadCustomers();
     } catch (err) {
@@ -138,20 +141,18 @@ export default function Customers() {
                 value={newCustomer.name}
                 onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
                 placeholder="Enter customer name"
-                className={formErrors.name ? 'border-destructive' : ''}
+                aria-invalid={!!formErrors.name}
               />
-              {formErrors.name && <p className="text-sm text-destructive">{formErrors.name}</p>}
+              {formErrors.name && <p className="text-xs text-destructive">{formErrors.name}</p>}
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="cust-phone">Phone Number *</Label>
+              <Label htmlFor="cust-phone">Phone Number (Optional)</Label>
               <Input
                 id="cust-phone"
                 value={newCustomer.phone}
                 onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
                 placeholder="+233 XX XXX XXXX"
-                className={formErrors.phone ? 'border-destructive' : ''}
               />
-              {formErrors.phone && <p className="text-sm text-destructive">{formErrors.phone}</p>}
             </div>
             <div className="grid gap-2">
               <Label htmlFor="cust-email">Email (Optional)</Label>

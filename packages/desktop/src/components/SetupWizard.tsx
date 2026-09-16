@@ -3,8 +3,9 @@ import { Button } from '@pos/shared/components/button';
 import { Input } from '@pos/shared/components/input';
 import { Label } from '@pos/shared/components/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@pos/shared/components/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@pos/shared/components/select';
 import { api } from '../lib/ipc';
-import { Store, User, CreditCard, Cloud, Check } from 'lucide-react';
+import { Store, User, CreditCard, Cloud, Check, Loader2 } from 'lucide-react';
 
 interface SetupWizardProps {
   onComplete: () => void;
@@ -54,8 +55,8 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-6">
-      <Card className="w-full max-w-lg">
+    <div className="min-h-screen bg-background flex items-center justify-center p-6">
+      <Card className="w-full max-w-lg shadow-xl">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
             {step === 'welcome' && <Store className="h-12 w-12 text-primary" />}
@@ -65,7 +66,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
             {step === 'cloud' && <Cloud className="h-12 w-12 text-primary" />}
             {step === 'complete' && <Check className="h-12 w-12 text-green-500" />}
           </div>
-          <CardTitle className="text-2xl">
+          <CardTitle className="text-2xl font-bold">
             {step === 'welcome' && 'Welcome to POS System'}
             {step === 'shop' && 'Shop Information'}
             {step === 'admin' && 'Admin Account'}
@@ -87,7 +88,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
             <div className="space-y-4">
               <p className="text-center text-muted-foreground">
                 This wizard will help you configure your point of sale system.
-                You can change these settings later.
+                You can change these settings later in Settings.
               </p>
               <Button className="w-full" onClick={() => setStep('shop')}>
                 Get Started
@@ -98,8 +99,8 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
           {step === 'shop' && (
             <div className="space-y-4">
               <div className="grid gap-2">
-                <Label htmlFor="shopName">Shop Name</Label>
-                <Input id="shopName" value={shopName} onChange={(e) => setShopName(e.target.value)} />
+                <Label htmlFor="shopName">Shop Name *</Label>
+                <Input id="shopName" value={shopName} onChange={(e) => setShopName(e.target.value)} placeholder="Mom's Shop" />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="shopPhone">Phone Number</Label>
@@ -111,15 +112,19 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="currency">Currency</Label>
-                <select id="currency" value={currency} onChange={(e) => setCurrency(e.target.value)}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-                  <option value="GHS">Ghana Cedi (GHS)</option>
-                  <option value="USD">US Dollar (USD)</option>
-                  <option value="NGN">Nigerian Naira (NGN)</option>
-                  <option value="KES">Kenyan Shilling (KES)</option>
-                </select>
+                <Select value={currency} onValueChange={setCurrency}>
+                  <SelectTrigger id="currency">
+                    <SelectValue placeholder="Select Currency" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="GHS">Ghana Cedi (GHS)</SelectItem>
+                    <SelectItem value="USD">US Dollar (USD)</SelectItem>
+                    <SelectItem value="NGN">Nigerian Naira (NGN)</SelectItem>
+                    <SelectItem value="KES">Kenyan Shilling (KES)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <Button className="w-full" onClick={() => setStep('admin')} disabled={!shopName}>
+              <Button className="w-full" onClick={() => setStep('admin')} disabled={!shopName.trim()}>
                 Next
               </Button>
             </div>
@@ -128,12 +133,12 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
           {step === 'admin' && (
             <div className="space-y-4">
               <div className="grid gap-2">
-                <Label htmlFor="adminName">Your Name</Label>
+                <Label htmlFor="adminName">Your Name *</Label>
                 <Input id="adminName" value={adminName} onChange={(e) => setAdminName(e.target.value)} placeholder="Enter your name" />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="adminPin">PIN Code (4-6 digits)</Label>
-                <Input id="adminPin" type="password" value={adminPin} onChange={(e) => setAdminPin(e.target.value)} placeholder="****" maxLength={6} />
+                <Label htmlFor="adminPin">PIN Code (4-6 digits) *</Label>
+                <Input id="adminPin" type="password" value={adminPin} onChange={(e) => setAdminPin(e.target.value.replace(/\D/g, ''))} placeholder="••••" maxLength={6} />
               </div>
               <Button className="w-full" onClick={() => setStep('printer')} disabled={!adminName.trim() || adminPin.length < 4}>
                 Next
@@ -151,22 +156,40 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                     { value: 'pdf', label: 'PDF Only (Save to file)' },
                     { value: 'none', label: 'No Printer' },
                   ].map((option) => (
-                    <label key={option.value} className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent">
-                      <input type="radio" name="printer" value={option.value} checked={printerType === option.value}
-                        onChange={(e) => setPrinterType(e.target.value)} className="accent-primary" />
+                    <div
+                      key={option.value}
+                      onClick={() => setPrinterType(option.value)}
+                      className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                        printerType === option.value
+                          ? 'border-primary bg-primary/5 font-medium'
+                          : 'hover:bg-accent'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="printer"
+                        value={option.value}
+                        checked={printerType === option.value}
+                        onChange={() => setPrinterType(option.value)}
+                        className="accent-primary"
+                      />
                       <span>{option.label}</span>
-                    </label>
+                    </div>
                   ))}
                 </div>
               </div>
               {printerType === 'thermal' && (
                 <div className="grid gap-2">
                   <Label>Paper Size</Label>
-                  <select value={paperSize} onChange={(e) => setPaperSize(e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-                    <option value="80">80mm (XP-80C)</option>
-                    <option value="58">58mm (XP-58C)</option>
-                  </select>
+                  <Select value={paperSize} onValueChange={setPaperSize}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select paper size" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="80">80mm (XP-80C)</SelectItem>
+                      <SelectItem value="58">58mm (XP-58C)</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
               <Button className="w-full" onClick={() => setStep('cloud')}>
@@ -177,30 +200,50 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
 
           {step === 'cloud' && (
             <div className="space-y-4">
-              <p className="text-muted-foreground">
+              <p className="text-muted-foreground text-sm">
                 Enable cloud sync to backup your data and access it from multiple devices.
                 You can set this up later in Settings.
               </p>
               <div className="space-y-2">
-                <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent">
-                  <input type="radio" name="cloud" checked={!cloudSync}
-                    onChange={() => setCloudSync(false)} className="accent-primary" />
+                <div
+                  onClick={() => setCloudSync(false)}
+                  className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                    !cloudSync ? 'border-primary bg-primary/5' : 'hover:bg-accent'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="cloud"
+                    checked={!cloudSync}
+                    onChange={() => setCloudSync(false)}
+                    className="accent-primary"
+                  />
                   <div>
-                    <span className="font-medium">No, local only</span>
-                    <p className="text-sm text-muted-foreground">Data stays on this computer</p>
+                    <span className="font-medium block">No, local only</span>
+                    <p className="text-xs text-muted-foreground">Data stays on this computer</p>
                   </div>
-                </label>
-                <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent">
-                  <input type="radio" name="cloud" checked={cloudSync}
-                    onChange={() => setCloudSync(true)} className="accent-primary" />
+                </div>
+                <div
+                  onClick={() => setCloudSync(true)}
+                  className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                    cloudSync ? 'border-primary bg-primary/5' : 'hover:bg-accent'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="cloud"
+                    checked={cloudSync}
+                    onChange={() => setCloudSync(true)}
+                    className="accent-primary"
+                  />
                   <div>
-                    <span className="font-medium">Yes, enable cloud sync</span>
-                    <p className="text-sm text-muted-foreground">Backup and multi-device access</p>
+                    <span className="font-medium block">Yes, enable cloud sync</span>
+                    <p className="text-xs text-muted-foreground">Backup and multi-device access</p>
                   </div>
-                </label>
+                </div>
               </div>
               <Button className="w-full" onClick={handleComplete} disabled={loading}>
-                {loading ? 'Setting up...' : 'Complete Setup'}
+                {loading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Setting up...</> : 'Complete Setup'}
               </Button>
             </div>
           )}

@@ -98,6 +98,7 @@ export function useProducts() {
     category_id?: string | null;
     cost_price?: number;
     selling_price?: number;
+    stock?: number;
     barcode?: string | null;
   }) => {
     try {

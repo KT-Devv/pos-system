@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { Button } from '@pos/shared/components/button';
+import { Input } from '@pos/shared/components/input';
+import { Label } from '@pos/shared/components/label';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@pos/shared/components/card';
+import { Store, Loader2, LogIn, UserPlus } from 'lucide-react';
 
 export default function Login() {
   const { login, signup, user, loading } = useAuth();
@@ -36,13 +41,11 @@ export default function Login() {
         } else if (result) {
           setError(result);
         }
-        // If null and no sentinel, onAuthStateChange will redirect via the useEffect
       } else {
         const result = await login(email, password);
         if (result) {
           setError(result);
         }
-        // If null, onAuthStateChange will update user and the useEffect will redirect
       }
     } finally {
       setSubmitting(false);
@@ -57,90 +60,115 @@ export default function Login() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/90 to-primary/70">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-8">
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-primary rounded-xl flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
+    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-primary/90 via-primary/75 to-primary/60">
+      <Card className="w-full max-w-md shadow-2xl border-white/20 bg-background/95 backdrop-blur-md">
+        <CardHeader className="text-center pb-4">
+          <div className="w-14 h-14 bg-primary/10 border border-primary/20 rounded-2xl flex items-center justify-center mx-auto mb-3 text-primary shadow-inner">
+            <Store className="h-7 w-7" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">POS System</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {isSignup ? 'Create an account' : 'Sign in to continue'}
-          </p>
-        </div>
+          <CardTitle className="text-2xl font-bold">POS System</CardTitle>
+          <CardDescription>
+            {isSignup ? 'Create an account to get started' : 'Sign in to access your dashboard'}
+          </CardDescription>
+        </CardHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {isSignup && (
-            <div>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Full name"
-                className="w-full h-12 rounded-lg border border-input bg-background px-3 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {isSignup && (
+              <div className="space-y-2">
+                <Label htmlFor="full-name">Full Name *</Label>
+                <Input
+                  id="full-name"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="John Doe"
+                  required
+                />
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="email-address">Email Address *</Label>
+              <Input
+                id="email-address"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@example.com"
+                autoFocus={!isSignup}
                 required
               />
             </div>
-          )}
-          <div>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Email address"
-              className="w-full h-12 rounded-lg border border-input bg-background px-3 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              autoFocus={!isSignup}
-              required
-            />
+
+            <div className="space-y-2">
+              <Label htmlFor="password">Password *</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                minLength={6}
+              />
+            </div>
+
+            {error && (
+              <p className="text-sm font-medium text-destructive text-center bg-destructive/10 p-2 rounded-md border border-destructive/20">
+                {error}
+              </p>
+            )}
+
+            {successMsg && (
+              <p className="text-sm font-medium text-green-600 text-center bg-green-50 dark:bg-green-950/40 p-2 rounded-md border border-green-200">
+                {successMsg}
+              </p>
+            )}
+
+            <Button
+              type="submit"
+              disabled={!email || !password || (isSignup && !name) || submitting}
+              className="w-full h-11 text-base font-semibold"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Please wait...
+                </>
+              ) : isSignup ? (
+                <>
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Create Account
+                </>
+              ) : (
+                <>
+                  <LogIn className="h-4 w-4 mr-2" />
+                  Sign In
+                </>
+              )}
+            </Button>
+          </form>
+
+          <div className="text-center text-sm text-muted-foreground mt-6 pt-4 border-t">
+            {isSignup ? 'Already have an account?' : "Don't have an account?"}{' '}
+            <button
+              onClick={toggleMode}
+              type="button"
+              className="text-primary font-semibold hover:underline focus:outline-none focus:ring-2 focus:ring-primary rounded px-1"
+            >
+              {isSignup ? 'Sign in' : 'Create one'}
+            </button>
           </div>
-          <div>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password"
-              className="w-full h-12 rounded-lg border border-input bg-background px-3 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              required
-              minLength={6}
-            />
-          </div>
-
-          {error && (
-            <p className="text-sm text-center text-red-500">{error}</p>
-          )}
-
-          {successMsg && (
-            <p className="text-sm text-center text-green-600">{successMsg}</p>
-          )}
-
-          <button
-            type="submit"
-            disabled={!email || !password || (isSignup && !name) || submitting}
-            className="w-full h-12 rounded-lg bg-primary text-primary-foreground font-medium text-base hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-          >
-            {submitting ? 'Please wait...' : isSignup ? 'Create Account' : 'Sign In'}
-          </button>
-        </form>
-
-        <p className="text-center text-sm text-muted-foreground mt-6">
-          {isSignup ? 'Already have an account?' : "Don't have an account?"}{' '}
-          <button
-            onClick={toggleMode}
-            className="text-primary font-medium hover:underline"
-          >
-            {isSignup ? 'Sign in' : 'Create one'}
-          </button>
-        </p>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

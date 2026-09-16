@@ -29,7 +29,7 @@ interface ProductOption {
   name: string;
 }
 
-const EMPTY_ENTRY = { product_id: "", type: "in" as "in" | "out" | "adjustment", quantity: 0, supplier_id: "", notes: "" };
+const EMPTY_ENTRY = { product_id: "", type: "in" as "in" | "out" | "adjustment", quantity: "1", supplier_id: "", notes: "" };
 
 export default function Inventory() {
   const { stockHistory, loading: historyLoading, refetch: refetchHistory } = useStockHistory();
@@ -66,7 +66,14 @@ export default function Inventory() {
   const validateEntry = (entry: typeof EMPTY_ENTRY): Record<string, string> => {
     const errors: Record<string, string> = {};
     if (!entry.product_id) errors.product_id = "Product is required";
-    if (entry.quantity <= 0) errors.quantity = "Quantity must be greater than 0";
+    const qty = parseInt(entry.quantity, 10);
+    if (isNaN(qty)) {
+      errors.quantity = "Quantity must be a valid number";
+    } else if (entry.type === "adjustment" && qty === 0) {
+      errors.quantity = "Adjustment quantity cannot be zero";
+    } else if (entry.type !== "adjustment" && qty <= 0) {
+      errors.quantity = "Quantity must be greater than 0";
+    }
     return errors;
   };
 
@@ -80,10 +87,11 @@ export default function Inventory() {
       setFormErrors(errors);
       return;
     }
+    const qty = parseInt(newStockEntry.quantity, 10);
     const ok = await createStockEntry({
       product_id: newStockEntry.product_id,
       type: newStockEntry.type,
-      quantity: newStockEntry.type === "out" ? -newStockEntry.quantity : newStockEntry.quantity,
+      quantity: newStockEntry.type === "out" ? -Math.abs(qty) : qty,
       supplier_id: newStockEntry.supplier_id || null,
       notes: newStockEntry.notes || null,
     });
@@ -261,15 +269,15 @@ export default function Inventory() {
               <Label>Quantity *</Label>
               <Input
                 type="number"
-                min="1"
-                value={newStockEntry.quantity || ""}
+                min={newStockEntry.type === "adjustment" ? undefined : 1}
+                value={newStockEntry.quantity}
                 onChange={(e) =>
-                  setNewStockEntry({ ...newStockEntry, quantity: Number(e.target.value) || 0 })
+                  setNewStockEntry({ ...newStockEntry, quantity: e.target.value })
                 }
-                placeholder="0"
-                className={formErrors.quantity ? "border-destructive" : ""}
+                placeholder={newStockEntry.type === "adjustment" ? "e.g. 5 or -5" : "1"}
+                aria-invalid={!!formErrors.quantity}
               />
-              {formErrors.quantity && <p className="text-sm text-destructive">{formErrors.quantity}</p>}
+              {formErrors.quantity && <p className="text-xs text-destructive">{formErrors.quantity}</p>}
             </div>
             <div className="grid gap-2">
               <Label>Supplier</Label>

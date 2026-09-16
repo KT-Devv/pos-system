@@ -15,12 +15,12 @@ const NONE = '__none__';
 interface StockEntryForm {
   product_id: string;
   type: 'in' | 'out' | 'adjustment';
-  quantity: number;
+  quantity: string;
   supplier_id: string;
   notes: string;
 }
 
-const EMPTY_ENTRY: StockEntryForm = { product_id: NONE, type: 'in', quantity: 0, supplier_id: NONE, notes: '' };
+const EMPTY_ENTRY: StockEntryForm = { product_id: NONE, type: 'in', quantity: '1', supplier_id: NONE, notes: '' };
 
 export default function Inventory() {
   const [history, setHistory] = useState<any[]>([]);
@@ -57,9 +57,12 @@ export default function Inventory() {
   const validateEntry = (entry: StockEntryForm): Record<string, string> => {
     const errors: Record<string, string> = {};
     if (!entry.product_id || entry.product_id === NONE) errors.product_id = 'Product is required';
-    if (entry.type === 'adjustment' && entry.quantity === 0) {
+    const qty = parseInt(entry.quantity, 10);
+    if (isNaN(qty)) {
+      errors.quantity = 'Quantity must be a valid number';
+    } else if (entry.type === 'adjustment' && qty === 0) {
       errors.quantity = 'Adjustment quantity must be non-zero (use a negative value to reduce stock)';
-    } else if (entry.type !== 'adjustment' && entry.quantity <= 0) {
+    } else if (entry.type !== 'adjustment' && qty <= 0) {
       errors.quantity = 'Quantity must be greater than 0';
     }
     return errors;
@@ -72,24 +75,25 @@ export default function Inventory() {
       return;
     }
     setLoading(true);
+    const qty = parseInt(newEntry.quantity, 10);
     try {
       if (newEntry.type === 'in') {
         await api.inventory.stockIn({
           product_id: newEntry.product_id,
-          quantity: newEntry.quantity,
+          quantity: Math.abs(qty),
           supplier_id: newEntry.supplier_id === NONE ? undefined : newEntry.supplier_id,
           notes: newEntry.notes || undefined,
         });
       } else if (newEntry.type === 'out') {
         await api.inventory.stockOut({
           product_id: newEntry.product_id,
-          quantity: newEntry.quantity,
+          quantity: Math.abs(qty),
           notes: newEntry.notes || undefined,
         });
       } else {
         await api.inventory.adjust({
           product_id: newEntry.product_id,
-          quantity: newEntry.quantity,
+          quantity: qty,
           notes: newEntry.notes || undefined,
         });
       }
@@ -207,13 +211,12 @@ export default function Inventory() {
               <Input
                 type="number"
                 min={newEntry.type === 'adjustment' ? undefined : 1}
-                step={newEntry.type === 'adjustment' ? 1 : 1}
-                value={newEntry.quantity || ''}
-                onChange={(e) => setNewEntry({ ...newEntry, quantity: Number(e.target.value) || 0 })}
-                placeholder={newEntry.type === 'adjustment' ? 'e.g. 5 or -5' : '0'}
-                className={formErrors.quantity ? 'border-destructive' : ''}
+                value={newEntry.quantity}
+                onChange={(e) => setNewEntry({ ...newEntry, quantity: e.target.value })}
+                placeholder={newEntry.type === 'adjustment' ? 'e.g. 5 or -5' : '1'}
+                aria-invalid={!!formErrors.quantity}
               />
-              {formErrors.quantity && <p className="text-sm text-destructive">{formErrors.quantity}</p>}
+              {formErrors.quantity && <p className="text-xs text-destructive">{formErrors.quantity}</p>}
             </div>
             {newEntry.type === 'in' && (
               <div className="grid gap-2">

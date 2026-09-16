@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Plus, Search, Edit, Trash2, Package, Loader2 } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Package, Loader2, Barcode, ScanBarcode, Printer } from 'lucide-react';
 import { Button } from '@pos/shared/components/button';
 import { Input } from '@pos/shared/components/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@pos/shared/components/card';
@@ -11,19 +11,28 @@ import { formatCurrency } from '@pos/shared/lib/utils';
 import { api } from '../lib/ipc';
 import { useSettings } from '../hooks/useSettings';
 import QRCode from 'qrcode';
+import QRScanner from '../components/QRScanner';
+import BarcodeLabel from '../components/BarcodeLabel';
 
 const NONE = '__none__';
 
-interface ProductForm {
+interface ProductFormState {
   name: string;
   category_id: string;
-  cost_price: number;
-  selling_price: number;
-  stock: number;
+  cost_price: string;
+  selling_price: string;
+  stock: string;
   barcode: string;
 }
 
-const EMPTY_PRODUCT: ProductForm = { name: '', category_id: NONE, cost_price: 0, selling_price: 0, stock: 0, barcode: '' };
+const EMPTY_PRODUCT_FORM: ProductFormState = {
+  name: '',
+  category_id: NONE,
+  cost_price: '0.00',
+  selling_price: '',
+  stock: '0',
+  barcode: '',
+};
 
 export default function Products() {
   const { settings } = useSettings();
@@ -34,8 +43,14 @@ export default function Products() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
-  const [newProduct, setNewProduct] = useState<ProductForm>(EMPTY_PRODUCT);
+  const [newProduct, setNewProduct] = useState<ProductFormState>(EMPTY_PRODUCT_FORM);
+  const [editFormState, setEditFormState] = useState<ProductFormState>(EMPTY_PRODUCT_FORM);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  // Scanner & Label Dialog States
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerTarget, setScannerTarget] = useState<'add' | 'edit'>('add');
+  const [printProduct, setPrintProduct] = useState<any>(null);
 
   const loadProducts = async () => {
     const data = await api.products.list(search || undefined);
@@ -67,22 +82,30 @@ export default function Products() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  const validateProduct = (product: ProductForm): Record<string, string> => {
+  const validateProductForm = (form: ProductFormState): Record<string, string> => {
     const errors: Record<string, string> = {};
-    if (!product.name.trim()) errors.name = 'Product name is required';
-    if (!product.selling_price || product.selling_price <= 0) errors.selling_price = 'Selling price must be greater than 0';
-    if (product.cost_price < 0) errors.cost_price = 'Cost price cannot be negative';
-    if (product.stock < 0) errors.stock = 'Stock cannot be negative';
+    if (!form.name.trim()) errors.name = 'Product name is required';
+
+    const sPrice = parseFloat(form.selling_price);
+    if (isNaN(sPrice) || sPrice <= 0) errors.selling_price = 'Selling price must be greater than 0';
+
+    const cPrice = parseFloat(form.cost_price);
+    if (isNaN(cPrice) || cPrice < 0) errors.cost_price = 'Cost price cannot be negative';
+
+    const stockVal = parseInt(form.stock, 10);
+    if (isNaN(stockVal) || stockVal < 0) errors.stock = 'Stock cannot be negative';
+
     return errors;
   };
 
   const resetAddForm = useCallback(() => {
-    setNewProduct(EMPTY_PRODUCT);
+    setNewProduct(EMPTY_PRODUCT_FORM);
     setFormErrors({});
   }, []);
 
   const resetEditForm = useCallback(() => {
     setEditingProduct(null);
+    setEditFormState(EMPTY_PRODUCT_FORM);
     setFormErrors({});
   }, []);
 
@@ -95,21 +118,24 @@ export default function Products() {
   }, [isEditDialogOpen, resetEditForm]);
 
   const handleAddProduct = async () => {
-    const errors = validateProduct(newProduct);
+    const errors = validateProductForm(newProduct);
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
       return;
     }
     setLoading(true);
     try {
-      const qrData = await QRCode.toDataURL(newProduct.barcode || newProduct.name, { width: 200 });
+      const barcodeVal = newProduct.barcode.trim();
+      const nameVal = newProduct.name.trim();
+      const qrData = await QRCode.toDataURL(barcodeVal || nameVal, { width: 200 });
+
       await api.products.create({
-        name: newProduct.name,
+        name: nameVal,
         category_id: newProduct.category_id === NONE ? null : newProduct.category_id,
-        cost_price: newProduct.cost_price,
-        selling_price: newProduct.selling_price,
-        stock: newProduct.stock,
-        barcode: newProduct.barcode || null,
+        cost_price: parseFloat(newProduct.cost_price) || 0,
+        selling_price: parseFloat(newProduct.selling_price),
+        stock: parseInt(newProduct.stock, 10) || 0,
+        barcode: barcodeVal || null,
         qr_code: qrData,
       });
       setIsAddDialogOpen(false);
@@ -122,25 +148,39 @@ export default function Products() {
     }
   };
 
+  const openEditDialog = (product: any) => {
+    setEditingProduct(product);
+    setEditFormState({
+      name: product.name,
+      category_id: product.category_id || NONE,
+      cost_price: String(product.cost_price ?? 0),
+      selling_price: String(product.selling_price ?? ''),
+      stock: String(product.stock ?? 0),
+      barcode: product.barcode || '',
+    });
+    setIsEditDialogOpen(true);
+  };
+
   const handleEditProduct = async () => {
     if (!editingProduct) return;
-    const errors = validateProduct(editingProduct);
+    const errors = validateProductForm(editFormState);
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
       return;
     }
     setLoading(true);
     try {
+      const barcodeVal = editFormState.barcode.trim();
       await api.products.update(editingProduct.id, {
-        name: editingProduct.name,
+        name: editFormState.name.trim(),
         category_id:
-          !editingProduct.category_id || editingProduct.category_id === NONE
+          !editFormState.category_id || editFormState.category_id === NONE
             ? null
-            : editingProduct.category_id,
-        cost_price: editingProduct.cost_price,
-        selling_price: editingProduct.selling_price,
-        stock: editingProduct.stock,
-        barcode: editingProduct.barcode || null,
+            : editFormState.category_id,
+        cost_price: parseFloat(editFormState.cost_price) || 0,
+        selling_price: parseFloat(editFormState.selling_price),
+        stock: parseInt(editFormState.stock, 10) || 0,
+        barcode: barcodeVal || null,
       });
       setIsEditDialogOpen(false);
       loadProducts();
@@ -164,20 +204,20 @@ export default function Products() {
     }
   };
 
-  const openEditDialog = (product: any) => {
-    setEditingProduct({ ...product, category_id: product.category_id || NONE });
-    setIsEditDialogOpen(true);
+  const handleScanResult = (code: string) => {
+    if (scannerTarget === 'add') {
+      setNewProduct((prev) => ({ ...prev, barcode: code }));
+    } else {
+      setEditFormState((prev) => ({ ...prev, barcode: code }));
+    }
   };
-
-  const getCategorySelectValue = (val: any) => val || NONE;
-  const parseCategorySelectValue = (val: string) => val === NONE ? '' : val;
 
   return (
     <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
           <h1 className="text-3xl font-bold">Products</h1>
-          <p className="text-muted-foreground">Manage your product inventory</p>
+          <p className="text-muted-foreground">Manage your product inventory and labels</p>
         </div>
         <Button onClick={() => setIsAddDialogOpen(true)}>
           <Plus className="h-4 w-4 mr-2" />
@@ -189,7 +229,7 @@ export default function Products() {
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search products..."
+            placeholder="Search products by name or barcode..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-10"
@@ -199,46 +239,61 @@ export default function Products() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {products.map((product) => (
-          <Card key={product.id} className="hover:shadow-md transition-shadow">
+          <Card key={product.id} className="hover:shadow-md transition-shadow flex flex-col justify-between">
             <CardHeader className="pb-3">
-              <div className="flex justify-between items-start">
-                <div className="flex items-center gap-2">
-                  <Package className="h-5 w-5 text-muted-foreground" />
-                  <CardTitle className="text-lg">{product.name}</CardTitle>
+              <div className="flex justify-between items-start gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Package className="h-5 w-5 text-primary shrink-0" />
+                  <CardTitle className="text-lg truncate">{product.name}</CardTitle>
                 </div>
                 <Badge variant={product.stock <= settings.lowStockThreshold ? 'destructive' : 'secondary'}>
                   {product.stock} in stock
                 </Badge>
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Category:</span>
-                  <span>{product.category_name || 'Uncategorized'}</span>
+              {product.barcode && (
+                <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1 font-mono bg-muted/60 px-2 py-0.5 rounded w-fit">
+                  <Barcode className="h-3 w-3" />
+                  {product.barcode}
                 </div>
-                <div className="flex justify-between text-sm">
+              )}
+            </CardHeader>
+            <CardContent className="space-y-4 pt-0">
+              <div className="space-y-1.5 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Category:</span>
+                  <span className="font-medium">{product.category_name || 'Uncategorized'}</span>
+                </div>
+                <div className="flex justify-between">
                   <span className="text-muted-foreground">Cost Price:</span>
                   <span>{formatCurrency(product.cost_price, settings.currency)}</span>
                 </div>
-                <div className="flex justify-between text-sm">
+                <div className="flex justify-between">
                   <span className="text-muted-foreground">Selling Price:</span>
-                  <span className="font-bold">{formatCurrency(product.selling_price, settings.currency)}</span>
+                  <span className="font-bold text-primary">{formatCurrency(product.selling_price, settings.currency)}</span>
                 </div>
-                <div className="flex justify-between text-sm">
+                <div className="flex justify-between">
                   <span className="text-muted-foreground">Profit:</span>
-                  <span className="text-green-600">
+                  <span className="text-green-600 font-medium">
                     {formatCurrency(product.selling_price - product.cost_price, settings.currency)}
                   </span>
                 </div>
               </div>
-              <div className="flex gap-2 mt-4">
+
+              <div className="flex gap-2 pt-2 border-t">
                 <Button variant="outline" size="sm" className="flex-1" onClick={() => openEditDialog(product)}>
                   <Edit className="h-4 w-4 mr-1" />
                   Edit
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  title="Print Barcode Label"
+                  onClick={() => setPrintProduct({ name: product.name, barcode: product.barcode, price: product.selling_price })}
+                >
+                  <Printer className="h-4 w-4" />
+                </Button>
                 <Button variant="outline" size="sm" onClick={() => handleDeleteProduct(product.id)}>
-                  <Trash2 className="h-4 w-4" />
+                  <Trash2 className="h-4 w-4 text-destructive" />
                 </Button>
               </div>
             </CardContent>
@@ -253,7 +308,7 @@ export default function Products() {
             <DialogTitle>Add New Product</DialogTitle>
             <DialogDescription>Add a new product to your inventory.</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
+          <div className="grid gap-4 py-2">
             <div className="grid gap-2">
               <Label htmlFor="add-name">Product Name *</Label>
               <Input
@@ -261,10 +316,11 @@ export default function Products() {
                 value={newProduct.name}
                 onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
                 placeholder="Enter product name"
-                className={formErrors.name ? 'border-destructive' : ''}
+                aria-invalid={!!formErrors.name}
               />
-              {formErrors.name && <p className="text-sm text-destructive">{formErrors.name}</p>}
+              {formErrors.name && <p className="text-xs text-destructive">{formErrors.name}</p>}
             </div>
+
             <div className="grid gap-2">
               <Label>Category</Label>
               <Select value={newProduct.category_id} onValueChange={(v) => setNewProduct({ ...newProduct, category_id: v })}>
@@ -277,6 +333,7 @@ export default function Products() {
                 </SelectContent>
               </Select>
             </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="add-cost">Cost Price ({settings.currency})</Label>
@@ -285,13 +342,14 @@ export default function Products() {
                   type="number"
                   min="0"
                   step="0.01"
-                  value={newProduct.cost_price || ''}
-                  onChange={(e) => setNewProduct({ ...newProduct, cost_price: Number(e.target.value) || 0 })}
+                  value={newProduct.cost_price}
+                  onChange={(e) => setNewProduct({ ...newProduct, cost_price: e.target.value })}
                   placeholder="0.00"
-                  className={formErrors.cost_price ? 'border-destructive' : ''}
+                  aria-invalid={!!formErrors.cost_price}
                 />
-                {formErrors.cost_price && <p className="text-sm text-destructive">{formErrors.cost_price}</p>}
+                {formErrors.cost_price && <p className="text-xs text-destructive">{formErrors.cost_price}</p>}
               </div>
+
               <div className="grid gap-2">
                 <Label htmlFor="add-selling">Selling Price ({settings.currency}) *</Label>
                 <Input
@@ -299,14 +357,15 @@ export default function Products() {
                   type="number"
                   min="0"
                   step="0.01"
-                  value={newProduct.selling_price || ''}
-                  onChange={(e) => setNewProduct({ ...newProduct, selling_price: Number(e.target.value) || 0 })}
+                  value={newProduct.selling_price}
+                  onChange={(e) => setNewProduct({ ...newProduct, selling_price: e.target.value })}
                   placeholder="0.00"
-                  className={formErrors.selling_price ? 'border-destructive' : ''}
+                  aria-invalid={!!formErrors.selling_price}
                 />
-                {formErrors.selling_price && <p className="text-sm text-destructive">{formErrors.selling_price}</p>}
+                {formErrors.selling_price && <p className="text-xs text-destructive">{formErrors.selling_price}</p>}
               </div>
             </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="add-stock">Initial Stock</Label>
@@ -314,24 +373,37 @@ export default function Products() {
                   id="add-stock"
                   type="number"
                   min="0"
-                  value={newProduct.stock || ''}
-                  onChange={(e) => setNewProduct({ ...newProduct, stock: Number(e.target.value) || 0 })}
+                  value={newProduct.stock}
+                  onChange={(e) => setNewProduct({ ...newProduct, stock: e.target.value })}
                   placeholder="0"
-                  className={formErrors.stock ? 'border-destructive' : ''}
+                  aria-invalid={!!formErrors.stock}
                 />
-                {formErrors.stock && <p className="text-sm text-destructive">{formErrors.stock}</p>}
+                {formErrors.stock && <p className="text-xs text-destructive">{formErrors.stock}</p>}
               </div>
+
               <div className="grid gap-2">
-                <Label htmlFor="add-barcode">Barcode (optional)</Label>
-                <Input
-                  id="add-barcode"
-                  value={newProduct.barcode}
-                  onChange={(e) => setNewProduct({ ...newProduct, barcode: e.target.value })}
-                  placeholder="Enter barcode"
-                />
+                <Label htmlFor="add-barcode">Barcode (Optional)</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="add-barcode"
+                    value={newProduct.barcode}
+                    onChange={(e) => setNewProduct({ ...newProduct, barcode: e.target.value })}
+                    placeholder="Enter barcode"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    title="Scan Barcode"
+                    onClick={() => { setScannerTarget('add'); setScannerOpen(true); }}
+                  >
+                    <ScanBarcode className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleAddProduct} disabled={loading}>
@@ -348,82 +420,100 @@ export default function Products() {
             <DialogTitle>Edit Product</DialogTitle>
             <DialogDescription>Update product information.</DialogDescription>
           </DialogHeader>
-          {editingProduct && (
-            <div className="grid gap-4 py-4">
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-name">Product Name *</Label>
+              <Input
+                id="edit-name"
+                value={editFormState.name}
+                onChange={(e) => setEditFormState({ ...editFormState, name: e.target.value })}
+                aria-invalid={!!formErrors.name}
+              />
+              {formErrors.name && <p className="text-xs text-destructive">{formErrors.name}</p>}
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Category</Label>
+              <Select
+                value={editFormState.category_id}
+                onValueChange={(v) => setEditFormState({ ...editFormState, category_id: v })}
+              >
+                <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>No Category</SelectItem>
+                  {categories.map((cat: any) => (
+                    <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="edit-name">Product Name *</Label>
+                <Label htmlFor="edit-cost">Cost Price ({settings.currency})</Label>
                 <Input
-                  id="edit-name"
-                  value={editingProduct.name}
-                  onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })}
-                  className={formErrors.name ? 'border-destructive' : ''}
+                  id="edit-cost"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={editFormState.cost_price}
+                  onChange={(e) => setEditFormState({ ...editFormState, cost_price: e.target.value })}
+                  aria-invalid={!!formErrors.cost_price}
                 />
-                {formErrors.name && <p className="text-sm text-destructive">{formErrors.name}</p>}
+                {formErrors.cost_price && <p className="text-xs text-destructive">{formErrors.cost_price}</p>}
               </div>
+
               <div className="grid gap-2">
-                <Label>Category</Label>
-                <Select value={getCategorySelectValue(editingProduct.category_id)} onValueChange={(v) => setEditingProduct({ ...editingProduct, category_id: parseCategorySelectValue(v) })}>
-                  <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE}>No Category</SelectItem>
-                    {categories.map((cat: any) => (
-                      <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="edit-selling">Selling Price ({settings.currency}) *</Label>
+                <Input
+                  id="edit-selling"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={editFormState.selling_price}
+                  onChange={(e) => setEditFormState({ ...editFormState, selling_price: e.target.value })}
+                  aria-invalid={!!formErrors.selling_price}
+                />
+                {formErrors.selling_price && <p className="text-xs text-destructive">{formErrors.selling_price}</p>}
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-cost">Cost Price ({settings.currency})</Label>
-                  <Input
-                    id="edit-cost"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={editingProduct.cost_price}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, cost_price: Number(e.target.value) || 0 })}
-                    className={formErrors.cost_price ? 'border-destructive' : ''}
-                  />
-                  {formErrors.cost_price && <p className="text-sm text-destructive">{formErrors.cost_price}</p>}
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-selling">Selling Price ({settings.currency}) *</Label>
-                  <Input
-                    id="edit-selling"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={editingProduct.selling_price}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, selling_price: Number(e.target.value) || 0 })}
-                    className={formErrors.selling_price ? 'border-destructive' : ''}
-                  />
-                  {formErrors.selling_price && <p className="text-sm text-destructive">{formErrors.selling_price}</p>}
-                </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="edit-stock">Stock</Label>
+                <Input
+                  id="edit-stock"
+                  type="number"
+                  min="0"
+                  value={editFormState.stock}
+                  onChange={(e) => setEditFormState({ ...editFormState, stock: e.target.value })}
+                  aria-invalid={!!formErrors.stock}
+                />
+                {formErrors.stock && <p className="text-xs text-destructive">{formErrors.stock}</p>}
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-stock">Stock</Label>
-                  <Input
-                    id="edit-stock"
-                    type="number"
-                    min="0"
-                    value={editingProduct.stock}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, stock: Number(e.target.value) || 0 })}
-                    className={formErrors.stock ? 'border-destructive' : ''}
-                  />
-                  {formErrors.stock && <p className="text-sm text-destructive">{formErrors.stock}</p>}
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-barcode">Barcode</Label>
+
+              <div className="grid gap-2">
+                <Label htmlFor="edit-barcode">Barcode</Label>
+                <div className="flex gap-2">
                   <Input
                     id="edit-barcode"
-                    value={editingProduct.barcode || ''}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, barcode: e.target.value })}
+                    value={editFormState.barcode}
+                    onChange={(e) => setEditFormState({ ...editFormState, barcode: e.target.value })}
                   />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    title="Scan Barcode"
+                    onClick={() => { setScannerTarget('edit'); setScannerOpen(true); }}
+                  >
+                    <ScanBarcode className="h-4 w-4" />
+                  </Button>
                 </div>
               </div>
             </div>
-          )}
+          </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleEditProduct} disabled={loading}>
@@ -432,6 +522,20 @@ export default function Products() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* QR & Barcode Scanner Dialog */}
+      <QRScanner
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onScan={handleScanResult}
+      />
+
+      {/* Printable Barcode Label Dialog */}
+      <BarcodeLabel
+        open={!!printProduct}
+        onClose={() => setPrintProduct(null)}
+        product={printProduct}
+      />
     </div>
   );
 }

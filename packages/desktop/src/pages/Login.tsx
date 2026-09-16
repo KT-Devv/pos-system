@@ -1,5 +1,10 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { Button } from '@pos/shared/components/button';
+import { Input } from '@pos/shared/components/input';
+import { Label } from '@pos/shared/components/label';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@pos/shared/components/card';
+import { KeyRound, Loader2, LogIn } from 'lucide-react';
 
 export default function Login() {
   const { login, loading } = useAuth();
@@ -17,45 +22,59 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/90 to-primary/70">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-8">
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-primary rounded-xl flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
+    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-primary/90 via-primary/75 to-primary/60">
+      <Card className="w-full max-w-sm shadow-2xl border-white/20 bg-background/95 backdrop-blur-md">
+        <CardHeader className="text-center pb-4">
+          <div className="w-14 h-14 bg-primary/10 border border-primary/20 rounded-2xl flex items-center justify-center mx-auto mb-3 text-primary shadow-inner">
+            <KeyRound className="h-7 w-7" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">POS System</h1>
-          <p className="text-sm text-muted-foreground mt-1">Enter your PIN to sign in</p>
-        </div>
+          <CardTitle className="text-2xl font-bold">POS System</CardTitle>
+          <CardDescription>Enter your Security PIN to sign in</CardDescription>
+        </CardHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <input
-              type="password"
-              inputMode="numeric"
-              maxLength={6}
-              value={pin}
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-              placeholder="Enter PIN"
-              className="w-full h-12 text-center text-2xl tracking-widest rounded-lg border border-input bg-background px-3 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              autoFocus
-            />
-          </div>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="pin-input" className="sr-only">Security PIN</Label>
+              <Input
+                id="pin-input"
+                type="password"
+                inputMode="numeric"
+                maxLength={6}
+                value={pin}
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+                placeholder="••••"
+                className="h-14 text-center text-3xl tracking-widest font-mono border-input"
+                autoFocus
+              />
+            </div>
 
-          {error && (
-            <p className="text-sm text-red-500 text-center">{error}</p>
-          )}
+            {error && (
+              <p className="text-sm font-medium text-destructive text-center bg-destructive/10 p-2 rounded-md border border-destructive/20">
+                {error}
+              </p>
+            )}
 
-          <button
-            type="submit"
-            disabled={pin.length < 4 || loading}
-            className="w-full h-12 rounded-lg bg-primary text-primary-foreground font-medium text-base hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-          >
-            {loading ? 'Verifying...' : 'Sign In'}
-          </button>
-        </form>
-      </div>
+            <Button
+              type="submit"
+              disabled={pin.length < 4 || loading}
+              className="w-full h-11 text-base font-semibold"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Verifying...
+                </>
+              ) : (
+                <>
+                  <LogIn className="h-4 w-4 mr-2" />
+                  Sign In
+                </>
+              )}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

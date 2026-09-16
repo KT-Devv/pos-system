@@ -361,11 +361,16 @@ export default function Sales() {
                     id="discount"
                     type="number"
                     min="0"
+                    step="0.01"
                     value={discount === 0 ? '' : discount}
                     onChange={(e) => {
-                      const value = Number(e.target.value);
-                      if (!Number.isFinite(value) || value < 0) return;
-                      setDiscount(value);
+                      const raw = e.target.value;
+                      if (raw === '') {
+                        setDiscount(0);
+                      } else {
+                        const val = parseFloat(raw);
+                        setDiscount(isNaN(val) || val < 0 ? 0 : val);
+                      }
                     }}
                     className="w-28 text-right pl-8 bg-black/40 border-white/10 focus-visible:ring-primary/50"
                     placeholder="0.00"
