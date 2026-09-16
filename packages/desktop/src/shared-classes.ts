@@ -14,7 +14,7 @@ const _dialog_footer = "flex flex-col-reverse sm:flex-row sm:justify-end sm:spac
 const _dialog_title = "text-lg font-semibold leading-none tracking-tight";
 const _dialog_description = "text-sm text-muted-foreground";
 
-const _button = "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0 cursor-pointer active:scale-[0.97] select-none";
+const _button = "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0 cursor-pointer select-none";
 const _button_primary = "bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs hover:shadow-sm";
 const _button_destructive = "bg-destructive text-destructive-foreground hover:bg-destructive/90";
 const _button_outline = "border border-input bg-background hover:bg-accent hover:text-accent-foreground hover:border-foreground/20";

@@ -8,9 +8,7 @@ import {
   Settings,
   Users,
   LogOut,
-  Store,
   Menu,
-  Bell,
 } from "lucide-react";
 import { cn } from "@pos/shared/lib/utils";
 import { useState } from "react";
@@ -41,25 +39,18 @@ export default function Layout() {
       {/* Sidebar - hidden on small screens, toggleable */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 w-72 bg-primary text-primary-foreground flex flex-col transform transition-transform duration-200 shadow-2xl shadow-primary/10",
+          "fixed inset-y-0 left-0 z-40 w-64 bg-primary text-primary-foreground flex flex-col",
           mobileOpen ? "translate-x-0" : "-translate-x-full",
           "md:static md:translate-x-0 md:w-64 md:flex"
         )}
         aria-hidden={!mobileOpen && undefined}
       >
-        <div className="p-6 border-b border-primary-foreground/10">
-          <div className="flex items-center gap-3">
-            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-accent text-accent-foreground shadow-lg shadow-accent/20">
-              <Store className="h-5 w-5" />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold tracking-tight">MomoMart</h1>
-              <p className="text-xs text-primary-foreground/55">Retail workspace</p>
-            </div>
-          </div>
+        <div className="p-6 border-b border-primary-foreground/20">
+          <h1 className="text-xl font-bold">POS System</h1>
+          <p className="text-sm opacity-70">Mom's Shop</p>
         </div>
 
-        <nav className="flex-1 p-5 space-y-2">
+        <nav className="flex-1 p-4 space-y-1">
           {navItems.map((item) => (
             <NavLink
               key={item.to}
@@ -68,10 +59,10 @@ export default function Layout() {
               onClick={() => setMobileOpen(false)}
               className={({ isActive }) =>
                 cn(
-                  "flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium transition-all",
+                  "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium",
                   isActive
-                    ? "bg-accent text-accent-foreground shadow-lg shadow-accent/10"
-                    : "text-primary-foreground/65 hover:bg-primary-foreground/10 hover:text-primary-foreground"
+                    ? "bg-primary-foreground/20 text-primary-foreground"
+                    : "text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground"
                 )
               }
             >
@@ -81,21 +72,16 @@ export default function Layout() {
           ))}
         </nav>
 
-        <div className="p-5 border-t border-primary-foreground/10 space-y-3">
+        <div className="p-4 border-t border-primary-foreground/20 space-y-2">
           {profile && (
-            <div className="flex items-center gap-3 px-2 text-sm">
-              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary-foreground/10 font-bold">
-                {profile.name.slice(0, 1).toUpperCase()}
-              </div>
-              <div className="min-w-0 text-primary-foreground/75">
-                <p className="font-medium truncate">{profile.name}</p>
-                <p className="text-xs opacity-60 capitalize">{profile.role}</p>
-              </div>
+            <div className="px-3 text-sm text-primary-foreground/70">
+              <p className="font-medium truncate">{profile.name}</p>
+              <p className="text-xs opacity-60 capitalize">{profile.role}</p>
             </div>
           )}
           <button
             onClick={handleLogout}
-            className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-primary-foreground/60 hover:bg-primary-foreground/10 hover:text-primary-foreground w-full transition-colors"
+            className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground w-full"
           >
             <LogOut className="h-5 w-5" />
             Logout
@@ -127,7 +113,6 @@ export default function Layout() {
             <div>
               <h2 className="font-semibold">POS System</h2>
               <div className="text-xs text-muted-foreground">Mom's Shop</div>
-              <button aria-label="Notifications" className="rounded-xl p-2 text-muted-foreground hover:bg-muted"><Bell className="h-5 w-5" /></button>
             </div>
           </div>
         </div>
