@@ -80,6 +80,96 @@ create table public.stock_movements (
   created_at timestamptz not null default now()
 );
 
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  insert into public.profiles (id, name, role)
+  values (
+    new.id,
+    coalesce(new.raw_user_meta_data ->> 'display_name', split_part(new.email, '@', 1)),
+    'admin'
+  );
+  return new;
+end;
+$$;
+
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
+
+create or replace function public.create_sale(
+  p_cashier_id uuid,
+  p_customer_id uuid,
+  p_payment_method public.payment_method,
+  p_discount numeric,
+  p_lines jsonb
+)
+returns uuid
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  sale_id uuid;
+  line jsonb;
+  product_row public.products%rowtype;
+  subtotal numeric(12,2) := 0;
+  normalized_discount numeric(12,2) := greatest(coalesce(p_discount, 0), 0);
+  quantity integer;
+  unit_price numeric(12,2);
+begin
+  if jsonb_typeof(p_lines) <> 'array' or jsonb_array_length(p_lines) = 0 then
+    raise exception 'At least one sale line is required';
+  end if;
+
+  for line in select value from jsonb_array_elements(p_lines)
+  loop
+    quantity := (line ->> 'quantity')::integer;
+    if quantity <= 0 then raise exception 'Sale quantity must be positive'; end if;
+
+    select * into product_row
+    from public.products
+    where id = (line ->> 'product_id')::uuid
+    for update;
+
+    if not found then raise exception 'Product not found'; end if;
+    if product_row.stock < quantity then
+      raise exception 'Insufficient stock for %', product_row.name;
+    end if;
+
+    unit_price := product_row.selling_price;
+    subtotal := subtotal + (unit_price * quantity);
+  end loop;
+
+  subtotal := round(subtotal, 2);
+  normalized_discount := round(least(normalized_discount, subtotal), 2);
+
+  insert into public.sales (cashier_id, customer_id, subtotal, discount, total, payment_method)
+  values (p_cashier_id, p_customer_id, subtotal, normalized_discount, subtotal - normalized_discount, p_payment_method)
+  returning id into sale_id;
+
+  for line in select value from jsonb_array_elements(p_lines)
+  loop
+    quantity := (line ->> 'quantity')::integer;
+    select * into product_row from public.products where id = (line ->> 'product_id')::uuid;
+    insert into public.sale_lines (sale_id, product_id, quantity, unit_price, unit_cost)
+    values (sale_id, product_row.id, quantity, product_row.selling_price, product_row.cost_price);
+    update public.products set stock = stock - quantity where id = product_row.id;
+  end loop;
+
+  if p_customer_id is not null then
+    update public.customers
+    set loyalty_points = loyalty_points + floor((subtotal - normalized_discount) / 10)::integer
+    where id = p_customer_id;
+  end if;
+
+  return sale_id;
+end;
+$$;
+
 create index products_category_id_idx on public.products(category_id);
 create index products_barcode_idx on public.products(barcode);
 create index sales_created_at_idx on public.sales(created_at);
@@ -97,6 +187,8 @@ alter table public.stock_movements enable row level security;
 
 create policy "authenticated users can read profiles"
   on public.profiles for select to authenticated using (true);
+create policy "authenticated users can update own profile"
+  on public.profiles for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
 create policy "authenticated users can manage POS data"
   on public.categories for all to authenticated using (true) with check (true);
 create policy "authenticated users can manage POS data"
