@@ -158,6 +158,8 @@ begin
     insert into public.sale_lines (sale_id, product_id, quantity, unit_price, unit_cost)
     values (sale_id, product_row.id, quantity, product_row.selling_price, product_row.cost_price);
     update public.products set stock = stock - quantity where id = product_row.id;
+    insert into public.stock_movements (product_id, type, quantity, notes)
+    values (product_row.id, 'out', quantity, 'Sale ' || sale_id::text);
   end loop;
 
   if p_customer_id is not null then
@@ -167,6 +169,48 @@ begin
   end if;
 
   return sale_id;
+end;
+$$;
+
+create or replace function public.record_stock_movement(
+  p_product_id uuid,
+  p_type public.stock_movement_type,
+  p_quantity integer,
+  p_supplier_id uuid default null,
+  p_notes text default null
+)
+returns uuid
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  product_row public.products%rowtype;
+  movement_quantity integer := p_quantity;
+  movement_id uuid;
+begin
+  if p_quantity <= 0 then raise exception 'Stock quantity must be positive'; end if;
+
+  select * into product_row
+  from public.products
+  where id = p_product_id
+  for update;
+  if not found then raise exception 'Product not found'; end if;
+
+  if p_type = 'in' then
+    update public.products set stock = stock + p_quantity where id = p_product_id;
+  elsif p_type = 'out' then
+    if product_row.stock < p_quantity then raise exception 'Insufficient stock'; end if;
+    update public.products set stock = stock - p_quantity where id = p_product_id;
+  else
+    movement_quantity := p_quantity - product_row.stock;
+    update public.products set stock = p_quantity where id = p_product_id;
+  end if;
+
+  insert into public.stock_movements (product_id, type, quantity, supplier_id, notes)
+  values (p_product_id, p_type, movement_quantity, p_supplier_id, p_notes)
+  returning id into movement_id;
+  return movement_id;
 end;
 $$;
 

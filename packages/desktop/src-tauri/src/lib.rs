@@ -12,6 +12,7 @@ pub struct SaleLine {
 pub struct OfflineSale {
     pub id: String,
     pub cashier_id: String,
+    pub customer_id: Option<String>,
     pub payment_method: String,
     pub discount: i64,
     pub lines: Vec<SaleLine>,
