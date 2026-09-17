@@ -6,13 +6,13 @@ Install dependencies from the repository root:
 
 ```powershell
 npm install
-Copy-Item packages/next-web/.env.example packages/next-web/.env.local
+Copy-Item apps/web/.env.example apps/web/.env.local
 ```
 
-Set the Supabase URL and anon key in `packages/next-web/.env.local`, then run:
+Set the Supabase URL and anon key in `apps/web/.env.local`, then run:
 
 ```powershell
-npm run dev:next
+npm run dev:web
 ```
 
 The Next.js workspace is available at `http://localhost:3000`.
@@ -20,8 +20,8 @@ The Next.js workspace is available at `http://localhost:3000`.
 ## Active commands
 
 ```powershell
-npm run dev:next
-npm run build:next
+npm run dev:web
+npm run build:web
 npm run dev:tauri
 npm run build:tauri
 npm run build:shared
@@ -35,8 +35,8 @@ Rust, and creates MSI and NSIS installers.
 
 The active clients are:
 
-- `packages/next-web` — browser UI and Supabase workflows.
-- `packages/desktop/src-tauri` — Tauri shell, Rust commands, and SQLite offline queue.
+- `apps/web` — browser UI and Supabase workflows.
+- `apps/desktop/src-tauri` — Tauri shell, Rust commands, and SQLite offline queue.
 - `packages/shared` — shared types, validation, calculations, and UI components.
 
 The old Vite browser client and Electron desktop client were removed after the
@@ -48,7 +48,7 @@ it is not bundled into the Tauri application.
 1. Run `database/schema.v2.sql` in the Supabase SQL Editor.
 2. Enable Email authentication.
 3. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in
-   `packages/next-web/.env.local`.
+   `apps/web/.env.local`.
 
 The schema provides `create_sale` for transactional checkout and
 `record_stock_movement` for atomic inventory changes.
@@ -59,7 +59,7 @@ Use the Next.js app as the active accessibility target. Run a production build
 before deployment:
 
 ```powershell
-npm run build:next
+npm run build:web
 ```
 
 ## Build outputs
@@ -67,6 +67,6 @@ npm run build:next
 Tauri installers are written to:
 
 ```text
-packages/desktop/src-tauri/target/release/bundle/msi/
-packages/desktop/src-tauri/target/release/bundle/nsis/
+apps/desktop/src-tauri/target/release/bundle/msi/
+apps/desktop/src-tauri/target/release/bundle/nsis/
 ```

@@ -8,10 +8,40 @@ with Supabase as the shared backend and a local SQLite queue for offline sales.
 
 | Package | Purpose |
 | --- | --- |
+| `apps/web` | Next.js App Router client with Supabase authentication and POS workflows |
+| `apps/desktop/src-tauri` | Tauri 2 desktop shell, Rust commands, and SQLite offline queue |
 | `packages/shared` | Shared domain types, validation, calculations, and UI components |
-| `packages/next-web` | Next.js App Router client with Supabase authentication and POS workflows |
-| `packages/desktop/src-tauri` | Tauri 2 desktop shell, Rust commands, and SQLite offline queue |
-| `packages/desktop` | Tauri workspace package and native Rust desktop client |
+
+## System structure
+
+```text
+pos-system/
+├── apps/
+│   ├── web/                         # Next.js browser application
+│   │   ├── src/app/                # Routes and feature workspace
+│   │   ├── src/lib/                # Supabase and Tauri bridges
+│   │   ├── .env.example            # Browser environment template
+│   │   └── next.config.ts
+│   └── desktop/                    # Tauri workspace package
+│       ├── src-tauri/              # Rust native shell and SQLite queue
+│       │   ├── src/                # Commands and native entry points
+│       │   ├── icons/              # Installer icon assets
+│       │   ├── Cargo.toml
+│       │   └── tauri.conf.json
+│       └── package.json             # Tauri development/build commands
+├── packages/
+│   └── shared/                     # Shared domain contracts and UI primitives
+├── database/
+│   └── schema.v2.sql               # Supabase tables, RLS, and RPCs
+├── docs/                           # Development, migration, and accessibility docs
+├── package.json                    # Workspace scripts
+└── package-lock.json
+```
+
+`apps/web` is the only user-facing JavaScript application. `apps/desktop`
+packages the same exported web application inside Tauri; it does not contain a
+second renderer. `packages/shared` is dependency-free domain code shared by
+the web build and native integrations.
 
 The Next.js client currently includes authenticated product management, sales
 checkout, customers, inventory movements, reports, and profile settings.
@@ -50,10 +80,10 @@ npm install
 Create the Next.js environment file:
 
 ```powershell
-Copy-Item packages/next-web/.env.example packages/next-web/.env.local
+Copy-Item apps/web/.env.example apps/web/.env.local
 ```
 
-Set these values in `packages/next-web/.env.local`:
+Set these values in `apps/web/.env.local`:
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
@@ -80,8 +110,8 @@ Run these commands from the repository root:
 
 ```powershell
 # Next.js browser client
-npm run dev:next
-npm run build:next
+npm run dev:web
+npm run build:web
 
 # Tauri desktop client
 npm run dev:tauri
@@ -100,8 +130,8 @@ compiles Rust, and creates the Windows installers.
 After a successful Tauri build:
 
 ```text
-packages/desktop/src-tauri/target/release/bundle/msi/
-packages/desktop/src-tauri/target/release/bundle/nsis/
+apps/desktop/src-tauri/target/release/bundle/msi/
+apps/desktop/src-tauri/target/release/bundle/nsis/
 ```
 
 The generated artifacts are:

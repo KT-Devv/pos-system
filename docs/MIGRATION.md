@@ -2,16 +2,16 @@
 
 The migration is complete and the new clients are buildable:
 
-- `packages/next-web` is the active Next.js App Router browser workspace.
-- `packages/desktop/src-tauri` is the active Tauri 2 desktop application.
+- `apps/web` is the active Next.js App Router browser workspace.
+- `apps/desktop/src-tauri` is the active Tauri 2 desktop application.
 - The retired Vite and Electron clients have been removed.
 
 ## Commands
 
 ```powershell
 npm install
-npm run dev:next
-npm run build:next
+npm run dev:web
+npm run build:web
 npm run dev:tauri
 npm run build:tauri
 ```
@@ -27,7 +27,7 @@ Windows SDK must be installed first.
 Apply `database/schema.v2.sql` to a Supabase project and configure:
 
 ```text
-packages/next-web/.env.local
+apps/web/.env.local
 NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
 ```
@@ -51,8 +51,8 @@ Queued sales are synchronized through Supabase when connectivity returns.
 ## Installer output
 
 ```text
-packages/desktop/src-tauri/target/release/bundle/msi/
-packages/desktop/src-tauri/target/release/bundle/nsis/
+apps/desktop/src-tauri/target/release/bundle/msi/
+apps/desktop/src-tauri/target/release/bundle/nsis/
 ```
 
 Generated build output is ignored and should not be committed.
