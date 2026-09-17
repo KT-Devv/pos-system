@@ -1,125 +1,72 @@
 # Development Guide
 
-## Quick Start
+## Quick start
 
-```bash
-cd packages/web
+Install dependencies from the repository root:
+
+```powershell
 npm install
-npm run dev
+Copy-Item packages/next-web/.env.example packages/next-web/.env.local
 ```
 
-The app will be available at `http://localhost:5173`
+Set the Supabase URL and anon key in `packages/next-web/.env.local`, then run:
 
-## Available Scripts
-
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run preview` - Preview production build
-- `npm run lint` - Run linter
-
-## Project Architecture
-
-### Pages
-
-| Page | Route | Description |
-|------|-------|-------------|
-| Dashboard | `/` | Overview of sales, profit, stock alerts |
-| Sales | `/sales` | POS screen with cart and checkout |
-| Products | `/products` | Manage product catalog |
-| Inventory | `/inventory` | Track stock movements |
-| Customers | `/customers` | Customer database |
-| Reports | `/reports` | Analytics and reports |
-| Settings | `/settings` | Shop and user settings |
-
-### Components
-
-All UI components are in `src/components/ui/`. They follow shadcn/ui patterns:
-
-- `Button` - Primary action button
-- `Input` - Text input field
-- `Card` - Content container
-- `Badge` - Status labels
-- `Dialog` - Modal dialogs
-- `Select` - Dropdown selection
-- `Label` - Form labels
-- `Switch` - Toggle switches
-
-### State Management
-
-Currently using local state with `useState`. For production:
-
-1. Add React Context for global state (cart, auth)
-2. Consider Zustand or Jotai for complex state
-3. Use TanStack Query for server state
-
-## Connecting to Supabase
-
-1. Create `.env` file in `packages/web/`:
-
-```
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
+```powershell
+npm run dev:next
 ```
 
-2. Run `database/schema.v2.sql` in the Supabase SQL Editor
+The Next.js workspace is available at `http://localhost:3000`.
 
-3. Enable Email Authentication in Supabase Dashboard
+## Active commands
 
-## Customization
-
-### Changing Currency
-
-Edit `src/lib/utils.ts`:
-
-```typescript
-export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-GH", {
-    style: "currency",
-    currency: "GHS", // Change this
-    minimumFractionDigits: 2,
-  }).format(amount);
-}
+```powershell
+npm run dev:next
+npm run build:next
+npm run dev:tauri
+npm run build:tauri
+npm run build:shared
 ```
 
-### Changing Theme
+The Tauri development command starts the Next.js dev server through
+`src-tauri/tauri.conf.json`. The production command exports Next.js, compiles
+Rust, and creates MSI and NSIS installers.
 
-Edit `src/index.css` CSS variables in the `@theme` block.
+## Architecture
 
-### Adding New Pages
+The active clients are:
 
-1. Create page in `src/pages/YourPage.tsx`
-2. Add route in `src/App.tsx`
-3. Add nav item in `src/layouts/Layout.tsx`
+- `packages/next-web` — browser UI and Supabase workflows.
+- `packages/desktop/src-tauri` — Tauri shell, Rust commands, and SQLite offline queue.
+- `packages/shared` — shared types, validation, calculations, and UI components.
 
-## Deployment
+The old Vite browser client and Electron desktop client were removed after the
+Tauri migration. Node is retained as the Next.js development/build toolchain;
+it is not bundled into the Tauri application.
 
-### Vercel (Recommended)
+## Supabase
 
-```bash
-npm run build
+1. Run `database/schema.v2.sql` in the Supabase SQL Editor.
+2. Enable Email authentication.
+3. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in
+   `packages/next-web/.env.local`.
+
+The schema provides `create_sale` for transactional checkout and
+`record_stock_movement` for atomic inventory changes.
+
+## Accessibility
+
+Use the Next.js app as the active accessibility target. Run a production build
+before deployment:
+
+```powershell
+npm run build:next
 ```
 
-Deploy the `dist/` folder to Vercel.
+## Build outputs
 
-### Netlify
+Tauri installers are written to:
 
-Connect your GitHub repo and set:
-- Build command: `npm run build`
-- Publish directory: `dist`
-
-## Accessibility Testing
-
-Run the automated accessibility audit (axe) using Playwright. This test injects axe-core into pages and saves a JSON report to `reports/accessibility/web-axe.json`.
-
-Commands:
-
-```bash
-# start the web dev server (serves at http://localhost:5174 by default when 5173 is taken)
-cd packages/web
-npm run dev
-
-# run the Playwright accessibility test
-npx playwright test packages/web/tests/accessibility.spec.ts --project=chromium
+```text
+packages/desktop/src-tauri/target/release/bundle/msi/
+packages/desktop/src-tauri/target/release/bundle/nsis/
 ```
-
-The generated report contains violations grouped by route and can be used to prioritize fixes.

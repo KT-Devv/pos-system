@@ -11,8 +11,7 @@ with Supabase as the shared backend and a local SQLite queue for offline sales.
 | `packages/shared` | Shared domain types, validation, calculations, and UI components |
 | `packages/next-web` | Next.js App Router client with Supabase authentication and POS workflows |
 | `packages/desktop/src-tauri` | Tauri 2 desktop shell, Rust commands, and SQLite offline queue |
-| `packages/web` | Existing Vite browser client retained during the transition |
-| `packages/desktop` | Existing Electron client retained during the transition |
+| `packages/desktop` | Tauri workspace package and native Rust desktop client |
 
 The Next.js client currently includes authenticated product management, sales
 checkout, customers, inventory movements, reports, and profile settings.
@@ -87,12 +86,6 @@ npm run build:next
 # Tauri desktop client
 npm run dev:tauri
 npm run build:tauri
-
-# Existing clients retained during migration
-npm run dev:web
-npm run build:web
-npm run dev:desktop
-npm run build:desktop
 
 # Shared package type check/build
 npm run build:shared

@@ -4,8 +4,7 @@ The migration is complete and the new clients are buildable:
 
 - `packages/next-web` is the active Next.js App Router browser workspace.
 - `packages/desktop/src-tauri` is the active Tauri 2 desktop application.
-- `packages/web` and the Electron client remain available while deployments
-  transition to Next.js and Tauri.
+- The retired Vite and Electron clients have been removed.
 
 ## Commands
 
@@ -18,8 +17,10 @@ npm run build:tauri
 ```
 
 `npm run build:tauri` runs the Next.js static export, compiles the Rust
-application, and produces both MSI and NSIS Windows installers. Rust, Cargo,
-the MSVC C++ workload, and the Windows SDK must be installed first.
+application, and produces both MSI and NSIS Windows installers. Node remains
+required for the Next.js build toolchain; the shipped desktop application does
+not bundle Node or Electron. Rust, Cargo, the MSVC C++ workload, and the
+Windows SDK must be installed first.
 
 ## Supabase
 

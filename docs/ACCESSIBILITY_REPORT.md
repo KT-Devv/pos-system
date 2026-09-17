@@ -1,17 +1,10 @@
-**Accessibility Report (site-wide)**
+**Accessibility Report**
 
-- Summary: Run the Playwright accessibility test to generate a full JSON report.
-- Report file: [reports/accessibility/web-axe.json](reports/accessibility/web-axe.json)
+The active client is the Next.js workspace. Build it locally before deployment:
 
-How to generate the report locally:
-
-```bash
-# 1. Serve the web app (dev server)
-cd packages/web
-npm run dev
-
-# 2. In another terminal, run the Playwright test
-npx playwright test packages/web/tests/accessibility.spec.ts --project=chromium
+```powershell
+npm run build:next
 ```
 
-The test saves a JSON report at `reports/accessibility/web-axe.json`. Open it to inspect violations per route.
+For browser accessibility testing, use the exported Next.js routes or a
+Playwright suite configured against `packages/next-web`.

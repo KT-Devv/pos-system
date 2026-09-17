@@ -16,7 +16,8 @@
     "@supabase/supabase-js": "^2.110.2",
     "next": "^15.5.7",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "tailwindcss": "^4.1.18"
   },
   "devDependencies": {
     "@types/node": "^24.13.2",
