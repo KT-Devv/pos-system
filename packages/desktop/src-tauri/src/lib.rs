@@ -1,14 +1,15 @@
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use tauri_plugin_sql::{Migration, MigrationKind, Db};
+use tauri_plugin_sql::{DbInstances, DbPool, Migration, MigrationKind};
+use sqlx::Row;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct SaleLine {
     pub product_id: String,
     pub quantity: i64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct OfflineSale {
     pub id: String,
     pub cashier_id: String,
@@ -24,8 +25,16 @@ pub struct QueueResult {
     pub id: String,
 }
 
+async fn database(state: &State<'_, DbInstances>) -> Result<sqlx::SqlitePool, String> {
+    let instances = state.0.read().await;
+    match instances.get("sqlite:pos.db") {
+        Some(DbPool::Sqlite(pool)) => Ok(pool.clone()),
+        _ => Err("Offline database is not loaded".into()),
+    }
+}
+
 #[tauri::command]
-async fn queue_sale(db: State<'_, Db>, sale: OfflineSale) -> Result<QueueResult, String> {
+async fn queue_sale(db: State<'_, DbInstances>, sale: OfflineSale) -> Result<QueueResult, String> {
     if sale.lines.is_empty() {
         return Err("A sale must contain at least one line".into());
     }
@@ -34,24 +43,41 @@ async fn queue_sale(db: State<'_, Db>, sale: OfflineSale) -> Result<QueueResult,
     }
 
     let payload = serde_json::to_string(&sale).map_err(|error| error.to_string())?;
-    db.execute(
-        "INSERT INTO offline_operations (id, operation_type, payload, attempts) VALUES (?1, 'sale', ?2, 0)",
-        vec![sale.id.clone().into(), payload.into()],
-    ).await.map_err(|error| error.to_string())?;
+    let pool = database(&db).await?;
+    sqlx::query("INSERT INTO offline_operations (id, operation_type, payload, attempts) VALUES (?1, 'sale', ?2, 0)")
+        .bind(&sale.id)
+        .bind(payload)
+        .execute(&pool)
+        .await
+        .map_err(|error| error.to_string())?;
 
     Ok(QueueResult { queued: true, id: sale.id })
 }
 
 #[tauri::command]
-async fn pending_operations(db: State<'_, Db>) -> Result<Vec<serde_json::Value>, String> {
-    db.select("SELECT id, operation_type, payload, attempts, created_at FROM offline_operations ORDER BY created_at ASC")
-        .await.map_err(|error| error.to_string())
+async fn pending_operations(db: State<'_, DbInstances>) -> Result<Vec<serde_json::Value>, String> {
+    let pool = database(&db).await?;
+    let rows = sqlx::query("SELECT id, operation_type, payload, attempts, created_at FROM offline_operations ORDER BY created_at ASC")
+        .fetch_all(&pool)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(rows.into_iter().map(|row| serde_json::json!({
+        "id": row.get::<String, _>("id"),
+        "operation_type": row.get::<String, _>("operation_type"),
+        "payload": row.get::<String, _>("payload"),
+        "attempts": row.get::<i64, _>("attempts"),
+        "created_at": row.get::<String, _>("created_at"),
+    })).collect())
 }
 
 #[tauri::command]
-async fn remove_operation(db: State<'_, Db>, id: String) -> Result<(), String> {
-    db.execute("DELETE FROM offline_operations WHERE id = ?1", vec![id.into()])
-        .await.map_err(|error| error.to_string())?;
+async fn remove_operation(db: State<'_, DbInstances>, id: String) -> Result<(), String> {
+    let pool = database(&db).await?;
+    sqlx::query("DELETE FROM offline_operations WHERE id = ?1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .map_err(|error| error.to_string())?;
     Ok(())
 }
 
