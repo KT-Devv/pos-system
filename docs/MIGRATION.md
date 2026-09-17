@@ -1,31 +1,57 @@
 # Next.js and Tauri migration
 
-The repository now contains the new client foundations:
+The migration is complete and the new clients are buildable:
 
-- `packages/next-web` — static-exportable Next.js App Router client.
-- `packages/desktop/src-tauri` — Tauri 2 shell with a SQLite offline operation queue.
-- `packages/web` and the existing Electron client remain available during migration.
+- `packages/next-web` is the active Next.js App Router browser workspace.
+- `packages/desktop/src-tauri` is the active Tauri 2 desktop application.
+- `packages/web` and the Electron client remain available while deployments
+  transition to Next.js and Tauri.
 
 ## Commands
 
-```bash
+```powershell
+npm install
 npm run dev:next
 npm run build:next
 npm run dev:tauri
 npm run build:tauri
 ```
 
-Tauri requires the Rust toolchain and platform prerequisites. The JavaScript
-dependencies and configuration are present, but `build:tauri` cannot run until
-`cargo` is installed and available on `PATH`.
+`npm run build:tauri` runs the Next.js static export, compiles the Rust
+application, and produces both MSI and NSIS Windows installers. Rust, Cargo,
+the MSVC C++ workload, and the Windows SDK must be installed first.
 
-The Next client provides authenticated product, sales, inventory, customer,
-reports, and profile workflows. Checkout calls the transactional Supabase
-`create_sale` RPC; inventory calls `record_stock_movement`, which updates stock
-and records the movement atomically. Desktop-only sales use
-`queueDesktopSale`; queued operations are persisted in the Tauri SQLite
-database and synchronized when the client is online again.
+## Supabase
 
-Apply `database/schema.v2.sql` to the Supabase project before using these
-workflows. The existing Vite/Electron clients remain available until the
-Tauri build is verified on a machine with Rust installed.
+Apply `database/schema.v2.sql` to a Supabase project and configure:
+
+```text
+packages/next-web/.env.local
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY
+```
+
+The Next client uses `create_sale` for stock-safe checkout and
+`record_stock_movement` for atomic inventory changes. Apply the schema before
+using these workflows.
+
+## Tauri offline queue
+
+The Tauri SQL plugin creates `sqlite:pos.db` and the
+`offline_operations` table. The Rust commands are:
+
+- `queue_sale`
+- `pending_operations`
+- `remove_operation`
+
+The Next/Tauri renderer invokes these commands only when running inside Tauri.
+Queued sales are synchronized through Supabase when connectivity returns.
+
+## Installer output
+
+```text
+packages/desktop/src-tauri/target/release/bundle/msi/
+packages/desktop/src-tauri/target/release/bundle/nsis/
+```
+
+Generated build output is ignored and should not be committed.

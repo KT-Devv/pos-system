@@ -1,89 +1,135 @@
 # POS System
 
-A modern Point of Sale (POS) system built for small businesses in Ghana.
+A point-of-sale system for small businesses in Ghana. The active rewrite uses
+Next.js for the browser workspace and Tauri 2 for the Windows desktop client,
+with Supabase as the shared backend and a local SQLite queue for offline sales.
 
-## Tech Stack
+## Current architecture
 
-- **Frontend**: React + TypeScript + Vite + Tailwind CSS
-- **Backend**: Supabase (PostgreSQL + Auth + Storage)
-- **Next web client**: Next.js + Supabase SSR
-- **Desktop client**: Tauri + Rust + SQLite offline queue
-- **UI Components**: Radix UI + shadcn/ui patterns
+| Package | Purpose |
+| --- | --- |
+| `packages/shared` | Shared domain types, validation, calculations, and UI components |
+| `packages/next-web` | Next.js App Router client with Supabase authentication and POS workflows |
+| `packages/desktop/src-tauri` | Tauri 2 desktop shell, Rust commands, and SQLite offline queue |
+| `packages/web` | Existing Vite browser client retained during the transition |
+| `packages/desktop` | Existing Electron client retained during the transition |
 
-## Features
+The Next.js client currently includes authenticated product management, sales
+checkout, customers, inventory movements, reports, and profile settings.
+Checkout uses the atomic `create_sale` Supabase function. Inventory uses
+`record_stock_movement`, which updates stock and records the movement in one
+transaction. Tauri queues offline sales locally and synchronizes them when the
+desktop client is online.
 
-### MVP (v1)
-- Dashboard with sales overview
-- Product management (CRUD)
-- POS screen with cart functionality
-- Multiple payment methods (Cash, MoMo, Card)
-- Inventory management with stock tracking
-- Customer database with loyalty points
-- Reports and analytics
-- Receipt generation
+## Requirements
 
-### Coming in v2
-- Barcode scanning
-- QR code payments
-- SMS/WhatsApp receipts
-- Expense tracking
-- Supplier management
-- Offline mode
+For the web client:
 
-## Getting Started
+- Node.js 18 or newer
+- npm 10 or newer
+- A Supabase project
 
-### Prerequisites
+For Tauri development and Windows packaging:
 
-- Node.js 18+
-- npm or yarn
-- Supabase account (free tier works)
+- Rust toolchain with Cargo
+- Visual Studio Build Tools 2022
+- Desktop development with C++
+- MSVC v143 build tools
+- Windows 10/11 SDK
+- WebView2 runtime
 
-### Installation
+## Setup
 
-1. Clone the repository
-```bash
-git clone <your-repo-url>
+Clone the repository and install workspace dependencies:
+
+```powershell
+git clone https://github.com/KT-Devv/pos-system.git
 cd pos-system
-```
-
-2. Install dependencies
-```bash
 npm install
 ```
 
-3. Set up environment variables
-```bash
-cp .env.example .env
-```
-Edit `.env` with your Supabase credentials.
+Create the Next.js environment file:
 
-4. Start development server
-```bash
-npm run dev
+```powershell
+Copy-Item packages/next-web/.env.example packages/next-web/.env.local
 ```
 
-### Supabase Setup
+Set these values in `packages/next-web/.env.local`:
 
-1. Create a new project at [supabase.com](https://supabase.com)
-2. Go to SQL Editor and run the fresh schema from `database/schema.v2.sql`
-3. Enable Email Auth in Authentication settings
-4. Copy your project URL and anon key to `.env`
-
-## Project Structure
-
-```
-packages/
-├── shared/               # Domain types, validation, and reusable UI
-├── web/                  # Browser client
-├── next-web/             # Next.js web client
-└── desktop/              # Tauri desktop client (Electron retained during migration)
-database/
-└── schema.v2.sql         # Fresh Supabase schema
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-## Currency
+## Supabase setup
 
-This system uses Ghana Cedi (GHS) as the default currency.
+1. Create or open a project at [supabase.com](https://supabase.com).
+2. Open **SQL Editor**.
+3. Run `database/schema.v2.sql` against the project.
+4. Enable Email authentication under **Authentication > Providers**.
+5. Create the first user through Supabase Authentication.
+6. The database trigger creates the corresponding admin profile.
+
+The schema creates the POS tables, row-level security policies, the
+transactional `create_sale` function, and the atomic `record_stock_movement`
+function. Do not run the obsolete `database/migrations/001_fixes.sql` against
+the new schema.
+
+## Development commands
+
+Run these commands from the repository root:
+
+```powershell
+# Next.js browser client
+npm run dev:next
+npm run build:next
+
+# Tauri desktop client
+npm run dev:tauri
+npm run build:tauri
+
+# Existing clients retained during migration
+npm run dev:web
+npm run build:web
+npm run dev:desktop
+npm run build:desktop
+
+# Shared package type check/build
+npm run build:shared
+```
+
+`npm run dev:tauri` starts the Next.js development server through the Tauri
+configuration. `npm run build:tauri` performs the Next.js static export,
+compiles Rust, and creates the Windows installers.
+
+## Windows installer output
+
+After a successful Tauri build:
+
+```text
+packages/desktop/src-tauri/target/release/bundle/msi/
+packages/desktop/src-tauri/target/release/bundle/nsis/
+```
+
+The generated artifacts are:
+
+- `POS System_1.0.0_x64_en-US.msi`
+- `POS System_1.0.0_x64-setup.exe`
+
+Build output under `target/`, `out/`, `dist/`, and `.next/` is ignored by Git.
+
+## Offline behavior
+
+The Tauri client stores pending sale operations in `sqlite:pos.db`. When the
+client is online, queued operations are sent through the Supabase
+`create_sale` function and removed only after successful synchronization.
+Stock validation remains server-side, so rejected or conflicting sales are
+reported instead of being silently discarded.
+
+## Currency and payments
+
+The default currency is Ghanaian cedi (GHS). Supported payment methods are
+cash, mobile money, and card.
 
 ## License
 
