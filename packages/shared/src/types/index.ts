@@ -20,7 +20,7 @@ export interface Product {
   selling_price: number;
   stock: number;
   barcode: string | null;
-  image: string | null;
+  image_url: string | null;
   created_at: string;
 }
 
@@ -31,8 +31,10 @@ export interface ProductWithCategory extends Product {
 export interface Sale {
   id: string;
   cashier_id: string;
-  total: number;
+  customer_id: string | null;
+  subtotal: number;
   discount: number;
+  total: number;
   payment_method: "cash" | "momo" | "card";
   created_at: string;
 }
@@ -42,8 +44,8 @@ export interface SaleItem {
   sale_id: string;
   product_id: string;
   quantity: number;
-  price: number;
-  cost_price: number;
+  unit_price: number;
+  unit_cost: number;
 }
 
 export interface SaleWithItems extends Sale {
@@ -69,6 +71,8 @@ export interface StockHistory {
   notes: string | null;
   created_at: string;
 }
+
+export type StockMovement = StockHistory;
 
 export interface StockHistoryWithDetails extends StockHistory {
   products?: Product;

@@ -1,6 +1,6 @@
 import type { CreateSaleInput } from "@pos/shared";
 
-function isTauri() {
+export function isTauri() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
@@ -16,7 +16,7 @@ export async function queueDesktopSale(input: CreateSaleInput & { id: string }) 
       cashier_id: input.cashierId,
       customer_id: input.customerId ?? null,
       payment_method: input.paymentMethod,
-      discount: Math.round((input.discount ?? 0) * 100),
+      discount: input.discount ?? 0,
       lines: input.lines.map((line) => ({
         product_id: line.productId,
         quantity: line.quantity,
@@ -50,7 +50,7 @@ export async function syncDesktopSales(
       cashierId: payload.cashier_id,
       customerId: payload.customer_id ?? null,
       paymentMethod: payload.payment_method,
-      discount: payload.discount / 100,
+      discount: payload.discount,
       lines: payload.lines.map((line) => ({
         productId: line.product_id,
         quantity: line.quantity,

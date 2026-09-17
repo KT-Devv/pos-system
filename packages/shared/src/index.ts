@@ -32,6 +32,23 @@ export {
 export { Label } from "./components/label";
 
 export {
+  Table,
+  TableHeader,
+  TableBody,
+  TableFooter,
+  TableHead,
+  TableRow,
+  TableCell,
+  TableCaption,
+} from "./components/table";
+
+export { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/tabs";
+
+export { Alert, AlertTitle, AlertDescription } from "./components/alert";
+
+export { Textarea } from "./components/textarea";
+
+export {
   Select,
   SelectGroup,
   SelectValue,
@@ -81,6 +98,7 @@ export type {
   Category as DomainCategory,
   Product as DomainProduct,
   Customer as DomainCustomer,
+  Supplier as DomainSupplier,
   SaleLine,
   Sale as DomainSale,
   StockMovement,
