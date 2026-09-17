@@ -36,8 +36,11 @@ export default function SectionClient({ section }: { section: Section }) {
     if (!supabase) return;
     let active = true;
     supabase.auth.getUser().then(async ({ data, error: authError }) => {
+      if (!data.user || authError?.name === "AuthSessionMissingError") {
+        if (active) window.location.replace("/login");
+        return;
+      }
       if (authError) { if (active) setError(authError.message); return; }
-      if (!data.user) { window.location.href = "/login"; return; }
       const { data: profile } = await supabase.from("profiles").select("name,role").eq("id", data.user.id).maybeSingle();
       if (active) setUser({ id: data.user.id, name: profile?.name ?? data.user.email ?? "User", role: profile?.role ?? "cashier" });
     });
