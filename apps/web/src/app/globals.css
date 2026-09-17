@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source "../**/*.{ts,tsx}";
 
 :root { --background: #f7f7f5; --foreground: #171717; --muted: #737373; --border: #e5e5e5; --primary: #171717; }
 * { box-sizing: border-box; border-color: var(--border); }
