@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { calculateSaleTotal, formatCurrency } from "@pos/shared";
-import { createSupabaseBrowserClient } from "../../lib/supabase/browser";
+import { createSupabaseBrowserClient, isSupabaseConfigured } from "../../lib/supabase/browser";
 import { queueDesktopSale, syncDesktopSales } from "../../lib/desktop";
 
 type Section = "sales" | "products" | "inventory" | "customers" | "reports" | "settings";
@@ -23,9 +23,10 @@ const sections: Record<Section, { title: string; description: string }> = {
 const nav = Object.keys(sections) as Section[];
 
 export default function SectionClient({ section }: { section: Section }) {
+  const configured = isSupabaseConfigured();
   const supabase = useMemo(
-    () => (typeof window === "undefined" ? null : createSupabaseBrowserClient()),
-    [],
+    () => (typeof window === "undefined" || !configured ? null : createSupabaseBrowserClient()),
+    [configured],
   );
   const [user, setUser] = useState<{ id: string; name: string; role: string } | null>(null);
   const [error, setError] = useState("");
@@ -62,6 +63,22 @@ export default function SectionClient({ section }: { section: Section }) {
     window.location.href = "/login";
   };
 
+  if (!configured) {
+    return (
+      <main className="shell">
+        <section className="content">
+          <div className="panel">
+            <p className="eyebrow">POS System</p>
+            <h1>Connect your workspace</h1>
+            <p className="muted">
+              Add your Supabase project URL and anonymous key to <code>apps/web/.env.local</code>,
+              then restart the development server.
+            </p>
+          </div>
+        </section>
+      </main>
+    );
+  }
   if (!supabase || !user) return <main className="shell"><p className="muted">{error || "Loading workspace..."}</p></main>;
   const content = sections[section];
 

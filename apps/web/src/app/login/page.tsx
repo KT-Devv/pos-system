@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/browser";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -14,6 +14,9 @@ export default function LoginPage() {
     setBusy(true);
     setError(null);
     try {
+      if (!isSupabaseConfigured()) {
+        throw new Error("Configure Supabase in apps/web/.env.local before signing in.");
+      }
       const supabase = createSupabaseBrowserClient();
       const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
       if (authError) throw authError;
