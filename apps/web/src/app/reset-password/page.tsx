@@ -83,7 +83,6 @@ export default function ResetPasswordPage() {
                   id="new-password"
                   required
                   type="password"
-                  placeholder="At least 6 characters"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                 />
@@ -94,7 +93,6 @@ export default function ResetPasswordPage() {
                   id="confirm-password"
                   required
                   type="password"
-                  placeholder="Re-enter password"
                   value={confirmPassword}
                   onChange={(event) => setConfirmPassword(event.target.value)}
                 />

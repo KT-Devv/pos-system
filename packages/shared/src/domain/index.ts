@@ -100,12 +100,14 @@ export function calculateSaleTotal(
   const subtotal = roundCurrency(
     lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0),
   );
-  const normalizedDiscount = roundCurrency(Math.max(0, discount));
+  const normalizedDiscount = roundCurrency(
+    Math.min(Math.max(0, discount), subtotal),
+  );
 
   return {
     subtotal,
     discount: normalizedDiscount,
-    total: roundCurrency(Math.max(0, subtotal - normalizedDiscount)),
+    total: roundCurrency(subtotal - normalizedDiscount),
   };
 }
 

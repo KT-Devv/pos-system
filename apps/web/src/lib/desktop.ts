@@ -36,30 +36,41 @@ export async function syncDesktopSales(
 ) {
   if (!isTauri() || !navigator.onLine) return 0;
   const { invoke } = await import("@tauri-apps/api/core");
-  const operations = await invoke<{ id: string; payload: string }[]>("pending_operations");
+  const operations = await invoke<{ id: string; payload: string; attempts?: number }[]>("pending_operations");
   let synced = 0;
   for (const operation of operations) {
-    const payload = JSON.parse(operation.payload) as {
-      cashier_id: string;
-      customer_id: string | null;
-      payment_method: "cash" | "momo" | "card";
-      discount: number;
-      lines: { product_id: string; quantity: number }[];
-    };
-    await createSale({
-      cashierId: payload.cashier_id,
-      customerId: payload.customer_id ?? null,
-      paymentMethod: payload.payment_method,
-      discount: payload.discount,
-      lines: payload.lines.map((line) => ({
-        productId: line.product_id,
-        quantity: line.quantity,
-        unitPrice: 0,
-        unitCost: 0,
-      })),
-    });
-    await invoke("remove_operation", { id: operation.id });
-    synced += 1;
+    try {
+      const payload = JSON.parse(operation.payload) as {
+        cashier_id: string;
+        customer_id: string | null;
+        payment_method: "cash" | "momo" | "card";
+        discount: number;
+        lines: { product_id: string; quantity: number }[];
+      };
+      await createSale({
+        cashierId: payload.cashier_id,
+        customerId: payload.customer_id ?? null,
+        paymentMethod: payload.payment_method,
+        discount: payload.discount,
+        lines: payload.lines.map((line) => ({
+          productId: line.product_id,
+          quantity: line.quantity,
+          unitPrice: 0,
+          unitCost: 0,
+        })),
+      });
+      await invoke("remove_operation", { id: operation.id });
+      synced += 1;
+    } catch (cause) {
+      const attempts = (operation.attempts ?? 0) + 1;
+      if (attempts >= 3) {
+        // Discard un-processable operation after 3 failed attempts
+        await invoke("remove_operation", { id: operation.id });
+      } else {
+        await invoke("increment_attempts", { id: operation.id });
+      }
+      console.error(`Offline operation ${operation.id} sync attempt ${attempts} failed:`, cause);
+    }
   }
   return synced;
 }

@@ -24,6 +24,7 @@ import {
   formatCurrency,
   Input,
   Label,
+  roundCurrency,
   Select,
   SelectContent,
   SelectItem,
@@ -40,6 +41,8 @@ import {
   TabsList,
   TabsTrigger,
   Textarea,
+  validateProductInput,
+  validateSaleInput,
 } from "@pos/shared";
 import {
   AlertCircle,
@@ -153,7 +156,7 @@ export default function SectionClient({ section }: { section: Section }) {
 
   const signOut = async () => {
     await supabase?.auth.signOut();
-    window.location.href = "/login";
+    window.location.href = "/";
   };
 
   if (!configured) {
@@ -247,7 +250,7 @@ export default function SectionClient({ section }: { section: Section }) {
             <div>
               <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                 <ActiveIcon className="h-4 w-4" />
-                Mom&apos;s Shop · {user.role}
+                KTDEVV POS System · {user.role}
               </p>
               <h1 className="mt-2 text-3xl font-bold tracking-tight">{content.title}</h1>
               <p className="mt-1 text-sm text-muted-foreground">{content.description}</p>
@@ -291,29 +294,35 @@ const fail = (onError: (message: string) => void, value: unknown) => onError(val
 
 function MenuSelect({
   id,
-  value,
   placeholder,
+  value,
   options,
   onValueChange,
 }: {
   id?: string;
+  placeholder?: string;
   value: string;
-  placeholder: string;
   options: Option[];
   onValueChange: (value: string) => void;
 }) {
-  const selectedValue = value || "";
+  const selectValue = value === "" ? "__none__" : value;
   return (
-    <Select value={selectedValue || undefined} onValueChange={onValueChange}>
+    <Select
+      value={selectValue}
+      onValueChange={(val) => onValueChange(val === "__none__" ? "" : val)}
+    >
       <SelectTrigger id={id} className="h-10 w-full">
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent position="popper" sideOffset={6}>
-        {options.map((option) => (
-          <SelectItem key={option.value} value={option.value}>
-            {option.label}
-          </SelectItem>
-        ))}
+        {options.map((option) => {
+          const itemVal = option.value === "" ? "__none__" : option.value;
+          return (
+            <SelectItem key={itemVal} value={itemVal}>
+              {option.label}
+            </SelectItem>
+          );
+        })}
       </SelectContent>
     </Select>
   );
@@ -360,8 +369,14 @@ function Products({ supabase, onError, onNotice }: { supabase: Client } & Feedba
       stock: Number(form.stock || 0),
       barcode: form.barcode.trim() || null,
     };
-    if (!payload.name || payload.cost_price < 0 || payload.selling_price <= 0 || !Number.isInteger(payload.stock) || payload.stock < 0) {
-      onError("Enter a name, valid prices, and a whole-number stock quantity.");
+    const validationErrors = validateProductInput({
+      name: payload.name,
+      costPrice: payload.cost_price,
+      sellingPrice: payload.selling_price,
+      stock: payload.stock,
+    });
+    if (validationErrors.length > 0) {
+      onError(validationErrors.join(". "));
       return;
     }
     const { error } = await supabase.from("products").insert(payload);
@@ -382,8 +397,14 @@ function Products({ supabase, onError, onNotice }: { supabase: Client } & Feedba
       stock: Number(editingProduct.stock),
       barcode: editingProduct.barcode ? editingProduct.barcode.trim() : null,
     };
-    if (!payload.name || payload.cost_price < 0 || payload.selling_price <= 0 || !Number.isInteger(payload.stock) || payload.stock < 0) {
-      onError("Valid product details are required.");
+    const validationErrors = validateProductInput({
+      name: payload.name,
+      costPrice: payload.cost_price,
+      sellingPrice: payload.selling_price,
+      stock: payload.stock,
+    });
+    if (validationErrors.length > 0) {
+      onError(validationErrors.join(". "));
       return;
     }
     const { error } = await supabase.from("products").update(payload).eq("id", editingProduct.id);
@@ -425,7 +446,6 @@ function Products({ supabase, onError, onNotice }: { supabase: Client } & Feedba
                   <div className="flex gap-2">
                     <Input
                       id="new-category"
-                      placeholder="e.g. Beverages"
                       value={newCatName}
                       onChange={e => setNewCatName(e.target.value)}
                     />
@@ -436,32 +456,31 @@ function Products({ supabase, onError, onNotice }: { supabase: Client } & Feedba
             )}
             <div className="grid gap-2 sm:col-span-2">
               <Label htmlFor="product-name">Product name</Label>
-              <Input id="product-name" required placeholder="Product name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+              <Input id="product-name" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
             </div>
             <div className="grid gap-2 sm:col-span-2">
               <Label>Category</Label>
               <MenuSelect
                 value={form.category_id}
-                placeholder="Select category (optional)"
                 onValueChange={val => setForm({ ...form, category_id: val })}
                 options={categories.map(c => ({ value: c.id, label: c.name }))}
               />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="product-cost">Cost price</Label>
-              <Input id="product-cost" required type="number" min="0" step="0.01" placeholder="0.00" value={form.cost} onChange={e => setForm({ ...form, cost: e.target.value })} />
+              <Input id="product-cost" required type="number" min="0" step="0.01" value={form.cost} onChange={e => setForm({ ...form, cost: e.target.value })} />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="product-price">Selling price</Label>
-              <Input id="product-price" required type="number" min="0.01" step="0.01" placeholder="0.00" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} />
+              <Input id="product-price" required type="number" min="0.01" step="0.01" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="product-stock">Opening stock</Label>
-              <Input id="product-stock" type="number" min="0" step="1" placeholder="0" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} />
+              <Input id="product-stock" type="number" min="0" step="1" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="product-barcode">Barcode</Label>
-              <Input id="product-barcode" placeholder="Optional" value={form.barcode} onChange={e => setForm({ ...form, barcode: e.target.value })} />
+              <Input id="product-barcode" value={form.barcode} onChange={e => setForm({ ...form, barcode: e.target.value })} />
             </div>
             <Button type="submit" className="justify-self-start sm:col-span-2">
               Add product
@@ -551,7 +570,6 @@ function Products({ supabase, onError, onNotice }: { supabase: Client } & Feedba
                   <Label>Category</Label>
                   <MenuSelect
                     value={editingProduct.category_id || ""}
-                    placeholder="No category"
                     onValueChange={val => setEditingProduct({ ...editingProduct, category_id: val })}
                     options={categories.map(c => ({ value: c.id, label: c.name }))}
                   />
@@ -647,6 +665,12 @@ function Sales({ supabase, userId, onError, onNotice }: { supabase: Client; user
       discount: totals.discount,
       lines: cart.map(line => ({ productId: line.id, quantity: line.quantity, unitPrice: line.selling_price, unitCost: line.cost_price })),
     };
+    const saleValidationErrors = validateSaleInput(input);
+    if (saleValidationErrors.length > 0) {
+      onError(saleValidationErrors.join(". "));
+      return;
+    }
+
     try {
       if (!navigator.onLine) {
         if (isTauri()) {
@@ -682,8 +706,10 @@ function Sales({ supabase, userId, onError, onNotice }: { supabase: Client; user
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
+                id="search-products"
+                aria-label="Search products by name or barcode"
+                placeholder="Search products by name or barcode..."
                 className="pl-9"
-                placeholder="Search by product name or barcode"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
@@ -783,7 +809,6 @@ function Sales({ supabase, userId, onError, onNotice }: { supabase: Client; user
             <Label>Customer</Label>
             <MenuSelect
               value={customerId || WALK_IN}
-              placeholder="Walk-in customer"
               onValueChange={(value) => setCustomerId(value === WALK_IN ? "" : value)}
               options={[
                 { value: WALK_IN, label: "Walk-in customer" },
@@ -815,7 +840,6 @@ function Sales({ supabase, userId, onError, onNotice }: { supabase: Client; user
             <Label>Payment method</Label>
             <MenuSelect
               value={payment}
-              placeholder="Payment method"
               onValueChange={(value) => setPayment(value as typeof payment)}
               options={[
                 { value: "cash", label: "Cash" },
@@ -912,7 +936,6 @@ function Inventory({ supabase, onError, onNotice }: { supabase: Client } & Feedb
                   <Label>Product</Label>
                   <MenuSelect
                     value={productId}
-                    placeholder="Select product"
                     onValueChange={setProductId}
                     options={products.map((product) => ({ value: product.id, label: `${product.name} (${product.stock} on hand)` }))}
                   />
@@ -921,7 +944,6 @@ function Inventory({ supabase, onError, onNotice }: { supabase: Client } & Feedb
                   <Label>Movement type</Label>
                   <MenuSelect
                     value={type}
-                    placeholder="Select type"
                     onValueChange={(value) => setType(value as typeof type)}
                     options={[
                       { value: "in", label: "Stock in" },
@@ -932,20 +954,19 @@ function Inventory({ supabase, onError, onNotice }: { supabase: Client } & Feedb
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="movement-qty">Quantity</Label>
-                  <Input id="movement-qty" required type="number" min="1" step="1" placeholder="Quantity" value={quantity} onChange={e => setQuantity(e.target.value)} />
+                  <Input id="movement-qty" required type="number" min="1" step="1" value={quantity} onChange={e => setQuantity(e.target.value)} />
                 </div>
                 <div className="grid gap-2 sm:col-span-2">
                   <Label>Supplier (optional)</Label>
                   <MenuSelect
                     value={supplierId}
-                    placeholder="Select supplier"
                     onValueChange={setSupplierId}
                     options={[{ value: "", label: "None" }, ...suppliers.map((sup) => ({ value: sup.id, label: sup.name }))]}
                   />
                 </div>
                 <div className="grid gap-2 sm:col-span-2">
                   <Label htmlFor="movement-notes">Notes</Label>
-                  <Textarea id="movement-notes" placeholder="Notes / invoice reference (optional)" value={notes} onChange={e => setNotes(e.target.value)} />
+                  <Textarea id="movement-notes" value={notes} onChange={e => setNotes(e.target.value)} />
                 </div>
                 <Button type="submit" className="justify-self-start sm:col-span-2">
                   Save movement
@@ -999,19 +1020,19 @@ function Inventory({ supabase, onError, onNotice }: { supabase: Client } & Feedb
               <form onSubmit={addSupplier} className="grid gap-4 sm:grid-cols-2">
                 <div className="grid gap-2 sm:col-span-2">
                   <Label htmlFor="supplier-name">Supplier name</Label>
-                  <Input id="supplier-name" required placeholder="Company or contact name" value={supplierForm.name} onChange={e => setSupplierForm({ ...supplierForm, name: e.target.value })} />
+                  <Input id="supplier-name" required value={supplierForm.name} onChange={e => setSupplierForm({ ...supplierForm, name: e.target.value })} />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="supplier-phone">Phone</Label>
-                  <Input id="supplier-phone" placeholder="Phone number" value={supplierForm.phone} onChange={e => setSupplierForm({ ...supplierForm, phone: e.target.value })} />
+                  <Input id="supplier-phone" value={supplierForm.phone} onChange={e => setSupplierForm({ ...supplierForm, phone: e.target.value })} />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="supplier-email">Email</Label>
-                  <Input id="supplier-email" type="email" placeholder="Email address" value={supplierForm.email} onChange={e => setSupplierForm({ ...supplierForm, email: e.target.value })} />
+                  <Input id="supplier-email" type="email" value={supplierForm.email} onChange={e => setSupplierForm({ ...supplierForm, email: e.target.value })} />
                 </div>
                 <div className="grid gap-2 sm:col-span-2">
                   <Label htmlFor="supplier-address">Address</Label>
-                  <Input id="supplier-address" placeholder="Physical address" value={supplierForm.address} onChange={e => setSupplierForm({ ...supplierForm, address: e.target.value })} />
+                  <Input id="supplier-address" value={supplierForm.address} onChange={e => setSupplierForm({ ...supplierForm, address: e.target.value })} />
                 </div>
                 <Button type="submit" className="justify-self-start sm:col-span-2">
                   Add supplier
@@ -1091,15 +1112,15 @@ function Customers({ supabase, onError, onNotice }: { supabase: Client } & Feedb
           <form onSubmit={add} className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-2 sm:col-span-2">
               <Label htmlFor="customer-name">Full name</Label>
-              <Input id="customer-name" required placeholder="Full name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+              <Input id="customer-name" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="customer-phone">Phone</Label>
-              <Input id="customer-phone" placeholder="Phone" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
+              <Input id="customer-phone" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="customer-email">Email</Label>
-              <Input id="customer-email" type="email" placeholder="Email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+              <Input id="customer-email" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
             </div>
             <Button type="submit" className="justify-self-start sm:col-span-2">
               Add customer
@@ -1161,10 +1182,13 @@ function Reports({ supabase, onError }: { supabase: Client; onError: (message: s
     });
   }, [supabase, onError]);
 
-  const revenue = sales.reduce((sum, sale) => sum + Number(sale.total), 0);
-  const totalCogs = saleLines.reduce((sum, line) => sum + (Number(line.quantity) * Number(line.unit_cost)), 0);
-  const grossProfit = revenue - totalCogs;
-  const payments = sales.reduce<Record<string, number>>((result, sale) => ({ ...result, [sale.payment_method]: (result[sale.payment_method] ?? 0) + Number(sale.total) }), {});
+  const revenue = roundCurrency(sales.reduce((sum, sale) => sum + Number(sale.total), 0));
+  const totalCogs = roundCurrency(saleLines.reduce((sum, line) => sum + (Number(line.quantity) * Number(line.unit_cost)), 0));
+  const grossProfit = roundCurrency(revenue - totalCogs);
+  const payments = sales.reduce<Record<string, number>>(
+    (result, sale) => ({ ...result, [sale.payment_method]: roundCurrency((result[sale.payment_method] ?? 0) + Number(sale.total)) }),
+    {},
+  );
 
   return (
     <div className="grid gap-4">
@@ -1304,11 +1328,11 @@ function Settings({ supabase, user, onError, onNotice }: { supabase: Client; use
           <form onSubmit={updatePassword} className="grid gap-4">
             <div className="grid gap-2">
               <Label htmlFor="new-password">New Password</Label>
-              <Input id="new-password" required type="password" placeholder="At least 6 characters" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+              <Input id="new-password" required type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="confirm-password">Confirm New Password</Label>
-              <Input id="confirm-password" required type="password" placeholder="Re-enter password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} />
+              <Input id="confirm-password" required type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} />
             </div>
             <Button type="submit" className="justify-self-start">
               Update password

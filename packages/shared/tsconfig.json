@@ -18,6 +18,7 @@
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
+    "types": ["node"],
     "paths": {}
   },
   "include": ["src"]

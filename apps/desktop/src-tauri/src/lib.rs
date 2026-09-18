@@ -81,6 +81,17 @@ async fn remove_operation(db: State<'_, DbInstances>, id: String) -> Result<(), 
     Ok(())
 }
 
+#[tauri::command]
+async fn increment_attempts(db: State<'_, DbInstances>, id: String) -> Result<(), String> {
+    let pool = database(&db).await?;
+    sqlx::query("UPDATE offline_operations SET attempts = attempts + 1 WHERE id = ?1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let migrations = vec![Migration {
@@ -92,7 +103,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_sql::Builder::default().add_migrations("sqlite:pos.db", migrations).build())
-        .invoke_handler(tauri::generate_handler![queue_sale, pending_operations, remove_operation])
+        .invoke_handler(tauri::generate_handler![queue_sale, pending_operations, remove_operation, increment_attempts])
         .run(tauri::generate_context!())
         .expect("error while running Tauri application");
 }

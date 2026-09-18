@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Alert,
@@ -33,6 +33,11 @@ export default function LoginPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    if (tab === "signup" || tab === "forgot") switchMode(tab);
+  }, []);
+
   const switchMode = (newMode: AuthMode) => {
     setMode(newMode);
     setError(null);
@@ -49,10 +54,20 @@ export default function LoginPage() {
       if (!isSupabaseConfigured()) {
         throw new Error("Configure Supabase in apps/web/.env.local before signing in.");
       }
+      if (!email.trim()) {
+        throw new Error("Email address is required.");
+      }
+      if (mode !== "forgot" && !password) {
+        throw new Error("Password is required.");
+      }
+
       const supabase = createSupabaseBrowserClient();
 
       if (mode === "login") {
-        const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+        const { error: authError } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
         if (authError) throw authError;
         window.location.assign("/");
       } else if (mode === "signup") {
@@ -66,7 +81,7 @@ export default function LoginPage() {
           throw new Error("Passwords do not match.");
         }
         const { error: signUpError, data } = await supabase.auth.signUp({
-          email,
+          email: email.trim(),
           password,
           options: {
             data: { display_name: name.trim() },
@@ -81,7 +96,7 @@ export default function LoginPage() {
         }
       } else if (mode === "forgot") {
         const redirectUrl = `${window.location.origin}/reset-password`;
-        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
           redirectTo: redirectUrl,
         });
         if (resetError) throw resetError;
@@ -109,7 +124,7 @@ export default function LoginPage() {
             {mode === "forgot" && "Reset password"}
           </CardTitle>
           <CardDescription>
-            {mode === "login" && "Access the Mom's Shop workspace."}
+            {mode === "login" && "Access the KTDEVV POS System workspace."}
             {mode === "signup" && "Register a new workspace account."}
             {mode === "forgot" && "We'll email you a reset link."}
           </CardDescription>
@@ -140,7 +155,7 @@ export default function LoginPage() {
                 <Label htmlFor="signup-name">Display name</Label>
                 <Input
                   id="signup-name"
-                  placeholder="e.g. John Doe"
+                  required
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                 />
@@ -151,8 +166,9 @@ export default function LoginPage() {
               <Label htmlFor="auth-email">Email</Label>
               <Input
                 id="auth-email"
+                required
                 type="email"
-                placeholder="you@example.com"
+                placeholder="name@example.com"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
               />
@@ -163,8 +179,8 @@ export default function LoginPage() {
                 <Label htmlFor="auth-password">Password</Label>
                 <Input
                   id="auth-password"
+                  required
                   type="password"
-                  placeholder="At least 6 characters"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                 />
@@ -176,8 +192,8 @@ export default function LoginPage() {
                 <Label htmlFor="signup-confirm">Confirm Password</Label>
                 <Input
                   id="signup-confirm"
+                  required
                   type="password"
-                  placeholder="Re-enter password"
                   value={confirmPassword}
                   onChange={(event) => setConfirmPassword(event.target.value)}
                 />
