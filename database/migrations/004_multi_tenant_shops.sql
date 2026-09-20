@@ -1,27 +1,45 @@
--- KTDEVV POS: multi-tenant Supabase schema.
+-- Converts a single-shop KTDEVV POS database into the multi-tenant model.
 --
--- Every shop is a tenant. Users sign up, create a shop on first login (create_shop), and can invite
--- staff by email. All business data carries a shop_id; row-level security limits every query to the
--- shops the caller belongs to, and composite foreign keys make it impossible for a row to reference
--- data from another shop.
+-- What it does
+--   1. Creates shops, shop_members and shop_invites.
+--   2. Moves ALL existing data into one new shop called "My Shop" (currency GHS, the old default).
+--      The first admin (or, failing that, the earliest account) becomes its owner, other admins
+--      become admins, everyone else becomes a cashier.
+--      The shop is created in GHS, the currency the app used before. Existing sales lock the
+--      currency, so if your shop uses a different one, fix it in the SQL editor right after this
+--      migration (the editor is exempt from the lock):
+--        update public.shops set currency = 'USD', name = 'Your shop name';
+--   3. Adds shop_id to every business table, replaces global unique keys with per-shop ones, and
+--      replaces the foreign keys with shop-scoped ones so data can never cross shops.
+--   4. Replaces the row-level-security policies and RPCs with shop-aware versions, and removes
+--      profiles.role (roles now live in shop_members).
 --
--- Fresh projects: run this file once.
--- Existing single-shop projects: run database/migrations/004_multi_tenant_shops.sql instead.
+-- Run ONCE, after 001-003 (i.e. on a database created from the previous schema.v2.sql).
+-- It runs in a single transaction: if anything fails, nothing is changed.
 
-create extension if not exists "pgcrypto";
+begin;
 
--- @@ tables ------------------------------------------------------------------------------------
+do $$
+begin
+  if to_regclass('public.shops') is not null then
+    raise exception 'Migration 004 has already been applied';
+  end if;
+  if to_regprocedure('public.is_admin()') is null then
+    raise exception 'Run migrations 002 and 003 first';
+  end if;
+end;
+$$;
 
+-- 1. New structures ---------------------------------------------------------------------------------
 create type public.shop_role as enum ('owner', 'admin', 'cashier');
-create type public.payment_method as enum ('cash', 'momo', 'card');
-create type public.stock_movement_type as enum ('in', 'out', 'adjustment');
 
-create table public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  name text not null,
-  email text,
-  created_at timestamptz not null default now()
-);
+alter table public.profiles add column if not exists email text;
+update public.profiles p set email = u.email from auth.users u where u.id = p.id and p.email is null;
+-- Any auth user without a profile (created before the trigger existed) gets one so ownership works.
+insert into public.profiles (id, name, email)
+select u.id, coalesce(nullif(btrim(u.raw_user_meta_data ->> 'display_name'), ''), nullif(split_part(coalesce(u.email, ''), '@', 1), ''), 'User'), u.email
+from auth.users u
+where not exists (select 1 from public.profiles p where p.id = u.id);
 
 create table public.shops (
   id uuid primary key default gen_random_uuid(),
@@ -62,92 +80,107 @@ create table public.shop_invites (
   unique (shop_id, email)
 );
 
-create table public.categories (
-  id uuid primary key default gen_random_uuid(),
-  shop_id uuid not null references public.shops(id) on delete cascade,
-  name text not null,
-  created_at timestamptz not null default now(),
-  unique (shop_id, name),
-  unique (id, shop_id)
-);
+-- 2. Move the existing data into a first shop -------------------------------------------------------
+do $$
+declare
+  first_owner uuid;
+  legacy_shop uuid;
+begin
+  select id into first_owner from public.profiles order by (role = 'admin') desc, created_at asc limit 1;
+  if first_owner is not null then
+    insert into public.shops (name, currency, owner_id) values ('My Shop', 'GHS', first_owner)
+    returning id into legacy_shop;
 
-create table public.products (
-  id uuid primary key default gen_random_uuid(),
-  shop_id uuid not null references public.shops(id) on delete cascade,
-  name text not null,
-  category_id uuid,
-  cost_price numeric(12,2) not null check (cost_price >= 0),
-  selling_price numeric(12,2) not null check (selling_price > 0),
-  stock integer not null default 0 check (stock >= 0),
-  barcode text,
-  image_url text,
-  created_at timestamptz not null default now(),
-  unique (id, shop_id),
-  foreign key (category_id, shop_id) references public.categories(id, shop_id) on delete set null (category_id)
-);
+    insert into public.shop_members (shop_id, user_id, role)
+    select legacy_shop, p.id,
+           case when p.id = first_owner then 'owner'::public.shop_role
+                when p.role = 'admin' then 'admin'::public.shop_role
+                else 'cashier'::public.shop_role end
+    from public.profiles p;
+  end if;
+end;
+$$;
+
+-- 3. shop_id everywhere -----------------------------------------------------------------------------
+alter table public.categories add column shop_id uuid references public.shops(id) on delete cascade;
+alter table public.products add column shop_id uuid references public.shops(id) on delete cascade;
+alter table public.customers add column shop_id uuid references public.shops(id) on delete cascade;
+alter table public.suppliers add column shop_id uuid references public.shops(id) on delete cascade;
+alter table public.sales add column shop_id uuid references public.shops(id) on delete cascade;
+alter table public.sale_lines add column shop_id uuid references public.shops(id) on delete cascade;
+alter table public.stock_movements add column shop_id uuid references public.shops(id) on delete cascade;
+
+update public.categories set shop_id = (select id from public.shops limit 1) where shop_id is null;
+update public.products set shop_id = (select id from public.shops limit 1) where shop_id is null;
+update public.customers set shop_id = (select id from public.shops limit 1) where shop_id is null;
+update public.suppliers set shop_id = (select id from public.shops limit 1) where shop_id is null;
+update public.sales set shop_id = (select id from public.shops limit 1) where shop_id is null;
+update public.sale_lines set shop_id = (select id from public.shops limit 1) where shop_id is null;
+update public.stock_movements set shop_id = (select id from public.shops limit 1) where shop_id is null;
+
+alter table public.categories alter column shop_id set not null;
+alter table public.products alter column shop_id set not null;
+alter table public.customers alter column shop_id set not null;
+alter table public.suppliers alter column shop_id set not null;
+alter table public.sales alter column shop_id set not null;
+alter table public.sale_lines alter column shop_id set not null;
+alter table public.stock_movements alter column shop_id set not null;
+
+-- Per-shop uniqueness instead of global.
+alter table public.categories drop constraint if exists categories_name_key;
+alter table public.categories add constraint categories_shop_id_name_key unique (shop_id, name);
+alter table public.categories add constraint categories_id_shop_id_key unique (id, shop_id);
+
+alter table public.products drop constraint if exists products_barcode_key;
 create unique index products_shop_barcode_key on public.products(shop_id, barcode) where barcode is not null;
+alter table public.products add constraint products_id_shop_id_key unique (id, shop_id);
+alter table public.customers add constraint customers_id_shop_id_key unique (id, shop_id);
+alter table public.suppliers add constraint suppliers_id_shop_id_key unique (id, shop_id);
+alter table public.sales add constraint sales_id_shop_id_key unique (id, shop_id);
 
-create table public.customers (
-  id uuid primary key default gen_random_uuid(),
-  shop_id uuid not null references public.shops(id) on delete cascade,
-  name text not null,
-  phone text,
-  email text,
-  loyalty_points integer not null default 0 check (loyalty_points >= 0),
-  created_at timestamptz not null default now(),
-  unique (id, shop_id)
-);
+-- Shop-scoped foreign keys: a row can only reference data from its own shop.
+alter table public.products drop constraint if exists products_category_id_fkey;
+alter table public.products add foreign key (category_id, shop_id) references public.categories(id, shop_id) on delete set null (category_id);
+alter table public.sales drop constraint if exists sales_customer_id_fkey;
+alter table public.sales add foreign key (customer_id, shop_id) references public.customers(id, shop_id) on delete set null (customer_id);
+alter table public.sale_lines drop constraint if exists sale_lines_sale_id_fkey;
+alter table public.sale_lines drop constraint if exists sale_lines_product_id_fkey;
+alter table public.sale_lines add foreign key (sale_id, shop_id) references public.sales(id, shop_id) on delete cascade;
+alter table public.sale_lines add foreign key (product_id, shop_id) references public.products(id, shop_id) on delete restrict;
+alter table public.stock_movements drop constraint if exists stock_movements_product_id_fkey;
+alter table public.stock_movements drop constraint if exists stock_movements_supplier_id_fkey;
+alter table public.stock_movements add foreign key (product_id, shop_id) references public.products(id, shop_id) on delete cascade;
+alter table public.stock_movements add foreign key (supplier_id, shop_id) references public.suppliers(id, shop_id) on delete set null (supplier_id);
 
-create table public.suppliers (
-  id uuid primary key default gen_random_uuid(),
-  shop_id uuid not null references public.shops(id) on delete cascade,
-  name text not null,
-  phone text,
-  email text,
-  address text,
-  created_at timestamptz not null default now(),
-  unique (id, shop_id)
-);
+-- 4. Retire the single-shop policies, functions and profiles.role ------------------------------------
+drop policy if exists "authenticated users can read profiles" on public.profiles;
+drop policy if exists "authenticated users can update own profile" on public.profiles;
+drop policy if exists "admins can update any profile" on public.profiles;
+drop policy if exists "authenticated users can read categories" on public.categories;
+drop policy if exists "admins can manage categories" on public.categories;
+drop policy if exists "admins can update categories" on public.categories;
+drop policy if exists "admins can delete categories" on public.categories;
+drop policy if exists "authenticated users can read products" on public.products;
+drop policy if exists "admins can add products" on public.products;
+drop policy if exists "admins can update products" on public.products;
+drop policy if exists "admins can delete products" on public.products;
+drop policy if exists "authenticated users can manage POS data" on public.customers;
+drop policy if exists "authenticated users can manage POS data" on public.suppliers;
+drop policy if exists "authenticated users can read sales" on public.sales;
+drop policy if exists "admins can manage sales" on public.sales;
+drop policy if exists "authenticated users can read sale lines" on public.sale_lines;
+drop policy if exists "admins can manage sale lines" on public.sale_lines;
+drop policy if exists "authenticated users can read stock movements" on public.stock_movements;
+drop policy if exists "admins can manage stock movements" on public.stock_movements;
 
-create table public.sales (
-  id uuid primary key default gen_random_uuid(),
-  shop_id uuid not null references public.shops(id) on delete cascade,
-  cashier_id uuid not null references public.profiles(id) on delete restrict,
-  customer_id uuid,
-  subtotal numeric(12,2) not null check (subtotal >= 0),
-  discount numeric(12,2) not null default 0 check (discount >= 0),
-  total numeric(12,2) not null check (total >= 0),
-  payment_method public.payment_method not null,
-  created_at timestamptz not null default now(),
-  unique (id, shop_id),
-  foreign key (customer_id, shop_id) references public.customers(id, shop_id) on delete set null (customer_id)
-);
+drop trigger if exists protect_profile_role on public.profiles;
+drop function if exists public.protect_profile_role();
+drop function if exists public.is_admin();
+drop function if exists public.create_sale(uuid, uuid, public.payment_method, numeric, jsonb);
+alter table public.profiles drop column role;
+drop type public.user_role;
 
-create table public.sale_lines (
-  id uuid primary key default gen_random_uuid(),
-  shop_id uuid not null references public.shops(id) on delete cascade,
-  sale_id uuid not null,
-  product_id uuid not null,
-  quantity integer not null check (quantity > 0),
-  unit_price numeric(12,2) not null check (unit_price >= 0),
-  unit_cost numeric(12,2) not null check (unit_cost >= 0),
-  foreign key (sale_id, shop_id) references public.sales(id, shop_id) on delete cascade,
-  foreign key (product_id, shop_id) references public.products(id, shop_id) on delete restrict
-);
-
-create table public.stock_movements (
-  id uuid primary key default gen_random_uuid(),
-  shop_id uuid not null references public.shops(id) on delete cascade,
-  product_id uuid not null,
-  type public.stock_movement_type not null,
-  quantity integer not null,
-  supplier_id uuid,
-  notes text,
-  created_at timestamptz not null default now(),
-  foreign key (product_id, shop_id) references public.products(id, shop_id) on delete cascade,
-  foreign key (supplier_id, shop_id) references public.suppliers(id, shop_id) on delete set null (supplier_id)
-);
-
+-- 5. Shop-aware functions, triggers, RPCs, indexes and policies -----------------------------------------
 -- @@ indexes ------------------------------------------------------------------------------------
 
 create index if not exists products_shop_idx on public.products(shop_id);
@@ -719,3 +752,5 @@ select
   u.email
 from auth.users u
 where not exists (select 1 from public.profiles p where p.id = u.id);
+
+commit;
