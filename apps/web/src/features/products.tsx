@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   AlertDescription,
+  barcodesMatch,
   Button,
   Card,
   CardContent,
@@ -15,6 +16,7 @@ import {
   DialogTitle,
   EmptyState,
   formatCurrency,
+  generateInternalBarcode,
   Input,
   PageHeader,
   stockLevel,
@@ -26,7 +28,7 @@ import {
   TableRow,
   validateProductInput,
 } from "@pos/shared";
-import { FolderPlus, Info, Package, Pencil, Plus, Trash2 } from "lucide-react";
+import { Camera, FolderPlus, Info, Package, Pencil, Plus, ScanBarcode, Trash2, WandSparkles } from "lucide-react";
 import { useWorkspace } from "@/lib/workspace";
 import {
   type Category,
@@ -40,6 +42,8 @@ import {
   SearchInput,
   StockBadge,
 } from "./common";
+import { BarcodeLabelDialog } from "./barcode-label";
+import { BarcodeScannerDialog, type ScanResult } from "./scanner";
 
 const emptyForm = { name: "", category_id: "", cost: "", price: "", stock: "", barcode: "" };
 
@@ -63,6 +67,8 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const [deleting, setDeleting] = useState<Product | null>(null);
+  const [labelFor, setLabelFor] = useState<Product | null>(null);
+  const [scanning, setScanning] = useState(false);
 
   const load = useCallback(async () => {
     const [{ data: prodRows, error: prodError }, { data: catRows, error: catError }] = await Promise.all([
@@ -123,6 +129,15 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
     setFormOpen(false);
     onNotice(editing ? "Product updated." : "Product added.");
     await load();
+  };
+
+  /** A scanned code goes into the form, unless another product already uses it. */
+  const captureBarcode = (code: string): ScanResult => {
+    const owner = products.find(p => p.id !== editing?.id && p.barcode && barcodesMatch(code, p.barcode));
+    if (owner) return { ok: false, message: `${owner.name} already uses that barcode.` };
+    setForm(current => ({ ...current, barcode: code }));
+    setScanning(false);
+    return { ok: true, message: "Barcode captured." };
   };
 
   const addCategory = async (event: FormEvent) => {
@@ -229,6 +244,15 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
                     {isAdmin && (
                       <TableCell>
                         <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Print barcode label for ${product.name}`}
+                            title={product.barcode ? "Print barcode label" : "Print barcode label (add a barcode first)"}
+                            onClick={() => setLabelFor(product)}
+                          >
+                            <ScanBarcode />
+                          </Button>
                           <Button variant="ghost" size="icon-sm" aria-label={`Edit ${product.name}`} title="Edit" onClick={() => openEdit(product)}>
                             <Pencil />
                           </Button>
@@ -293,8 +317,23 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
             <Field label={editing ? "Stock on hand" : "Opening stock"} htmlFor="product-stock">
               <Input id="product-stock" type="number" inputMode="numeric" min="0" step="1" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} />
             </Field>
-            <Field label="Barcode" htmlFor="product-barcode" hint="Optional. Scan or type it.">
-              <Input id="product-barcode" className="font-mono" value={form.barcode} onChange={e => setForm({ ...form, barcode: e.target.value })} />
+            <Field label="Barcode" htmlFor="product-barcode" hint="Optional. Scan it, type it, or generate one for items without a barcode.">
+              <div className="flex gap-2">
+                <Input id="product-barcode" className="min-w-0 flex-1 font-mono" value={form.barcode} onChange={e => setForm({ ...form, barcode: e.target.value })} />
+                <Button type="button" variant="outline" size="icon" aria-label="Scan barcode with the camera" title="Scan with the camera" onClick={() => setScanning(true)}>
+                  <Camera />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  aria-label="Generate a barcode"
+                  title="Generate a barcode"
+                  onClick={() => setForm(current => ({ ...current, barcode: generateInternalBarcode(products.map(p => p.barcode)) }))}
+                >
+                  <WandSparkles />
+                </Button>
+              </div>
             </Field>
           </form>
           <DialogFooter>
@@ -303,6 +342,16 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <BarcodeScannerDialog
+        open={scanning}
+        onClose={() => setScanning(false)}
+        onScan={captureBarcode}
+        title="Scan the product's barcode"
+        description="Point the camera at the barcode on the product."
+        doneLabel="Cancel"
+      />
+      <BarcodeLabelDialog key={labelFor?.id} product={labelFor} onClose={() => setLabelFor(null)} />
 
       <Dialog open={categoryOpen} onOpenChange={setCategoryOpen}>
         <DialogContent className="max-w-sm">

@@ -311,11 +311,33 @@ input[type="number"] {
   scroll-behavior: auto !important;
 }
 
+/* Receipts and labels print from a portal outside the app (components/print-area.tsx). */
+.print-root {
+  display: none;
+}
+
 @media print {
   aside,
   nav,
   header,
   [data-print-hide] {
     display: none !important;
+  }
+
+  @page {
+    margin: 0;
+  }
+
+  /* While a print area exists, print only that: never the dialog or page behind it. */
+  body:has(.print-root) {
+    background: #fff;
+  }
+  body:has(.print-root) > *:not(.print-root) {
+    display: none !important;
+  }
+  .print-root {
+    display: block;
+    color: #000;
+    background: #fff;
   }
 }

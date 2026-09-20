@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Badge,
   Button,
+  buildReceipt,
   calculateSaleTotal,
   Card,
   CardContent,
@@ -11,14 +12,16 @@ import {
   CardTitle,
   cn,
   EmptyState,
+  findByBarcode,
   formatCurrency,
   Input,
   loyaltyPointsFor,
+  type Receipt as SaleReceipt,
   SegmentedControl,
   stockLevel,
   validateSaleInput,
 } from "@pos/shared";
-import { Check, Minus, PackageSearch, Plus, Receipt, ShoppingCart, Trash2 } from "lucide-react";
+import { Camera, Check, Minus, PackageSearch, Plus, Receipt, ReceiptText, ShoppingCart, Trash2 } from "lucide-react";
 import { isTauri, queueDesktopSale } from "@/lib/desktop";
 import { useWorkspace } from "@/lib/workspace";
 import {
@@ -36,6 +39,8 @@ import {
   type Product,
   SearchInput,
 } from "./common";
+import { loadSaleReceipt, ReceiptDialog, receiptShop } from "./receipt";
+import { BarcodeScannerDialog, type ScanResult } from "./scanner";
 
 type CartLine = Product & { quantity: number };
 type RecentSale = { id: string; total: number; payment_method: string; created_at: string };
@@ -43,7 +48,7 @@ type RecentSale = { id: string; total: number; payment_method: string; created_a
 const WALK_IN = "walk-in";
 
 export function Sales({ supabase, userId, onError, onNotice }: { supabase: Client; userId: string } & Feedback) {
-  const { shop } = useWorkspace();
+  const { shop, user } = useWorkspace();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCat, setSelectedCat] = useState("all");
@@ -57,6 +62,9 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
   const [recent, setRecent] = useState<RecentSale[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [charging, setCharging] = useState(false);
+  const [receipt, setReceipt] = useState<{ data: SaleReceipt; heading: string } | null>(null);
+  const [reprinting, setReprinting] = useState<string | null>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   const load = useCallback(async () => {
     const [{ data: catalog, error: catalogError }, { data: sales, error: salesError }, { data: customerRows, error: customerError }, { data: catRows }] = await Promise.all([
@@ -101,15 +109,28 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
 
   const removeLine = (id: string) => setCart(current => current.filter(line => line.id !== id));
 
-  // Barcode scanners type the code and press Enter: add the exact match straight to the cart.
+  /** Adds the product a scanned code belongs to, and says what happened. Shared by USB and camera scanners. */
+  const addByBarcode = (code: string): ScanResult => {
+    const match = findByBarcode(products, code);
+    if (!match) return { ok: false, message: `No product in stock has the barcode ${code}.` };
+    if ((inCart.get(match.id) ?? 0) >= match.stock) return { ok: false, message: `Only ${match.stock} of ${match.name} in stock.` };
+    add(match);
+    return { ok: true, message: `Added ${match.name}` };
+  };
+
+  // USB barcode scanners type the code and press Enter: add the exact match straight to the cart.
   const scan = () => {
     const code = search.trim();
-    if (!code) return;
-    const match = products.find(p => p.barcode === code);
-    if (match) {
-      add(match);
-      setSearch("");
-    }
+    if (!code || !findByBarcode(products, code)) return;
+    if (addByBarcode(code).ok) setSearch("");
+  };
+
+  const reprint = async (saleId: string) => {
+    setReprinting(saleId);
+    try {
+      setReceipt({ data: await loadSaleReceipt(supabase, saleId, shop), heading: "Receipt" });
+    } catch (error) { fail(onError, error); }
+    finally { setReprinting(null); }
   };
 
   const totals = calculateSaleTotal(
@@ -131,6 +152,20 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
   const checkout = async () => {
     if (!cart.length) { onError("Add at least one product to the cart."); return; }
     const id = crypto.randomUUID();
+    const tendered = payment === "cash" && cashReceived !== "" ? received : null;
+    // The receipt as the till saw it: used offline, and when the recorded sale cannot be read back.
+    const localReceipt = (saleId: string, pending: boolean) => buildReceipt({
+      id: saleId,
+      issuedAt: new Date(),
+      shop: receiptShop(shop),
+      cashier: user.name,
+      customer: selectedCustomer?.name,
+      lines: cart.map(line => ({ name: line.name, quantity: line.quantity, unitPrice: line.selling_price })),
+      discount: totals.discount,
+      paymentMethod: payment,
+      cashReceived: tendered,
+      pending,
+    });
     const input = {
       cashierId: userId,
       customerId: customerId || null,
@@ -150,6 +185,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
         if (isTauri()) {
           await queueDesktopSale({ ...input, id, shopId: shop.id });
           onNotice("Sale queued for desktop synchronization when online.");
+          setReceipt({ data: localReceipt(id, true), heading: "Sale saved offline" });
           resetSale();
           return;
         } else {
@@ -157,7 +193,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
           return;
         }
       }
-      const { error } = await supabase.rpc("create_sale", {
+      const { data: saleId, error } = await supabase.rpc("create_sale", {
         p_shop_id: shop.id,
         p_cashier_id: userId,
         p_customer_id: customerId || null,
@@ -166,7 +202,11 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
         p_lines: cart.map(line => ({ product_id: line.id, quantity: line.quantity })),
       });
       if (error) throw error;
-      onNotice(`Sale completed: ${formatCurrency(totals.total)}${changeDue ? ` · change ${formatCurrency(changeDue)}` : ""}`);
+      // Read the sale back so the receipt shows what the server charged (prices may have changed since
+      // the catalog loaded). The sale is already recorded, so a failed read falls back to the local copy.
+      const recorded = String(saleId);
+      const data = await loadSaleReceipt(supabase, recorded, shop, { cashReceived: tendered }).catch(() => localReceipt(recorded, false));
+      setReceipt({ data, heading: "Sale complete" });
       resetSale();
       await load();
     } catch (error) { fail(onError, error); }
@@ -177,15 +217,22 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
     <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_400px]">
       <div className="grid gap-6">
         <section aria-label="Products" className="grid gap-4">
-          <SearchInput
-            id="search-products"
-            label="Search products by name or barcode"
-            placeholder="Search products, or scan a barcode…"
-            value={search}
-            onChange={setSearch}
-            onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); scan(); } }}
-            inputClassName="h-12 text-[15px]"
-          />
+          <div className="flex gap-2">
+            <SearchInput
+              id="search-products"
+              label="Search products by name or barcode"
+              placeholder="Search products, or scan a barcode…"
+              value={search}
+              onChange={setSearch}
+              onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); scan(); } }}
+              className="flex-1"
+              inputClassName="h-12 text-[15px]"
+            />
+            <Button type="button" variant="outline" className="h-12 shrink-0 px-4" aria-label="Scan a barcode with the camera" onClick={() => setScannerOpen(true)}>
+              <Camera />
+              <span className="hidden sm:inline">Scan</span>
+            </Button>
+          </div>
 
           {categories.length > 0 && (
             <div role="group" aria-label="Filter by category" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -273,6 +320,17 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
                     </div>
                     <Badge variant="secondary">{paymentLabel(sale.payment_method)}</Badge>
                     <span className="w-28 text-right text-sm font-bold tabular-nums">{formatCurrency(sale.total)}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      title="View receipt"
+                      aria-label={`View receipt for the ${formatCurrency(sale.total)} sale at ${new Date(sale.created_at).toLocaleTimeString(undefined, { timeStyle: "short" })}`}
+                      disabled={reprinting === sale.id}
+                      onClick={() => void reprint(sale.id)}
+                    >
+                      <ReceiptText />
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -436,6 +494,15 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
           </div>
         </Card>
       </aside>
+
+      <ReceiptDialog receipt={receipt?.data ?? null} heading={receipt?.heading} onClose={() => setReceipt(null)} />
+      <BarcodeScannerDialog
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onScan={addByBarcode}
+        title="Scan items"
+        description="Point the camera at each barcode. Items are added to the sale as they are read."
+      />
 
       {cart.length > 0 && (
         <a
