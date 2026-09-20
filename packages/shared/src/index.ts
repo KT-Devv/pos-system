@@ -140,6 +140,24 @@ export {
 } from "./domain";
 
 export {
+  barcodesMatch,
+  canEncodeCode128,
+  code128Bars,
+  code128Modules,
+  CODE128_MAX_LENGTH,
+  CODE128_QUIET_ZONE,
+  ean13CheckDigit,
+  findByBarcode,
+  generateInternalBarcode,
+  isValidEan13,
+  normalizeBarcode,
+} from "./domain/barcode";
+export type { BarcodeBar } from "./domain/barcode";
+
+export { buildReceipt, receiptReference } from "./domain/receipt";
+export type { BuildReceiptInput, Receipt, ReceiptLine, ReceiptLineInput, ReceiptShop } from "./domain/receipt";
+
+export {
   buildRevenueBuckets,
   rangeStart,
   startOfDay,
