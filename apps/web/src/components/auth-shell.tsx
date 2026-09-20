@@ -54,7 +54,7 @@ export function AuthShell({ children, wide = false }: { children: ReactNode; wid
           backgroundSize: "auto, 24px 24px",
         }}
       >
-        <Link href="/" aria-label="KTDEVV POS home">
+        <Link href="/" aria-label="KT POS System home">
           <Logo tone="onDark" wordmark size={40} />
         </Link>
 
@@ -80,12 +80,12 @@ export function AuthShell({ children, wide = false }: { children: ReactNode; wid
           </div>
         </div>
 
-        <p className="text-xs text-sidebar-muted">© {new Date().getFullYear()} KTDEVV · Built for everyday retail</p>
+        <p className="text-xs text-sidebar-muted">© {new Date().getFullYear()} KT POS System · Built for everyday retail</p>
       </aside>
 
       <div className="flex min-h-screen flex-col">
         <div className="flex items-center justify-between px-5 py-4 sm:px-8">
-          <Link href="/" className="lg:invisible" aria-label="KTDEVV POS home">
+          <Link href="/" className="lg:invisible" aria-label="KT POS System home">
             <Logo wordmark size={32} />
           </Link>
           <ThemeToggle />

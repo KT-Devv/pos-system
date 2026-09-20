@@ -1,4 +1,4 @@
-# POS System
+# KT POS System
 
 A multi-shop point-of-sale system for retail businesses. Each business signs up,
 sets up its own shop on first login (name, country, currency and preferences),
@@ -157,8 +157,8 @@ apps/desktop/src-tauri/target/release/bundle/nsis/
 
 The generated artifacts are:
 
-- `POS System_1.0.0_x64_en-US.msi`
-- `POS System_1.0.0_x64-setup.exe`
+- `KT POS System_1.0.0_x64_en-US.msi`
+- `KT POS System_1.0.0_x64-setup.exe`
 
 Build output under `target/`, `out/`, `dist/`, and `.next/` is ignored by Git.
 

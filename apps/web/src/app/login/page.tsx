@@ -171,7 +171,7 @@ export default function LoginPage() {
 
   const heading = {
     login: { title: "Welcome back", text: "Sign in to open your workspace." },
-    signup: { title: "Create your account", text: "Set up access to the KTDEVV POS workspace." },
+    signup: { title: "Create your account", text: "Set up access to the KT POS System workspace." },
     forgot: { title: "Reset your password", text: "Enter your email and we'll send you a reset link." },
   }[mode];
 

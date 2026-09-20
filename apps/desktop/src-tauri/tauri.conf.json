@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "POS System",
+  "productName": "KT POS System",
   "version": "1.0.0",
   "identifier": "com.pos.desktop",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "POS System",
+        "title": "KT POS System",
         "width": 1400,
         "height": 900,
         "minWidth": 1024,

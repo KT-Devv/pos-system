@@ -1,4 +1,4 @@
--- KTDEVV POS: multi-tenant Supabase schema.
+-- KT POS System: multi-tenant Supabase schema.
 --
 -- Every shop is a tenant. Users sign up, create a shop on first login (create_shop), and can invite
 -- staff by email. All business data carries a shop_id; row-level security limits every query to the

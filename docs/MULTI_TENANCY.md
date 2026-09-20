@@ -1,6 +1,6 @@
 # Shops, teams and data isolation
 
-KTDEVV POS is multi-tenant: many independent businesses ("shops") share one
+KT POS System is multi-tenant: many independent businesses ("shops") share one
 Supabase project and one application, and none of them can see or change
 another's data. This page explains how that works and what to do when adding
 features.

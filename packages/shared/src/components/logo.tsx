@@ -4,13 +4,13 @@ import { cn } from "../lib/utils";
 export interface LogoProps extends React.HTMLAttributes<HTMLDivElement> {
   /** Pixel size of the square mark. */
   size?: number;
-  /** Show the "KTDEVV POS" wordmark beside the mark. */
+  /** Show the "KT POS System" wordmark beside the mark. */
   wordmark?: boolean;
   /** `onDark` for the dark sidebar and brand panels. */
   tone?: "brand" | "onDark";
 }
 
-/** The KTDEVV POS mark: a till receipt with a torn edge, on a rounded tile. */
+/** The KT POS System mark: a till receipt with a torn edge, on a rounded tile. */
 export function Logo({ size = 36, wordmark = false, tone = "brand", className, ...props }: LogoProps) {
   const onDark = tone === "onDark";
   return (
@@ -38,7 +38,7 @@ export function Logo({ size = 36, wordmark = false, tone = "brand", className, .
       </span>
       {wordmark && (
         <span className={cn("text-[17px] font-extrabold leading-none tracking-tight", onDark && "text-white")}>
-          KTDEVV <span className={cn("font-semibold", onDark ? "text-[#3fc08d]" : "text-primary")}>POS</span>
+          KT <span className={cn("font-semibold", onDark ? "text-[#3fc08d]" : "text-primary")}>POS System</span>
         </span>
       )}
     </div>

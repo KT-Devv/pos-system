@@ -3,7 +3,7 @@ import "@fontsource-variable/figtree";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "KTDEVV POS",
+  title: "KT POS System",
   description: "Fast inventory and point-of-sale management",
 };
 

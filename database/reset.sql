@@ -1,4 +1,4 @@
--- KTDEVV POS: RESET
+-- KT POS System: RESET
 --
 -- !!  THIS ERASES EVERY SHOP AND ALL OF ITS DATA (products, sales, customers, stock, team, invites).  !!
 -- !!  IT CANNOT BE UNDONE. Take a backup first (Supabase > Database > Backups).                       !!

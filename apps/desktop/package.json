@@ -2,7 +2,7 @@
   "name": "@pos/desktop",
   "private": true,
   "version": "1.0.0",
-  "description": "POS System - Tauri desktop edition with offline SQLite storage",
+  "description": "KT POS System - Tauri desktop edition with offline SQLite storage",
   "author": "KT-Devv",
   "type": "module",
   "scripts": {

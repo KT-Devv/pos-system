@@ -1,4 +1,4 @@
-# POS System — Development Instructions
+# KT POS System — Development Instructions
 
 ## Repository structure
 

@@ -331,7 +331,7 @@ function Welcome() {
   return (
     <div className="flex min-h-screen flex-col">
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
-        <Link href="/" aria-label="KTDEVV POS home">
+        <Link href="/" aria-label="KT POS System home">
           <Logo wordmark size={36} />
         </Link>
         <div className="flex items-center gap-2">
@@ -356,7 +356,7 @@ function Welcome() {
               Run your shop from one calm screen.
             </h1>
             <p className="mt-5 max-w-xl text-lg leading-relaxed text-muted-foreground">
-              KTDEVV POS brings checkout, stock, customers, and reporting together, so the counter stays fast
+              KT POS System brings checkout, stock, customers, and reporting together, so the counter stays fast
               and the numbers stay honest.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
@@ -412,7 +412,7 @@ function Welcome() {
 
       <footer className="border-t">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-5 py-6 text-sm text-muted-foreground sm:px-8">
-          <span>© {new Date().getFullYear()} KTDEVV POS</span>
+          <span>© {new Date().getFullYear()} KT POS System</span>
           <span>Made for shops everywhere</span>
         </div>
       </footer>

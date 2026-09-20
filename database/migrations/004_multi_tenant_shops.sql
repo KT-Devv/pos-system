@@ -1,4 +1,4 @@
--- Converts a single-shop KTDEVV POS database into the multi-tenant model.
+-- Converts a single-shop KT POS System database into the multi-tenant model.
 --
 -- What it does
 --   1. Creates shops, shop_members and shop_invites.
