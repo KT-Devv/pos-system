@@ -1,8 +1,10 @@
 # POS System
 
-A point-of-sale system for small businesses in Ghana. The active rewrite uses
-Next.js for the browser workspace and Tauri 2 for the Windows desktop client,
-with Supabase as the shared backend and a local SQLite queue for offline sales.
+A multi-shop point-of-sale system for retail businesses. Each business signs up,
+sets up its own shop on first login (name, country, currency and preferences),
+and invites its staff. The browser workspace uses Next.js, the Windows desktop
+client uses Tauri 2, and both share one Supabase backend with strict per-shop
+data isolation and a local SQLite queue for offline sales.
 
 ## Current architecture
 
@@ -32,7 +34,8 @@ pos-system/
 ├── packages/
 │   └── shared/                     # Shared domain contracts and UI primitives
 ├── database/
-│   └── schema.v2.sql               # Supabase tables, RLS, and RPCs
+│   ├── schema.v2.sql               # Multi-tenant Supabase tables, RLS, and RPCs
+│   └── migrations/                 # Upgrade scripts for existing databases
 ├── docs/                           # Development, migration, and accessibility docs
 ├── package.json                    # Workspace scripts
 └── package-lock.json
@@ -43,8 +46,9 @@ packages the same exported web application inside Tauri; it does not contain a
 second renderer. `packages/shared` is dependency-free domain code shared by
 the web build and native integrations.
 
-The Next.js client currently includes authenticated product management, sales
-checkout, customers, inventory movements, reports, and profile settings.
+The Next.js client currently includes first-login shop setup, team management,
+product management, sales checkout, customers, inventory movements, reports,
+and shop and profile settings.
 Checkout uses the atomic `create_sale` Supabase function. Inventory uses
 `record_stock_movement`, which updates stock and records the movement in one
 transaction. Tauri queues offline sales locally and synchronizes them when the
@@ -96,13 +100,30 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 2. Open **SQL Editor**.
 3. Run `database/schema.v2.sql` against the project.
 4. Enable Email authentication under **Authentication > Providers**.
-5. Create the first user through Supabase Authentication.
-6. The database trigger creates the corresponding admin profile.
+5. Under **Authentication > URL Configuration**, set the Site URL and add
+   `/login` and `/reset-password` on your app's address to the redirect list.
+6. For real customers, configure your own SMTP provider under **Authentication >
+   Emails**; the built-in sender allows only a few emails per hour.
 
-The schema creates the POS tables, row-level security policies, the
-transactional `create_sale` function, and the atomic `record_stock_movement`
-function. Do not run the obsolete `database/migrations/001_fixes.sql` against
-the new schema.
+There is nothing else to seed. Anyone can sign up in the app; on first login they
+create their shop or accept an invitation to one (see
+[docs/MULTI_TENANCY.md](docs/MULTI_TENANCY.md)).
+
+The schema creates the tables, row-level security policies, the shop and team
+functions, the transactional `create_sale` function, and the atomic
+`record_stock_movement` function. Do not run the obsolete
+`database/migrations/001_fixes.sql`.
+
+### Upgrading an existing single-shop database
+
+Projects created before shops existed must run, in order,
+`database/migrations/002_role_based_access.sql`,
+`003_rpc_security_and_roles.sql` and `004_multi_tenant_shops.sql` in the SQL
+editor. Migration 004 moves all existing data into one shop called "My Shop"
+(currency GHS, the old default), makes the first admin its owner, and runs in a
+single transaction, so a failure changes nothing. Afterwards, rename the shop and
+check its currency in **Settings > Shop**. If the currency is wrong, fix it with
+`update public.shops set currency = 'USD';` in the SQL editor.
 
 ## Development commands
 
@@ -147,12 +168,16 @@ The Tauri client stores pending sale operations in `sqlite:pos.db`. When the
 client is online, queued operations are sent through the Supabase
 `create_sale` function and removed only after successful synchronization.
 Stock validation remains server-side, so rejected or conflicting sales are
-reported instead of being silently discarded.
+reported instead of being silently discarded. Each queued sale records the shop
+it belongs to and is only ever synchronized to that shop, so two accounts sharing
+one computer cannot mix their sales.
 
-## Currency and payments
+## Shops, currency and payments
 
-The default currency is Ghanaian cedi (GHS). Supported payment methods are
-cash, mobile money, and card.
+Every shop chooses its own country and currency when it is created; amounts
+are formatted in that currency everywhere. The currency is locked once the shop
+records its first sale. Supported payment methods are cash, mobile money and
+card. Shops also set their own low-stock warning level and loyalty rules.
 
 ## License
 
