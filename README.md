@@ -179,6 +179,24 @@ are formatted in that currency everywhere. The currency is locked once the shop
 records its first sale. Supported payment methods are cash, mobile money and
 card. Shops also set their own low-stock warning level and loyalty rules.
 
+## Receipts, barcodes and labels
+
+After each sale a receipt opens with the shop's name, address and phone, the
+items, totals, payment and change. **Print receipt** uses the system print
+dialog (the browser's on the web, the WebView's in the desktop app), laid out
+for 80 mm paper, so it works with any installed printer including thermal
+receipt printers. Past sales can be reprinted from **Recent sales**; a reprint
+does not show cash received or change because the database does not store them.
+A sale rung up offline prints with an "offline sale" notice, and its receipt
+number changes once it syncs because the server assigns the final one.
+
+Products can be found by barcode three ways: a USB scanner (it types the code
+and presses Enter in the search box), the **Scan** button (the device camera,
+loaded only when opened), or typing the code. A 12-digit UPC-A and its 13-digit
+EAN-13 form count as the same code. On the Products screen admins can scan or
+generate a barcode for an item that has none (in-store EAN-13 codes starting
+with 2) and print Code 128 labels in 40 x 25, 50 x 30 or 60 x 40 mm.
+
 ## License
 
 MIT

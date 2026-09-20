@@ -71,6 +71,22 @@ suite, which runs against an in-memory Postgres:
 npm run test:db
 ```
 
+## Printing
+
+Receipts and labels print through `PrintArea` (`apps/web/src/components/print-area.tsx`).
+It renders the paper as a direct child of `<body>`, and the `.print-root` rules in
+`globals.css` hide everything else while printing, so never print by calling
+`window.print()` on a screen that has no print area. Keep the paper black on white
+and size it in millimetres. Receipt data comes from `buildReceipt` and barcode
+encoding from `code128Bars`, both in `packages/shared` with tests. To check the print
+layout without a printer, load the built CSS with `@media print` rewritten to
+`@media all`.
+
+Camera scanning uses `html5-qrcode`, imported on demand and bundled (no CDN), so it
+also works in the offline desktop app. It needs a secure context (https or the
+desktop app) and a camera the user has allowed; the scanner dialog always offers
+manual entry as a fallback.
+
 ## Accessibility
 
 Use the Next.js app as the active accessibility target. Run a production build

@@ -63,4 +63,7 @@ Supabase when connectivity returns.
 - Every new business table needs a `shop_id`, shop-scoped foreign keys, RLS
   policies built on `is_shop_member` / `is_shop_admin`, and a query that sets
   `shop_id` on insert.
+- Print receipts and labels through `PrintArea` (see `docs/DEVELOPMENT.md`), never by
+  printing the app screen. Keep barcode matching in `packages/shared`
+  (`findByBarcode`) so USB, camera and typed scans behave the same.
 - Do not commit `.next`, `out`, `dist`, `target`, or installer output.
