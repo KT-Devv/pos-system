@@ -1,22 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
-import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  Input,
-  Label,
-} from "@pos/shared";
+import { FormEvent, useEffect, useState } from "react";
+import { Alert, AlertDescription, Button, Label } from "@pos/shared";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
+import { AuthShell } from "@/components/auth-shell";
+import { PasswordInput } from "@/components/password-input";
 import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/browser";
+import { describeAuthError, readUrlAuthError } from "@/lib/supabase/auth-errors";
 
 export default function ResetPasswordPage() {
   const [password, setPassword] = useState("");
@@ -24,6 +15,36 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [busy, setBusy] = useState(false);
+  // "checking" until we know whether the recovery link produced a session.
+  const [link, setLink] = useState<"checking" | "ready" | "invalid">("checking");
+
+  useEffect(() => {
+    const linkError = readUrlAuthError(new URL(window.location.href));
+    if (linkError) {
+      setError(linkError.message);
+      setLink("invalid");
+      return;
+    }
+    if (!isSupabaseConfigured()) {
+      setLink("ready");
+      return;
+    }
+    let active = true;
+    // Creating the client exchanges the recovery code in the URL for a session; getUser waits for that.
+    createSupabaseBrowserClient()
+      .auth.getUser()
+      .then(({ data }) => {
+        if (!active) return;
+        if (data.user) setLink("ready");
+        else {
+          setError("This password reset link is invalid or has expired. Request a new one.");
+          setLink("invalid");
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -47,77 +68,95 @@ export default function ResetPasswordPage() {
       if (updateError) throw updateError;
       setSuccess(true);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to reset password.");
+      setError(describeAuthError(cause).message);
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <main className="grid min-h-screen place-items-center px-6 py-12">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="mx-auto grid h-10 w-10 place-items-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
-            POS
+    <AuthShell>
+      <div className="mb-7">
+        <h1 className="text-[28px] font-extrabold leading-tight tracking-tight">
+          {success ? "Password updated" : link === "invalid" ? "This link can't be used" : "Choose a new password"}
+        </h1>
+        <p className="mt-1.5 text-sm text-muted-foreground">
+          {success
+            ? "You're all set. Sign in with your new password."
+            : link === "invalid"
+            ? "Reset links work once and expire after a while."
+            : "Pick something at least 6 characters long."}
+        </p>
+      </div>
+
+      {link === "invalid" && !success ? (
+        <div className="grid gap-4">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+          <Button asChild size="xl" className="w-full">
+            <Link href="/login?tab=forgot">Request a new link</Link>
+          </Button>
+          <p className="text-center text-sm">
+            <Link href="/login" className="font-semibold text-primary hover:underline">
+              ← Back to sign in
+            </Link>
+          </p>
+        </div>
+      ) : success ? (
+        <div className="grid gap-4">
+          <Alert variant="success">
+            <CheckCircle2 className="h-4 w-4" />
+            <AlertDescription>Your password has been updated successfully.</AlertDescription>
+          </Alert>
+          <Button asChild size="xl" className="w-full">
+            <Link href="/login">Continue to sign in</Link>
+          </Button>
+        </div>
+      ) : (
+        <form onSubmit={submit} className="grid gap-4">
+          <div className="grid gap-2">
+            <Label htmlFor="new-password">New password</Label>
+            <PasswordInput
+              id="new-password"
+              required
+              autoComplete="new-password"
+              className="h-11"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
           </div>
-          <CardTitle className="text-2xl">Reset Password</CardTitle>
-          <CardDescription>Enter your new password below to update your account.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {success ? (
-            <div className="grid gap-4">
-              <Alert variant="success">
-                <CheckCircle2 className="h-4 w-4" />
-                <AlertTitle>Password updated</AlertTitle>
-                <AlertDescription>Your password has been updated successfully!</AlertDescription>
-              </Alert>
-              <Button asChild className="w-full">
-                <Link href="/login">Sign in with new password</Link>
-              </Button>
-            </div>
-          ) : (
-            <form onSubmit={submit} className="grid gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="new-password">New Password</Label>
-                <Input
-                  id="new-password"
-                  required
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="confirm-password">Confirm New Password</Label>
-                <Input
-                  id="confirm-password"
-                  required
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
-                />
-              </div>
+          <div className="grid gap-2">
+            <Label htmlFor="confirm-password">Confirm new password</Label>
+            <PasswordInput
+              id="confirm-password"
+              required
+              autoComplete="new-password"
+              className="h-11"
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+            />
+          </div>
 
-              {error && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-
-              <Button disabled={busy} type="submit">
-                {busy ? "Updating password..." : "Update password"}
-              </Button>
-
-              <div className="text-center">
-                <Button variant="link" size="sm" asChild>
-                  <Link href="/login">Back to Sign in</Link>
-                </Button>
-              </div>
-            </form>
+          {error && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
-        </CardContent>
-      </Card>
-    </main>
+
+          <Button disabled={busy || link === "checking"} type="submit" size="xl" className="mt-1">
+            {busy ? "Updating password…" : "Update password"}
+          </Button>
+
+          <p className="mt-3 text-center text-sm">
+            <Link href="/login" className="font-semibold text-primary hover:underline">
+              ← Back to sign in
+            </Link>
+          </p>
+        </form>
+      )}
+    </AuthShell>
   );
 }
