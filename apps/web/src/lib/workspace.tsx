@@ -64,9 +64,15 @@ export function useWorkspace(): Workspace {
 }
 
 /** Explains the one failure an operator can actually fix themselves. */
-function describeLoadError(error: { code?: string; message: string }) {
-  if (error.code === "PGRST205" || error.code === "42P01" || /shop_members|schema cache/i.test(error.message)) {
+function describeLoadError(error: { code?: string; message: string; hint?: string }) {
+  if (error.code === "PGRST205" || error.code === "42P01" || /schema cache|does not exist/i.test(error.message)) {
     return "This database hasn't been upgraded for shops yet. Run database/migrations/004_multi_tenant_shops.sql in the Supabase SQL editor, then reload.";
+  }
+  if (error.code === "42501" || /permission denied/i.test(error.message)) {
+    return [
+      "This database is missing table privileges for signed-in users. Run database/migrations/005_grant_authenticated.sql in the Supabase SQL editor, then reload.",
+      error.hint,
+    ].filter(Boolean).join(" ");
   }
   return error.message;
 }

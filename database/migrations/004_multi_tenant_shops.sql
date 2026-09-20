@@ -753,4 +753,35 @@ select
 from auth.users u
 where not exists (select 1 from public.profiles p where p.id = u.id);
 
+grant usage on schema public to anon, authenticated;
+
+grant select on
+  public.profiles,
+  public.shops,
+  public.shop_members,
+  public.shop_invites,
+  public.categories,
+  public.products,
+  public.customers,
+  public.suppliers,
+  public.sales,
+  public.sale_lines,
+  public.stock_movements
+to authenticated;
+
+grant insert, update, delete on
+  public.categories,
+  public.products,
+  public.customers,
+  public.suppliers,
+  public.sales,
+  public.sale_lines,
+  public.stock_movements
+to authenticated;
+
+grant update on public.shops to authenticated;
+
+revoke update on public.profiles from authenticated, anon;
+grant update (name) on public.profiles to authenticated;
+
 commit;

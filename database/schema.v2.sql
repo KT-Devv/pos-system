@@ -719,3 +719,38 @@ select
   u.email
 from auth.users u
 where not exists (select 1 from public.profiles p where p.id = u.id);
+
+-- @@ table privileges ---------------------------------------------------------------------------
+-- RLS decides which rows a signed-in user sees. These GRANTs let the Data API role reach the
+-- tables at all. Newer Supabase projects do not grant authenticated access by default.
+
+grant usage on schema public to anon, authenticated;
+
+grant select on
+  public.profiles,
+  public.shops,
+  public.shop_members,
+  public.shop_invites,
+  public.categories,
+  public.products,
+  public.customers,
+  public.suppliers,
+  public.sales,
+  public.sale_lines,
+  public.stock_movements
+to authenticated;
+
+grant insert, update, delete on
+  public.categories,
+  public.products,
+  public.customers,
+  public.suppliers,
+  public.sales,
+  public.sale_lines,
+  public.stock_movements
+to authenticated;
+
+grant update on public.shops to authenticated;
+
+revoke update on public.profiles from authenticated, anon;
+grant update (name) on public.profiles to authenticated;
