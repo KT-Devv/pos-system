@@ -63,13 +63,37 @@ export {
 
 export { Switch } from "./components/switch";
 
+export { Logo } from "./components/logo";
+export type { LogoProps } from "./components/logo";
+
+export { Avatar } from "./components/avatar";
+export type { AvatarProps } from "./components/avatar";
+
+export { SegmentedControl } from "./components/segmented-control";
+export type { SegmentedControlProps, SegmentedOption } from "./components/segmented-control";
+
+export { PageHeader } from "./components/page-header";
+export type { PageHeaderProps } from "./components/page-header";
+
+export { StatCard } from "./components/stat-card";
+export type { StatCardProps } from "./components/stat-card";
+
+export { EmptyState, Skeleton } from "./components/empty-state";
+export type { EmptyStateProps } from "./components/empty-state";
+
 // Utils
 export {
   cn,
+  configureMoney,
+  currencyDecimals,
+  currencySymbol,
+  formatCompact,
   formatCurrency,
+  getMoneyConfig,
   formatDate,
   formatDateTime,
   generateId,
+  initials,
 } from "./lib/utils";
 
 // Types
@@ -114,3 +138,45 @@ export {
   validateProductInput,
   validateSaleInput,
 } from "./domain";
+
+export {
+  buildRevenueBuckets,
+  rangeStart,
+  startOfDay,
+  summarizeSales,
+  WEEKLY_AFTER_DAYS,
+} from "./domain/reports";
+export type {
+  PaymentTotal,
+  ReportLine,
+  ReportRange,
+  ReportSale,
+  RevenueBucket,
+  SalesSummary,
+  TopProduct,
+} from "./domain/reports";
+
+export {
+  COUNTRIES,
+  CURRENCIES,
+  currencyForCountry,
+  currencyName,
+  isSupportedCurrency,
+} from "./domain/currencies";
+export type { CountryInfo, CurrencyInfo } from "./domain/currencies";
+
+export {
+  canManageShop,
+  canManageTeam,
+  canRemoveMember,
+  invitableRoles,
+  loyaltyPointsFor,
+  ROLE_DESCRIPTIONS,
+  ROLE_LABELS,
+  SHOP_NAME_MAX,
+  SHOP_NAME_MIN,
+  SHOP_ROLES,
+  stockLevel,
+  validateShopInput,
+} from "./domain/shop";
+export type { ShopInput, ShopRole } from "./domain/shop";
