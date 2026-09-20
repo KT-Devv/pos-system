@@ -12,6 +12,8 @@ pub struct SaleLine {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct OfflineSale {
     pub id: String,
+    /// The shop the sale was rung up in; it is only ever synchronised to that shop.
+    pub shop_id: String,
     pub cashier_id: String,
     pub customer_id: Option<String>,
     pub payment_method: String,
@@ -35,6 +37,9 @@ async fn database(state: &State<'_, DbInstances>) -> Result<sqlx::SqlitePool, St
 
 #[tauri::command]
 async fn queue_sale(db: State<'_, DbInstances>, sale: OfflineSale) -> Result<QueueResult, String> {
+    if sale.shop_id.trim().is_empty() {
+        return Err("A sale must belong to a shop".into());
+    }
     if sale.lines.is_empty() {
         return Err("A sale must contain at least one line".into());
     }
