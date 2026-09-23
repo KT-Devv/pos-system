@@ -79,8 +79,25 @@ It renders the paper as a direct child of `<body>`, and the `.print-root` rules 
 `window.print()` on a screen that has no print area. Keep the paper black on white
 and size it in millimetres. Receipt data comes from `buildReceipt` and barcode
 encoding from `code128Bars`, both in `packages/shared` with tests. To check the print
-layout without a printer, load the built CSS with `@media print` rewritten to
-`@media all`.
+layout without a printer, emulate print media (in the browser's dev tools, or over the
+debugging protocol with `Emulation.setEmulatedMedia`) and look at the result.
+
+Two rules learned from testing in the desktop window:
+
+- Label paper sizes are named `@page` rules in `globals.css` (`label-small`, `label-standard`,
+  `label-large`), chosen with `<PrintArea page="label-standard">`. Never write an inline
+  `<style>` for print: the desktop app's content-security policy blocks it and the page size
+  is silently ignored (labels came out on a full Letter page).
+- Printing hides every `<header>`, `<nav>` and `<aside>` to drop the app's own chrome. The
+  `.print-root` rules restore them inside the paper, but prefer plain `<div>`s there: a receipt
+  header once printed without the shop's name because of this.
+
+Testing the desktop window: build it with `tauri build --debug --no-bundle` (use a different
+`identifier` in a `--config` override so the test does not touch a real offline database),
+then start the exe with the environment variable `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` set to
+`--remote-debugging-port=9222 --use-fake-device-for-media-stream --use-fake-ui-for-media-stream
+--use-file-for-fake-video-capture=<video.y4m>`. That gives a debugging endpoint to drive the
+real window, and a fake camera that plays a picture of a code.
 
 Camera scanning uses `html5-qrcode`, imported on demand and bundled (no CDN), so it
 also works in the offline desktop app. It needs a secure context (https or the
