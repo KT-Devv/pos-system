@@ -101,6 +101,11 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
   useEffect(() => { void load(); }, [load]);
 
   const categoryName = useMemo(() => new Map(categories.map(c => [c.id, c.name])), [categories]);
+  // Only categories that have something to sell: a shop can have dozens, most of them empty at any moment.
+  const sellableCategories = useMemo(() => {
+    const used = new Set(products.map(p => p.category_id));
+    return categories.filter(c => used.has(c.id));
+  }, [categories, products]);
   /** Single items each product's cart lines take from stock, so tiles show what is really left. */
   const claimed = useMemo(() => {
     const totals = new Map<string, number>();
@@ -276,9 +281,9 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
             </Button>
           </div>
 
-          {categories.length > 0 && (
+          {sellableCategories.length > 0 && (
             <div role="group" aria-label="Filter by category" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {[{ id: "all", name: "All" }, ...categories].map(cat => (
+              {[{ id: "all", name: "All" }, ...sellableCategories].map(cat => (
                 <button
                   key={cat.id}
                   type="button"
