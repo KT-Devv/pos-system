@@ -8,17 +8,17 @@ import { createPortal } from "react-dom";
  * printing hides the rest of the app (see `.print-root` in globals.css), so receipts and labels
  * print on their own without the sidebar, dialog or page behind them.
  *
- * `pageSize` sets the paper size for jobs that need it (label rolls), e.g. "50mm 30mm".
+ * `page` picks a named paper size defined in globals.css (label rolls). The size is deliberately
+ * not written into an inline <style>: the desktop app's content-security policy blocks those.
  */
-export function PrintArea({ children, pageSize }: { children: ReactNode; pageSize?: string }) {
+export type PrintPage = "label-small" | "label-standard" | "label-large";
+
+export function PrintArea({ children, page }: { children: ReactNode; page?: PrintPage }) {
   const [host, setHost] = useState<HTMLElement | null>(null);
   useEffect(() => { setHost(document.body); }, []);
   if (!host) return null;
   return createPortal(
-    <div className="print-root">
-      {pageSize && <style>{`@page { size: ${pageSize}; margin: 0; }`}</style>}
-      {children}
-    </div>,
+    <div className={page ? `print-root print-page-${page}` : "print-root"}>{children}</div>,
     host,
   );
 }

@@ -103,12 +103,13 @@ export function ReceiptPaper({ receipt }: { receipt: Receipt }) {
   const when = new Date(receipt.issuedAt);
   return (
     <article aria-label={`Receipt ${receipt.reference}`} className="w-[72mm] max-w-full bg-white px-4 py-5 text-[12px] leading-snug text-black">
-      <header className="text-center">
+      {/* A div, not <header>: printing hides every <header> to drop the app's own chrome. */}
+      <div className="text-center">
         <h2 className="text-[17px] font-extrabold leading-tight">{shop.name}</h2>
         {shop.address && <p className="mt-1 whitespace-pre-line">{shop.address}</p>}
         {shop.phone && <p>{shop.phone}</p>}
         {shop.email && <p>{shop.email}</p>}
-      </header>
+      </div>
 
       <div className={rule} />
       <div className="grid gap-0.5">

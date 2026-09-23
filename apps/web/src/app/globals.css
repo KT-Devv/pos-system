@@ -316,6 +316,20 @@ input[type="number"] {
   display: none;
 }
 
+/* One named page per label stock (keep in step with LABEL_SIZES in features/barcode-label.tsx). */
+@page label-small {
+  size: 40mm 25mm;
+  margin: 0;
+}
+@page label-standard {
+  size: 50mm 30mm;
+  margin: 0;
+}
+@page label-large {
+  size: 60mm 40mm;
+  margin: 0;
+}
+
 @media print {
   aside,
   nav,
@@ -339,5 +353,20 @@ input[type="number"] {
     display: block;
     color: #000;
     background: #fff;
+  }
+  /* The rule above drops the app's own headers and navigation; it must never reach into the paper. */
+  .print-root header,
+  .print-root nav,
+  .print-root aside {
+    display: block !important;
+  }
+  .print-page-label-small {
+    page: label-small;
+  }
+  .print-page-label-standard {
+    page: label-standard;
+  }
+  .print-page-label-large {
+    page: label-large;
   }
 }

@@ -149,7 +149,6 @@ export function BarcodeLabelDialog({ product, onClose }: { product: Product | nu
   const count = Math.min(MAX_COPIES, Math.max(1, Math.floor(Number(copies)) || 1));
   const code = product?.barcode ?? "";
   const printable = canPrintAs(kind, code);
-  const { width, height } = LABEL_SIZES[size];
 
   return (
     <>
@@ -233,7 +232,7 @@ export function BarcodeLabelDialog({ product, onClose }: { product: Product | nu
         </DialogContent>
       </Dialog>
       {product && printable && (
-        <PrintArea pageSize={`${width}mm ${height}mm`}>
+        <PrintArea page={`label-${size}`}>
           {Array.from({ length: count }, (_, index) => (
             <CodeLabel key={index} product={product} size={size} kind={kind} index={index} />
           ))}
