@@ -112,7 +112,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
   /** Adds the product a scanned code belongs to, and says what happened. Shared by USB and camera scanners. */
   const addByBarcode = (code: string): ScanResult => {
     const match = findByBarcode(products, code);
-    if (!match) return { ok: false, message: `No product in stock has the barcode ${code}.` };
+    if (!match) return { ok: false, message: `No product in stock has the code ${code.length > 40 ? `${code.slice(0, 37)}…` : code}.` };
     if ((inCart.get(match.id) ?? 0) >= match.stock) return { ok: false, message: `Only ${match.stock} of ${match.name} in stock.` };
     add(match);
     return { ok: true, message: `Added ${match.name}` };
@@ -501,7 +501,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
         onClose={() => setScannerOpen(false)}
         onScan={addByBarcode}
         title="Scan items"
-        description="Point the camera at each barcode. Items are added to the sale as they are read."
+        description="Point the camera at each barcode or QR code. Items are added to the sale as they are read."
       />
 
       {cart.length > 0 && (

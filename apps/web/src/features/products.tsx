@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   AlertDescription,
+  barcodeFromScan,
   barcodesMatch,
   Button,
   Card,
@@ -131,8 +132,9 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
     await load();
   };
 
-  /** A scanned code goes into the form, unless another product already uses it. */
-  const captureBarcode = (code: string): ScanResult => {
+  /** A scanned code goes into the form, unless another product already uses it. A QR link is stored as the barcode inside it. */
+  const captureBarcode = (scanned: string): ScanResult => {
+    const code = barcodeFromScan(scanned);
     const owner = products.find(p => p.id !== editing?.id && p.barcode && barcodesMatch(code, p.barcode));
     if (owner) return { ok: false, message: `${owner.name} already uses that barcode.` };
     setForm(current => ({ ...current, barcode: code }));
@@ -317,7 +319,7 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
             <Field label={editing ? "Stock on hand" : "Opening stock"} htmlFor="product-stock">
               <Input id="product-stock" type="number" inputMode="numeric" min="0" step="1" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} />
             </Field>
-            <Field label="Barcode" htmlFor="product-barcode" hint="Optional. Scan it, type it, or generate one for items without a barcode.">
+            <Field label="Barcode" htmlFor="product-barcode" hint="Optional. Scan a barcode or QR code, type it, or generate one for items without a barcode.">
               <div className="flex gap-2">
                 <Input id="product-barcode" className="min-w-0 flex-1 font-mono" value={form.barcode} onChange={e => setForm({ ...form, barcode: e.target.value })} />
                 <Button type="button" variant="outline" size="icon" aria-label="Scan barcode with the camera" title="Scan with the camera" onClick={() => setScanning(true)}>
@@ -347,8 +349,8 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
         open={scanning}
         onClose={() => setScanning(false)}
         onScan={captureBarcode}
-        title="Scan the product's barcode"
-        description="Point the camera at the barcode on the product."
+        title="Scan the product's code"
+        description="Point the camera at the barcode or QR code on the product."
         doneLabel="Cancel"
       />
       <BarcodeLabelDialog key={labelFor?.id} product={labelFor} onClose={() => setLabelFor(null)} />
