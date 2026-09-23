@@ -21,7 +21,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' ipc: http://localhost:5173 https://*.supabase.co; connect-src 'self' ipc: http://localhost:5173 https://*.supabase.co wss://*.supabase.co; img-src 'self' data: blob: https:;"
+      "csp": "default-src 'self' ipc: http://localhost:5173 https://*.supabase.co; connect-src 'self' ipc: http://ipc.localhost http://localhost:5173 https://*.supabase.co wss://*.supabase.co; img-src 'self' data: blob: https:;"
     }
   },
   "bundle": {
