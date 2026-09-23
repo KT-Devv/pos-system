@@ -56,6 +56,8 @@ type State =
   | { status: "error"; message: string };
 
 const WorkspaceContext = createContext<Workspace | null>(null);
+let cachedReadyState: Extract<State, { status: "ready" }> | null = null;
+let loadingWorkspace: Promise<State> | null = null;
 
 export function useWorkspace(): Workspace {
   const workspace = useContext(WorkspaceContext);
@@ -103,11 +105,23 @@ async function loadWorkspace(supabase: Client): Promise<State> {
   if (membership.data && shop) {
     // Every screen formats money through this, so it must be set before any of them render.
     configureMoney({ currency: shop.currency });
-    return { status: "ready", user, shop, role: (membership.data as unknown as { role: ShopRole }).role };
+    const readyState = { status: "ready" as const, user, shop, role: (membership.data as unknown as { role: ShopRole }).role };
+    cachedReadyState = readyState;
+    return readyState;
   }
 
   const invites = await supabase.rpc("my_invites");
   return { status: "needs-shop", user, invites: invites.error ? [] : ((invites.data ?? []) as PendingInvite[]) };
+}
+
+function loadWorkspaceOnce(supabase: Client, force = false): Promise<State> {
+  if (!force && cachedReadyState) return Promise.resolve(cachedReadyState);
+  if (!force && loadingWorkspace) return loadingWorkspace;
+
+  loadingWorkspace = loadWorkspace(supabase).finally(() => {
+    loadingWorkspace = null;
+  });
+  return loadingWorkspace;
 }
 
 function CenteredMessage({ children }: { children: ReactNode }) {
@@ -128,13 +142,14 @@ export function WorkspaceGate({ children, signedOut }: { children: ReactNode; si
 
   const refresh = useCallback(async () => {
     if (!supabase) return;
-    setState(await loadWorkspace(supabase));
+    cachedReadyState = null;
+    setState(await loadWorkspaceOnce(supabase, true));
   }, [supabase]);
 
   useEffect(() => {
     if (!supabase) return;
     let active = true;
-    loadWorkspace(supabase)
+    loadWorkspaceOnce(supabase)
       .then((next) => { if (active) setState(next); })
       .catch((cause) => { if (active) setState({ status: "error", message: cause instanceof Error ? cause.message : String(cause) }); });
     return () => { active = false; };
@@ -142,6 +157,7 @@ export function WorkspaceGate({ children, signedOut }: { children: ReactNode; si
 
   const signOut = useCallback(async () => {
     await supabase?.auth.signOut();
+    cachedReadyState = null;
     window.location.href = "/";
   }, [supabase]);
 
