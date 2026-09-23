@@ -96,24 +96,84 @@ export function normalizeBarcode(raw: string): string {
 }
 
 /**
- * Whether a scanned code refers to a stored one. Exact match, or the same number as UPC-A (12 digits)
- * and EAN-13 (the same code with a leading zero): phones and hand scanners report either form.
+ * Whether a scanned code refers to a stored one. Exact match, or the same number written as UPC-A
+ * (12 digits), EAN-13 (a leading zero more) or GTIN-14 (two more): phones, hand scanners and QR
+ * codes report whichever form they carry.
  */
 export function barcodesMatch(scanned: string, stored: string): boolean {
   const a = normalizeBarcode(scanned);
   const b = normalizeBarcode(stored);
   if (!a || !b) return false;
   if (a === b) return true;
-  const upcOrEan = /^\d{12,13}$/;
-  return upcOrEan.test(a) && upcOrEan.test(b) && a.padStart(13, "0") === b.padStart(13, "0");
+  const gtin = /^\d{12,14}$/;
+  return gtin.test(a) && gtin.test(b) && a.padStart(14, "0") === b.padStart(14, "0");
 }
 
-/** The product a scanned code belongs to, preferring an exact match over the UPC/EAN equivalence. */
+/** The GTIN carried by a GS1 Digital Link ("https://id.gs1.org/01/05901234123457") or element string. */
+function gtinIn(text: string): string | null {
+  return text.match(/\/01\/(\d{14})(?:[/?#]|$)/)?.[1]
+    ?? text.match(/\(01\)\s*(\d{14})/)?.[1]
+    ?? text.match(/^01(\d{14})/)?.[1]
+    ?? null;
+}
+
+/** The GTIN in its usual 13-digit form when it has a leading zero, so it matches what shops store. */
+function shortenGtin(gtin: string): string {
+  return gtin.startsWith("0") ? gtin.slice(1) : gtin;
+}
+
+const CODE_PARAMS = ["barcode", "code", "ean", "gtin", "upc", "sku", "id"];
+
+/**
+ * What a scan could mean, best guess first. A barcode is just its digits, but a QR code often holds
+ * a link or a GS1 string around the number, so those are unwrapped: the GTIN, then a code-like
+ * query value, then the last path segment.
+ */
+export function barcodeCandidates(scanned: string): string[] {
+  const text = normalizeBarcode(scanned);
+  if (!text) return [];
+  const found = [text];
+  const add = (value: string | null | undefined) => {
+    const cleaned = value ? normalizeBarcode(value) : "";
+    if (cleaned && !found.includes(cleaned)) found.push(cleaned);
+  };
+
+  const gtin = gtinIn(text);
+  if (gtin) {
+    add(shortenGtin(gtin));
+    add(gtin);
+  }
+  if (/^https?:\/\//i.test(text)) {
+    try {
+      const url = new URL(text);
+      for (const key of CODE_PARAMS) add(url.searchParams.get(key));
+      const segments = url.pathname.split("/").filter(Boolean);
+      add(segments.length ? decodeURIComponent(segments[segments.length - 1]) : null);
+    } catch {
+      // Not a parseable link: the raw text is still a candidate.
+    }
+  }
+  return found;
+}
+
+/** The value to store for a scanned code: the barcode inside a QR link if there is one, else the text. */
+export function barcodeFromScan(scanned: string): string {
+  const text = normalizeBarcode(scanned);
+  const gtin = gtinIn(text);
+  return gtin ? shortenGtin(gtin) : text;
+}
+
+/**
+ * The product a scanned code belongs to. Tries each reading of the scan in turn, preferring an exact
+ * match over the UPC/EAN/GTIN equivalence.
+ */
 export function findByBarcode<T extends { barcode: string | null }>(items: readonly T[], scanned: string): T | undefined {
-  const code = normalizeBarcode(scanned);
-  if (!code) return undefined;
-  return items.find((item) => item.barcode !== null && normalizeBarcode(item.barcode) === code)
-    ?? items.find((item) => item.barcode !== null && barcodesMatch(code, item.barcode));
+  for (const code of barcodeCandidates(scanned)) {
+    const found = items.find((item) => item.barcode !== null && normalizeBarcode(item.barcode) === code)
+      ?? items.find((item) => item.barcode !== null && barcodesMatch(code, item.barcode));
+    if (found) return found;
+  }
+  return undefined;
 }
 
 /** The EAN-13 check digit for the first twelve digits. */

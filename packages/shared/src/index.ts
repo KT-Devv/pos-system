@@ -140,6 +140,8 @@ export {
 } from "./domain";
 
 export {
+  barcodeCandidates,
+  barcodeFromScan,
   barcodesMatch,
   canEncodeCode128,
   code128Bars,

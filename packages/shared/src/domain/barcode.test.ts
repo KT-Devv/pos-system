@@ -1,6 +1,8 @@
 import assert from "node:assert";
 import { describe, test } from "node:test";
 import {
+  barcodeCandidates,
+  barcodeFromScan,
   barcodesMatch,
   canEncodeCode128,
   code128Bars,
@@ -67,6 +69,15 @@ describe("scanned codes", () => {
     assert.ok(barcodesMatch("0012345678905", "012345678905"));
   });
 
+  test("a GTIN-14 matches the same number as UPC-A or EAN-13", () => {
+    assert.ok(barcodesMatch("05901234123457", "5901234123457"));
+    assert.ok(barcodesMatch("00012345678905", "012345678905"));
+  });
+
+  test("a GTIN-14 with a packaging digit is a different product", () => {
+    assert.ok(!barcodesMatch("15901234123454", "5901234123454"));
+  });
+
   test("different numbers never match", () => {
     assert.ok(!barcodesMatch("012345678905", "012345678906"));
     assert.ok(!barcodesMatch("", ""));
@@ -89,6 +100,62 @@ describe("scanned codes", () => {
     assert.strictEqual(findByBarcode(items, "999"), undefined);
     assert.strictEqual(findByBarcode([{ id: "none", barcode: null }], "999"), undefined);
     assert.strictEqual(findByBarcode(items, "  "), undefined);
+  });
+});
+
+describe("QR codes", () => {
+  const ean = "5901234123457";
+
+  test("a GS1 Digital Link yields the barcode inside it", () => {
+    assert.strictEqual(barcodeFromScan("https://id.gs1.org/01/05901234123457"), ean);
+    assert.strictEqual(barcodeFromScan("https://id.gs1.org/01/05901234123457/10/LOT42?17=270101"), ean);
+    assert.strictEqual(barcodeFromScan("https://brand.example/01/05901234123457?utm=x"), ean);
+  });
+
+  test("a GS1 element string yields the barcode inside it", () => {
+    assert.strictEqual(barcodeFromScan("(01)05901234123457(17)270101"), ean);
+    assert.strictEqual(barcodeFromScan("0105901234123457" + "17270101"), ean);
+  });
+
+  test("a plain code is kept as it is", () => {
+    assert.strictEqual(barcodeFromScan("KT-0001\r\n"), "KT-0001");
+    assert.strictEqual(barcodeFromScan(ean), ean);
+  });
+
+  test("keeps all 14 digits when the GTIN does not start with zero", () => {
+    assert.strictEqual(barcodeFromScan("https://id.gs1.org/01/15901234123454"), "15901234123454");
+  });
+
+  test("candidates start with the scan itself, then what is inside it", () => {
+    assert.deepStrictEqual(barcodeCandidates("https://id.gs1.org/01/05901234123457"), [
+      "https://id.gs1.org/01/05901234123457",
+      "5901234123457",
+      "05901234123457",
+    ]);
+  });
+
+  test("looks in the usual query parameters and the last path segment of a link", () => {
+    assert.ok(barcodeCandidates("https://shop.example/p?barcode=ABC123&x=1").includes("ABC123"));
+    assert.ok(barcodeCandidates("https://shop.example/items/KT-0001").includes("KT-0001"));
+    assert.ok(barcodeCandidates("https://shop.example/items/caf%C3%A9").includes("caf" + String.fromCharCode(233)));
+  });
+
+  test("nothing to read gives no candidates, and an unreadable link is not fatal", () => {
+    assert.deepStrictEqual(barcodeCandidates("  "), []);
+    assert.deepStrictEqual(barcodeCandidates("http://"), ["http://"]);
+  });
+
+  test("findByBarcode finds a product from a QR link, an element string or the bare number", () => {
+    const items = [{ id: "milk", barcode: ean }, { id: "rice", barcode: "KT-0001" }];
+    assert.strictEqual(findByBarcode(items, "https://id.gs1.org/01/05901234123457")?.id, "milk");
+    assert.strictEqual(findByBarcode(items, "(01)05901234123457")?.id, "milk");
+    assert.strictEqual(findByBarcode(items, "https://shop.example/items/KT-0001")?.id, "rice");
+    assert.strictEqual(findByBarcode(items, "https://id.gs1.org/01/09999999999994"), undefined);
+  });
+
+  test("a stored code that is itself a link still matches exactly", () => {
+    const link = "https://shop.example/items/rice";
+    assert.strictEqual(findByBarcode([{ id: "rice", barcode: link }, { id: "other", barcode: "rice" }], link)?.id, "rice");
   });
 });
 
