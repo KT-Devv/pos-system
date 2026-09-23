@@ -1,0 +1,48 @@
+# Render blueprint for the KT POS System web app.
+#
+# The web app is a static export (apps/web/next.config.ts sets `output: "export"`), so it is hosted as a
+# Render Static Site: no server process, just files. The Supabase URL and public (anon) key are baked into
+# the files at build time, so changing them means redeploying.
+#
+# Hosting on Render gives the app https, which the camera barcode scanner needs on phones.
+services:
+  - type: web
+    runtime: static
+    name: kt-pos
+    buildCommand: npm ci && npm run build:web
+    staticPublishPath: apps/web/out
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      # Supabase > Project Settings > API. Render asks for these when the blueprint is created.
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+
+    # The export writes one file per screen (sales.html, login.html, ...). These rewrites serve each at
+    # its clean URL, which is what the app links to and what Supabase's email links point at.
+    routes:
+      - { type: rewrite, source: /sales, destination: /sales.html }
+      - { type: rewrite, source: /products, destination: /products.html }
+      - { type: rewrite, source: /inventory, destination: /inventory.html }
+      - { type: rewrite, source: /customers, destination: /customers.html }
+      - { type: rewrite, source: /reports, destination: /reports.html }
+      - { type: rewrite, source: /settings, destination: /settings.html }
+      - { type: rewrite, source: /login, destination: /login.html }
+      - { type: rewrite, source: /reset-password, destination: /reset-password.html }
+
+    headers:
+      # Built files are named by their content, so they can be cached forever.
+      - path: /_next/static/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin

@@ -170,6 +170,25 @@ The generated artifacts are:
 
 Build output under `target/`, `out/`, `dist/`, and `.next/` is ignored by Git.
 
+## Hosting the web app on Render
+
+The web app is a static export, so it runs on a Render **Static Site**; `render.yaml` describes it.
+
+1. Push this repository to GitHub (or GitLab).
+2. In Render choose **New > Blueprint**, pick the repository and branch. Render reads
+   `render.yaml` and asks for two values from Supabase > Project Settings > API:
+   `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (the public anon key, never the
+   service-role key). They are baked into the site when it builds, so changing them means redeploying.
+3. Once it is live, open Supabase > Authentication > URL Configuration and set **Site URL** to the
+   Render address (`https://kt-pos.onrender.com` or your own domain). Add `<that address>/login` and
+   `<that address>/reset-password` to **Redirect URLs**. Without this, confirmation and password-reset
+   emails link to the wrong place.
+4. Run the database scripts (`schema.v2.sql`, or the upgrade migrations) in Supabase **before** the first
+   real use; hosting does not touch the database.
+
+Render serves the site over https, which the camera barcode scanner needs on phones. Deploys happen on
+every push to the branch. Build settings: `npm ci && npm run build:web`, publish `apps/web/out`.
+
 ## Offline behavior
 
 The Tauri client stores pending sale operations in `sqlite:pos.db`. When the
