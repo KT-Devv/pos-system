@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
   formatCurrency,
+  packLabel,
   type PaymentMethod,
   type Receipt,
 } from "@pos/shared";
@@ -55,10 +56,17 @@ export async function loadSaleReceipt(
 
   const { data: lineRows, error: linesError } = await supabase
     .from("sale_lines")
-    .select("product_id,quantity,unit_price")
+    .select("product_id,quantity,unit_price,unit_name,unit_quantity")
     .eq("sale_id", saleId);
   if (linesError) throw linesError;
-  const saleLines = (lineRows ?? []) as unknown as { product_id: string; quantity: number; unit_price: number }[];
+  const saleLines = (lineRows ?? []) as unknown as {
+    product_id: string;
+    quantity: number;
+    unit_price: number;
+    /** Set when the line was a pack size; kept on the line so it still reads right if the pack is later edited. */
+    unit_name: string | null;
+    unit_quantity: number;
+  }[];
 
   const productIds = [...new Set(saleLines.map((line) => line.product_id))];
   const [products, cashier, customer] = await Promise.all([
@@ -75,7 +83,14 @@ export async function loadSaleReceipt(
     cashier: (cashier.data as { name: string } | null)?.name,
     customer: (customer.data as { name: string } | null)?.name,
     lines: saleLines
-      .map((line) => ({ name: names.get(line.product_id) ?? "Item", quantity: line.quantity, unitPrice: line.unit_price }))
+      .map((line) => {
+        const name = names.get(line.product_id) ?? "Item";
+        return {
+          name: line.unit_name ? `${name} (${packLabel(line.unit_name, line.unit_quantity)})` : name,
+          quantity: line.quantity,
+          unitPrice: line.unit_price,
+        };
+      })
       .sort((a, b) => a.name.localeCompare(b.name)),
     discount: row.discount,
     paymentMethod: row.payment_method,

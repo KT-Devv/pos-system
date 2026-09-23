@@ -6,7 +6,13 @@ use sqlx::Row;
 #[derive(Debug, Deserialize, Serialize)]
 pub struct SaleLine {
     pub product_id: String,
+    /// Units sold: single items, or packs when `unit_id` is set.
     pub quantity: i64,
+    /// The pack size sold, if any. Sales queued before pack sizes existed have none and mean singles.
+    /// It must be a field here: the queue stores the sale re-serialised from this struct, so anything
+    /// not listed would be silently dropped and a pack would sync as singles.
+    #[serde(default)]
+    pub unit_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

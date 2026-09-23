@@ -15,10 +15,12 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  describeStock,
   EmptyState,
   formatCurrency,
   generateInternalBarcode,
   Input,
+  packLabel,
   PageHeader,
   stockLevel,
   Table,
@@ -37,14 +39,17 @@ import {
   Field,
   type Feedback,
   fail,
+  loadPackSizes,
   MenuSelect,
   MoneyInput,
+  type PackSizeRow,
   type Product,
   SearchInput,
   StockBadge,
 } from "./common";
 import { BarcodeLabelDialog } from "./barcode-label";
 import { BarcodeScannerDialog, type ScanResult } from "./scanner";
+import { draftErrors, draftsFrom, type PackDraft, PackSizesEditor, savePackSizes } from "./pack-sizes";
 
 const emptyForm = { name: "", category_id: "", cost: "", price: "", stock: "", barcode: "" };
 
@@ -70,14 +75,18 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
   const [deleting, setDeleting] = useState<Product | null>(null);
   const [labelFor, setLabelFor] = useState<Product | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [packs, setPacks] = useState<Map<string, PackSizeRow[]>>(new Map());
+  const [drafts, setDrafts] = useState<PackDraft[]>([]);
 
   const load = useCallback(async () => {
-    const [{ data: prodRows, error: prodError }, { data: catRows, error: catError }] = await Promise.all([
+    const [{ data: prodRows, error: prodError }, { data: catRows, error: catError }, packRes] = await Promise.all([
       supabase.from("products").select("id,name,category_id,cost_price,selling_price,stock,barcode,categories(name)").order("name"),
       supabase.from("categories").select("id,name").order("name"),
+      loadPackSizes(supabase),
     ]);
     if (prodError) fail(onError, prodError); else setProducts((prodRows ?? []) as unknown as Product[]);
     if (catError) fail(onError, catError); else setCategories((catRows ?? []) as Category[]);
+    if (packRes.error) fail(onError, packRes.error); else setPacks(packRes.data);
     setLoaded(true);
   }, [supabase, onError]);
 
@@ -86,6 +95,7 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
   const openCreate = () => {
     setEditing(null);
     setForm(emptyForm);
+    setDrafts([]);
     setFormOpen(true);
   };
 
@@ -99,6 +109,7 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
       stock: String(product.stock),
       barcode: product.barcode ?? "",
     });
+    setDrafts(draftsFrom(packs.get(product.id) ?? []));
     setFormOpen(true);
   };
 
@@ -123,13 +134,36 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
       onError(validationErrors.join(". "));
       return;
     }
-    const { error } = editing
-      ? await supabase.from("products").update(payload).eq("id", editing.id)
-      : await supabase.from("products").insert(payload);
-    if (error) { fail(onError, error); return; }
+    // Codes that are already taken: this product's own barcode, and every other product's and pack size's.
+    const taken = [
+      ...(payload.barcode ? [{ code: payload.barcode, owner: "this product" }] : []),
+      ...products.filter(p => p.id !== editing?.id && p.barcode).map(p => ({ code: p.barcode as string, owner: p.name })),
+      ...[...packs.entries()].filter(([productId]) => productId !== editing?.id)
+        .flatMap(([productId, rows]) => rows.filter(row => row.barcode).map(row => ({ code: row.barcode as string, owner: `${products.find(p => p.id === productId)?.name ?? "another product"} (${row.name})` }))),
+    ];
+    const packProblems = draftErrors(drafts, taken);
+    if (packProblems.length > 0) {
+      onError(packProblems.join(". "));
+      return;
+    }
+
+    let productId = editing?.id;
+    if (editing) {
+      const { error } = await supabase.from("products").update(payload).eq("id", editing.id);
+      if (error) { fail(onError, error); return; }
+    } else {
+      const { data, error } = await supabase.from("products").insert(payload).select("id").single();
+      if (error) { fail(onError, error); return; }
+      productId = (data as { id: string }).id;
+    }
+    const packError = productId ? await savePackSizes(supabase, shop.id, productId, packs.get(productId) ?? [], drafts) : null;
     setFormOpen(false);
-    onNotice(editing ? "Product updated." : "Product added.");
     await load();
+    if (packError) {
+      fail(onError, new Error(`The product was saved, but its pack sizes were not: ${packError.message}. Edit the product to try again.`));
+      return;
+    }
+    onNotice(editing ? "Product updated." : "Product added.");
   };
 
   /** A scanned code goes into the form, unless another product already uses it. A QR link is stored as the barcode inside it. */
@@ -238,11 +272,23 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
                         {product.categories?.name || "Uncategorised"}
                         {product.barcode && <span className="hidden sm:inline"> · <span className="font-mono">{product.barcode}</span></span>}
                       </p>
+                      {(packs.get(product.id) ?? []).length > 0 && (
+                        <p className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+                          {(packs.get(product.id) ?? []).map(pack => (
+                            <span key={pack.id}>{packLabel(pack.name, pack.quantity)} · {formatCurrency(pack.selling_price)}</span>
+                          ))}
+                        </p>
+                      )}
                     </TableCell>
                     {isAdmin && <TableCell className="hidden text-right tabular-nums text-muted-foreground md:table-cell">{formatCurrency(product.cost_price)}</TableCell>}
                     <TableCell className="text-right font-bold tabular-nums">{formatCurrency(product.selling_price)}</TableCell>
                     {isAdmin && <TableCell className="hidden text-right tabular-nums text-muted-foreground lg:table-cell">{margin(product)}</TableCell>}
-                    <TableCell><StockBadge stock={product.stock} threshold={lowAt} /></TableCell>
+                    <TableCell>
+                      <StockBadge stock={product.stock} threshold={lowAt} />
+                      {describeStock(product.stock, packs.get(product.id) ?? []) && (
+                        <p className="mt-1 text-xs text-muted-foreground">{describeStock(product.stock, packs.get(product.id) ?? [])}</p>
+                      )}
+                    </TableCell>
                     {isAdmin && (
                       <TableCell>
                         <div className="flex items-center justify-end gap-1">
@@ -291,7 +337,7 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
       </Card>
 
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editing ? "Edit product" : "Add product"}</DialogTitle>
             <DialogDescription>
@@ -337,8 +383,10 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
                 </Button>
               </div>
             </Field>
+            <PackSizesEditor drafts={drafts} onChange={setDrafts} singlePrice={Number(form.price) || 0} />
           </form>
-          <DialogFooter>
+          {/* Pinned, so Save stays in reach however many pack sizes make the form tall. */}
+          <DialogFooter className="sticky bottom-0 -mb-1 bg-card pb-1 pt-3">
             <Button type="button" variant="outline" onClick={() => setFormOpen(false)}>Cancel</Button>
             <Button type="submit" form="product-form">{editing ? "Save changes" : "Add product"}</Button>
           </DialogFooter>

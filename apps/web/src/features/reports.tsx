@@ -78,10 +78,10 @@ export function Reports({ supabase, onError }: { supabase: Client; onError: (mes
         supabase.from("sales").select("id,total,discount,payment_method,created_at").order("created_at", { ascending: false }).order("id").range(from, to));
       // Product names enrich "Top products"; fall back to the plain query if the embed is refused.
       let linesRes = await fetchAll<ReportLine>((from, to) =>
-        supabase.from("sale_lines").select("sale_id,product_id,quantity,unit_price,unit_cost,products(name)").order("id").range(from, to));
+        supabase.from("sale_lines").select("sale_id,product_id,quantity,unit_price,unit_cost,unit_quantity,products(name)").order("id").range(from, to));
       if (linesRes.error) {
         linesRes = await fetchAll<ReportLine>((from, to) =>
-          supabase.from("sale_lines").select("sale_id,quantity,unit_price,unit_cost").order("id").range(from, to));
+          supabase.from("sale_lines").select("sale_id,quantity,unit_price,unit_cost,unit_quantity").order("id").range(from, to));
       }
       if (!active) return;
       if (salesRes.error) fail(onError, salesRes.error); else setSales(salesRes.data);

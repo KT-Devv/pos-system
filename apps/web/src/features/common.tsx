@@ -18,7 +18,9 @@ import {
 import { Banknote, CreditCard, Search, Smartphone, type LucideIcon } from "lucide-react";
 import type { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
-export { fetchAll } from "@/lib/paging";
+import { fetchAll } from "@/lib/paging";
+
+export { fetchAll };
 
 export type Client = ReturnType<typeof createSupabaseBrowserClient>;
 export type Feedback = { onError: (message: string) => void; onNotice: (message: string) => void };
@@ -35,15 +37,48 @@ export type Product = {
   barcode: string | null;
   categories?: { name: string } | null;
 };
+/** One pack size of a product (see product_units): sells `quantity` single items at its own price. */
+export type PackSizeRow = {
+  id: string;
+  product_id: string;
+  name: string;
+  quantity: number;
+  selling_price: number;
+  barcode: string | null;
+};
+export const PACK_COLUMNS = "id,product_id,name,quantity,selling_price,barcode";
+
+/**
+ * Every pack size in the shop, grouped by product and smallest first. Loaded on its own rather than
+ * embedded in the product query: it is one small extra request and keeps the product query simple.
+ */
+export async function loadPackSizes(supabase: Client): Promise<{ data: Map<string, PackSizeRow[]>; error: { message: string } | null }> {
+  const { data, error } = await fetchAll<PackSizeRow>((from, to) =>
+    supabase.from("product_units").select(PACK_COLUMNS).order("quantity").order("id").range(from, to));
+  const byProduct = new Map<string, PackSizeRow[]>();
+  for (const row of data) {
+    const list = byProduct.get(row.product_id) ?? [];
+    list.push({ ...row, quantity: Number(row.quantity), selling_price: Number(row.selling_price) });
+    byProduct.set(row.product_id, list);
+  }
+  return { data: byProduct, error };
+}
+
 export type Supplier = { id: string; name: string; phone: string | null; email: string | null; address: string | null };
 export type Customer = { id: string; name: string; phone: string | null; email: string | null; loyalty_points: number };
 export type PaymentMethodValue = "cash" | "momo" | "card";
 
 /** Turns database errors into something a shop owner can act on. */
 export function friendlyError(message: string): string {
-  if (/products_shop_barcode_key|products_barcode_key/.test(message)) return "Another product already uses that barcode.";
+  if (/products_shop_barcode_key|products_barcode_key|A product already uses the barcode/.test(message)) return "Another product already uses that barcode.";
+  if (/product_units_shop_barcode_key|A pack size already uses the barcode/.test(message)) return "Another pack size already uses that barcode.";
+  if (/product_units_product_id_quantity_key/.test(message)) return "This product already has a pack size with that many items.";
+  if (/product_units_product_id_name_key/.test(message)) return "This product already has a pack size with that name.";
   if (/categories_shop_id_name_key|categories_name_key/.test(message)) return "You already have a category with that name.";
   if (/sale_lines.*foreign key|foreign key.*sale_lines/i.test(message)) return "This product appears in past sales, so it can't be deleted.";
+  if (/product_units/.test(message) && /schema cache|does not exist|Could not find/i.test(message)) {
+    return "This database needs the pack sizes upgrade. Run database/migrations/006_product_units.sql in the Supabase SQL editor, then reload.";
+  }
   if (/row-level security/i.test(message)) return "You don't have permission to do that.";
   if (/currency cannot be changed/i.test(message)) return "The currency can't be changed after sales have been recorded.";
   return message;

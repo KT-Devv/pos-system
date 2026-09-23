@@ -16,9 +16,11 @@ import {
   formatCurrency,
   Input,
   loyaltyPointsFor,
+  packLabel,
   type Receipt as SaleReceipt,
   SegmentedControl,
   stockLevel,
+  unitsAvailable,
   validateSaleInput,
 } from "@pos/shared";
 import { Camera, Check, Minus, PackageSearch, Plus, Receipt, ReceiptText, ShoppingCart, Trash2 } from "lucide-react";
@@ -31,8 +33,10 @@ import {
   Field,
   type Feedback,
   fail,
+  loadPackSizes,
   MenuSelect,
   MoneyInput,
+  type PackSizeRow,
   PAYMENT_METHODS,
   type PaymentMethodValue,
   paymentLabel,
@@ -42,7 +46,18 @@ import {
 import { loadSaleReceipt, ReceiptDialog, receiptShop } from "./receipt";
 import { BarcodeScannerDialog, type ScanResult } from "./scanner";
 
-type CartLine = Product & { quantity: number };
+/** A cart line is a product sold as singles (`pack` null) or as one of its pack sizes. */
+type CartLine = Product & { quantity: number; pack: PackSizeRow | null };
+
+/** Single items one unit of this line takes out of stock. */
+const sizeOf = (line: Pick<CartLine, "pack">) => line.pack?.quantity ?? 1;
+const priceOf = (line: CartLine) => line.pack?.selling_price ?? line.selling_price;
+const costOf = (line: CartLine) => line.cost_price * sizeOf(line);
+const keyOf = (line: Pick<CartLine, "id" | "pack">) => `${line.id}:${line.pack?.id ?? "single"}`;
+const nameOf = (line: CartLine) => (line.pack ? `${line.name} (${packLabel(line.pack.name, line.pack.quantity)})` : line.name);
+/** Single items the cart's lines for one product already take from stock, leaving out the line `exceptKey`. */
+const claimedBy = (cart: readonly CartLine[], productId: string, exceptKey?: string) =>
+  cart.filter(line => line.id === productId && keyOf(line) !== exceptKey).reduce((sum, line) => sum + line.quantity * sizeOf(line), 0);
 type RecentSale = { id: string; total: number; payment_method: string; created_at: string };
 
 const WALK_IN = "walk-in";
@@ -65,63 +80,90 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
   const [receipt, setReceipt] = useState<{ data: SaleReceipt; heading: string } | null>(null);
   const [reprinting, setReprinting] = useState<string | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [packs, setPacks] = useState<Map<string, PackSizeRow[]>>(new Map());
 
   const load = useCallback(async () => {
-    const [{ data: catalog, error: catalogError }, { data: sales, error: salesError }, { data: customerRows, error: customerError }, { data: catRows }] = await Promise.all([
+    const [{ data: catalog, error: catalogError }, { data: sales, error: salesError }, { data: customerRows, error: customerError }, { data: catRows }, packRes] = await Promise.all([
       supabase.from("products").select("id,name,category_id,cost_price,selling_price,stock,barcode").gt("stock", 0).order("name"),
       supabase.from("sales").select("id,total,payment_method,created_at").order("created_at", { ascending: false }).limit(8),
       supabase.from("customers").select("id,name,phone,email,loyalty_points").order("name"),
       supabase.from("categories").select("id,name").order("name"),
+      loadPackSizes(supabase),
     ]);
     if (catalogError) fail(onError, catalogError); else setProducts((catalog ?? []) as Product[]);
     if (salesError) fail(onError, salesError); else setRecent((sales ?? []) as RecentSale[]);
     if (customerError) fail(onError, customerError); else setCustomers((customerRows ?? []) as Customer[]);
     if (catRows) setCategories((catRows ?? []) as Category[]);
+    if (packRes.error) fail(onError, packRes.error); else setPacks(packRes.data);
     setLoaded(true);
   }, [supabase, onError]);
 
   useEffect(() => { void load(); }, [load]);
 
   const categoryName = useMemo(() => new Map(categories.map(c => [c.id, c.name])), [categories]);
-  const inCart = useMemo(() => new Map(cart.map(line => [line.id, line.quantity])), [cart]);
+  /** Single items each product's cart lines take from stock, so tiles show what is really left. */
+  const claimed = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const line of cart) totals.set(line.id, (totals.get(line.id) ?? 0) + line.quantity * sizeOf(line));
+    return totals;
+  }, [cart]);
 
   const filtered = products.filter(p => {
     const matchCat = selectedCat === "all" || p.category_id === selectedCat;
-    const matchSearch = `${p.name} ${p.barcode ?? ""}`.toLowerCase().includes(search.toLowerCase());
+    const packCodes = (packs.get(p.id) ?? []).map(pack => pack.barcode ?? "").join(" ");
+    const matchSearch = `${p.name} ${p.barcode ?? ""} ${packCodes}`.toLowerCase().includes(search.toLowerCase());
     return matchCat && matchSearch;
   });
 
   const selectedCustomer = customers.find(c => c.id === customerId);
 
-  const add = (product: Product) => setCart(current =>
-    current.some(item => item.id === product.id)
-      ? current.map(item => item.id === product.id ? { ...item, quantity: Math.min(item.quantity + 1, product.stock) } : item)
-      : [...current, { ...product, quantity: 1 }]
-  );
+  const add = (product: Product, pack: PackSizeRow | null = null) => setCart(current => {
+    const line: CartLine = { ...product, quantity: 1, pack };
+    const key = keyOf(line);
+    const room = unitsAvailable(product.stock, claimedBy(current, product.id, key), sizeOf(line));
+    if (room < 1) return current;
+    return current.some(item => keyOf(item) === key)
+      ? current.map(item => keyOf(item) === key ? { ...item, quantity: Math.min(item.quantity + 1, room) } : item)
+      : [...current, line];
+  });
 
-  const setQuantity = (id: string, quantity: number, maxStock: number) =>
-    setCart(current => current.map(line => line.id === id ? { ...line, quantity: Math.max(1, Math.min(quantity, maxStock)) } : line));
+  const setQuantity = (key: string, quantity: number) =>
+    setCart(current => current.map(line => {
+      if (keyOf(line) !== key) return line;
+      const room = unitsAvailable(line.stock, claimedBy(current, line.id, key), sizeOf(line));
+      return { ...line, quantity: Math.max(1, Math.min(quantity, room)) };
+    }));
 
-  const updateQuantity = (id: string, rawVal: string, maxStock: number) => {
+  const updateQuantity = (key: string, rawVal: string) => {
     const parsed = parseInt(rawVal, 10);
-    setQuantity(id, isNaN(parsed) ? 1 : parsed, maxStock);
+    setQuantity(key, isNaN(parsed) ? 1 : parsed);
   };
 
-  const removeLine = (id: string) => setCart(current => current.filter(line => line.id !== id));
+  const removeLine = (key: string) => setCart(current => current.filter(line => keyOf(line) !== key));
 
-  /** Adds the product a scanned code belongs to, and says what happened. Shared by USB and camera scanners. */
+  /** Everything a scan can mean: a product's own barcode, or the barcode of one of its pack sizes. */
+  const scanTargets = useMemo(() => products.flatMap(product => [
+    { barcode: product.barcode, product, pack: null as PackSizeRow | null },
+    ...(packs.get(product.id) ?? []).map(pack => ({ barcode: pack.barcode, product, pack })),
+  ]), [products, packs]);
+
+  /** Adds what a scanned code belongs to, and says what happened. Shared by USB and camera scanners. */
   const addByBarcode = (code: string): ScanResult => {
-    const match = findByBarcode(products, code);
+    const match = findByBarcode(scanTargets, code);
     if (!match) return { ok: false, message: `No product in stock has the code ${code.length > 40 ? `${code.slice(0, 37)}…` : code}.` };
-    if ((inCart.get(match.id) ?? 0) >= match.stock) return { ok: false, message: `Only ${match.stock} of ${match.name} in stock.` };
-    add(match);
-    return { ok: true, message: `Added ${match.name}` };
+    const { product, pack } = match;
+    const label = pack ? packLabel(pack.name, pack.quantity) : null;
+    if (unitsAvailable(product.stock, claimed.get(product.id) ?? 0, pack?.quantity ?? 1) < 1) {
+      return { ok: false, message: label ? `Not enough ${product.name} in stock for a ${label}.` : `No more ${product.name} in stock.` };
+    }
+    add(product, pack);
+    return { ok: true, message: `Added ${product.name}${label ? ` (${label})` : ""}` };
   };
 
   // USB barcode scanners type the code and press Enter: add the exact match straight to the cart.
   const scan = () => {
     const code = search.trim();
-    if (!code || !findByBarcode(products, code)) return;
+    if (!code || !findByBarcode(scanTargets, code)) return;
     if (addByBarcode(code).ok) setSearch("");
   };
 
@@ -134,7 +176,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
   };
 
   const totals = calculateSaleTotal(
-    cart.map(line => ({ productId: line.id, quantity: line.quantity, unitPrice: line.selling_price, unitCost: line.cost_price })),
+    cart.map(line => ({ productId: line.id, quantity: line.quantity, unitPrice: priceOf(line), unitCost: costOf(line) })),
     Number(discount) || 0,
   );
   const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0);
@@ -160,7 +202,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
       shop: receiptShop(shop),
       cashier: user.name,
       customer: selectedCustomer?.name,
-      lines: cart.map(line => ({ name: line.name, quantity: line.quantity, unitPrice: line.selling_price })),
+      lines: cart.map(line => ({ name: nameOf(line), quantity: line.quantity, unitPrice: priceOf(line) })),
       discount: totals.discount,
       paymentMethod: payment,
       cashReceived: tendered,
@@ -171,7 +213,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
       customerId: customerId || null,
       paymentMethod: payment,
       discount: totals.discount,
-      lines: cart.map(line => ({ productId: line.id, quantity: line.quantity, unitPrice: line.selling_price, unitCost: line.cost_price })),
+      lines: cart.map(line => ({ productId: line.id, quantity: line.quantity, unitPrice: priceOf(line), unitCost: costOf(line), unitId: line.pack?.id ?? null, unitQuantity: sizeOf(line) })),
     };
     const saleValidationErrors = validateSaleInput(input);
     if (saleValidationErrors.length > 0) {
@@ -199,7 +241,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
         p_customer_id: customerId || null,
         p_payment_method: payment,
         p_discount: totals.discount,
-        p_lines: cart.map(line => ({ product_id: line.id, quantity: line.quantity })),
+        p_lines: cart.map(line => ({ product_id: line.id, quantity: line.quantity, unit_id: line.pack?.id ?? null })),
       });
       if (error) throw error;
       // Read the sale back so the receipt shows what the server charged (prices may have changed since
@@ -258,37 +300,59 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
           {filtered.length > 0 ? (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
               {filtered.map(product => {
-                const qty = inCart.get(product.id) ?? 0;
+                const productPacks = packs.get(product.id) ?? [];
+                const units = cart.filter(line => line.id === product.id).reduce((sum, line) => sum + line.quantity, 0);
                 const cat = product.category_id ? categoryName.get(product.category_id) : null;
-                const atLimit = qty >= product.stock;
+                // What is left once the cart has taken its share, in single items.
+                const remaining = product.stock - (claimed.get(product.id) ?? 0);
                 return (
-                  <button
+                  <div
                     key={product.id}
-                    type="button"
-                    onClick={() => add(product)}
-                    disabled={atLimit}
-                    aria-label={`Add ${product.name}, ${formatCurrency(product.selling_price)}${qty ? `, ${qty} in cart` : ""}`}
                     className={cn(
-                      "relative flex min-h-[112px] flex-col justify-between gap-2 rounded-xl border bg-card p-3.5 text-left shadow-xs hover:border-primary/60 hover:shadow-sm active:bg-accent disabled:opacity-60",
-                      qty > 0 && "border-primary ring-1 ring-primary",
+                      "relative flex min-h-[112px] flex-col rounded-xl border bg-card shadow-xs hover:border-primary/60 hover:shadow-sm",
+                      units > 0 && "border-primary ring-1 ring-primary",
                     )}
                   >
-                    {qty > 0 && (
-                      <span className="absolute -right-2 -top-2 grid h-6 min-w-6 place-items-center rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground shadow-sm">
-                        {qty}
+                    {units > 0 && (
+                      <span className="absolute -right-2 -top-2 z-10 grid h-6 min-w-6 place-items-center rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground shadow-sm">
+                        {units}
                       </span>
                     )}
-                    <div className="min-w-0">
-                      {cat && <p className="truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{cat}</p>}
-                      <p className="line-clamp-2 text-sm font-semibold leading-snug">{product.name}</p>
-                    </div>
-                    <div className="flex items-end justify-between gap-2">
-                      <span className="text-base font-extrabold tracking-tight">{formatCurrency(product.selling_price)}</span>
-                      <span className={cn("text-xs font-semibold", stockLevel(product.stock, shop.low_stock_threshold) === "low" ? "text-warning" : "text-muted-foreground")}>
-                        {product.stock} left
-                      </span>
-                    </div>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => add(product)}
+                      disabled={remaining < 1}
+                      aria-label={`Add ${product.name}, ${formatCurrency(product.selling_price)}${units ? `, ${units} in cart` : ""}`}
+                      className="flex flex-1 flex-col justify-between gap-2 rounded-xl p-3.5 text-left active:bg-accent disabled:opacity-60"
+                    >
+                      <div className="min-w-0">
+                        {cat && <p className="truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{cat}</p>}
+                        <p className="line-clamp-2 text-sm font-semibold leading-snug">{product.name}</p>
+                      </div>
+                      <div className="flex items-end justify-between gap-2">
+                        <span className="text-base font-extrabold tracking-tight">{formatCurrency(product.selling_price)}</span>
+                        <span className={cn("text-xs font-semibold", stockLevel(remaining, shop.low_stock_threshold) === "low" ? "text-warning" : "text-muted-foreground")}>
+                          {remaining} left
+                        </span>
+                      </div>
+                    </button>
+                    {productPacks.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 px-3.5 pb-3">
+                        {productPacks.map(pack => (
+                          <button
+                            key={pack.id}
+                            type="button"
+                            disabled={remaining < pack.quantity}
+                            onClick={() => add(product, pack)}
+                            aria-label={`Add ${product.name}, ${packLabel(pack.name, pack.quantity)}, ${formatCurrency(pack.selling_price)}`}
+                            className="rounded-md border bg-secondary px-2 py-1 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
+                          >
+                            {packLabel(pack.name, pack.quantity)} · {formatCurrency(pack.selling_price)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -366,60 +430,69 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
               />
             ) : (
               <ul className="divide-y">
-                {cart.map(item => (
-                  <li key={item.id} className="grid gap-2 px-5 py-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold">{item.name}</p>
-                        <p className="text-xs text-muted-foreground">{formatCurrency(item.selling_price)} each</p>
+                {cart.map(item => {
+                  const key = keyOf(item);
+                  const label = nameOf(item);
+                  // The most of this line the stock allows, given what the other lines already take.
+                  const room = unitsAvailable(item.stock, claimedBy(cart, item.id, key), sizeOf(item));
+                  return (
+                    <li key={key} className="grid gap-2 px-5 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold">{item.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {item.pack && <span className="font-semibold text-foreground">{packLabel(item.pack.name, item.pack.quantity)} · </span>}
+                            {formatCurrency(priceOf(item))} each
+                          </p>
+                        </div>
+                        <p className="text-sm font-bold tabular-nums">{formatCurrency(priceOf(item) * item.quantity)}</p>
                       </div>
-                      <p className="text-sm font-bold tabular-nums">{formatCurrency(item.selling_price * item.quantity)}</p>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon-sm"
+                            aria-label={`Decrease quantity of ${label}`}
+                            onClick={() => item.quantity <= 1 ? removeLine(key) : setQuantity(key, item.quantity - 1)}
+                          >
+                            <Minus />
+                          </Button>
+                          <Input
+                            aria-label={`Quantity for ${label}`}
+                            type="number"
+                            inputMode="numeric"
+                            min="1"
+                            max={room}
+                            value={item.quantity}
+                            onChange={e => updateQuantity(key, e.target.value)}
+                            className="h-8 w-12 px-1 text-center font-semibold tabular-nums"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon-sm"
+                            aria-label={`Increase quantity of ${label}`}
+                            disabled={item.quantity >= room}
+                            onClick={() => setQuantity(key, item.quantity + 1)}
+                          >
+                            <Plus />
+                          </Button>
+                        </div>
                         <Button
                           type="button"
-                          variant="outline"
+                          variant="ghost"
                           size="icon-sm"
-                          aria-label={`Decrease quantity of ${item.name}`}
-                          onClick={() => item.quantity <= 1 ? removeLine(item.id) : setQuantity(item.id, item.quantity - 1, item.stock)}
+                          className="text-muted-foreground hover:text-destructive"
+                          aria-label={`Remove ${label} from cart`}
+                          onClick={() => removeLine(key)}
                         >
-                          <Minus />
-                        </Button>
-                        <Input
-                          aria-label={`Quantity for ${item.name}`}
-                          type="number"
-                          inputMode="numeric"
-                          min="1"
-                          max={item.stock}
-                          value={item.quantity}
-                          onChange={e => updateQuantity(item.id, e.target.value, item.stock)}
-                          className="h-8 w-12 px-1 text-center font-semibold tabular-nums"
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon-sm"
-                          aria-label={`Increase quantity of ${item.name}`}
-                          disabled={item.quantity >= item.stock}
-                          onClick={() => setQuantity(item.id, item.quantity + 1, item.stock)}
-                        >
-                          <Plus />
+                          <Trash2 />
                         </Button>
                       </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        className="text-muted-foreground hover:text-destructive"
-                        aria-label={`Remove ${item.name} from cart`}
-                        onClick={() => removeLine(item.id)}
-                      >
-                        <Trash2 />
-                      </Button>
-                    </div>
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>

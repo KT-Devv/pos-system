@@ -15,9 +15,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  describeStock,
   EmptyState,
   formatCurrency,
   Input,
+  packLabel,
   PageHeader,
   SegmentedControl,
   stockLevel,
@@ -40,7 +42,9 @@ import {
   Field,
   type Feedback,
   fail,
+  loadPackSizes,
   MenuSelect,
+  type PackSizeRow,
   type Product,
   SearchInput,
   StockBadge,
@@ -72,6 +76,9 @@ export function Inventory({ supabase, onError, onNotice }: { supabase: Client } 
   const [type, setType] = useState<MovementType>("in");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [packs, setPacks] = useState<Map<string, PackSizeRow[]>>(new Map());
+  /** What the quantity is counted in: "" for single items, or a pack size's id. */
+  const [unitId, setUnitId] = useState("");
 
   const [levelFilter, setLevelFilter] = useState<LevelFilter>("all");
   const [search, setSearch] = useState("");
@@ -80,29 +87,35 @@ export function Inventory({ supabase, onError, onNotice }: { supabase: Client } 
   const [supplierForm, setSupplierForm] = useState(emptySupplier);
 
   const load = useCallback(async () => {
-    const [{ data: prodData, error: prodError }, { data: suppData, error: suppError }] = await Promise.all([
+    const [{ data: prodData, error: prodError }, { data: suppData, error: suppError }, packRes] = await Promise.all([
       supabase.from("products").select("id,name,cost_price,selling_price,stock,barcode").order("name"),
       supabase.from("suppliers").select("id,name,phone,email,address").order("name"),
+      loadPackSizes(supabase),
     ]);
     if (prodError) fail(onError, prodError); else setProducts((prodData ?? []) as Product[]);
     if (suppError) fail(onError, suppError); else setSuppliers((suppData ?? []) as Supplier[]);
+    if (packRes.error) fail(onError, packRes.error); else setPacks(packRes.data);
     setLoaded(true);
   }, [supabase, onError]);
 
   useEffect(() => { void load(); }, [load]);
 
   const selected = products.find(p => p.id === productId);
+  const selectedPacks = selected ? packs.get(selected.id) ?? [] : [];
+  const unit = selectedPacks.find(pack => pack.id === unitId) ?? null;
   const amount = Number(quantity);
   // A recount may legitimately be zero; receiving or removing stock must be at least one.
   const minAmount = type === "adjustment" ? 0 : 1;
   const validAmount = quantity.trim() !== "" && Number.isInteger(amount) && amount >= minAmount;
+  // Stock is kept in single items, so a count of packs is turned into items before it is saved.
+  const items = validAmount ? amount * (unit?.quantity ?? 1) : 0;
 
   // What the stock on hand becomes after this movement, for the preview line.
   const after = !selected || !validAmount
     ? null
-    : type === "in" ? selected.stock + amount
-    : type === "out" ? selected.stock - amount
-    : amount;
+    : type === "in" ? selected.stock + items
+    : type === "out" ? selected.stock - items
+    : items;
 
   const saveMovement = async (event: FormEvent) => {
     event.preventDefault();
@@ -114,7 +127,7 @@ export function Inventory({ supabase, onError, onNotice }: { supabase: Client } 
     const { error } = await supabase.rpc("record_stock_movement", {
       p_product_id: productId,
       p_type: type,
-      p_quantity: amount,
+      p_quantity: items,
       p_supplier_id: type === "in" ? supplierId || null : null,
       p_notes: notes.trim() || null,
     });
@@ -146,6 +159,7 @@ export function Inventory({ supabase, onError, onNotice }: { supabase: Client } 
 
   const restock = (product: Product) => {
     setProductId(product.id);
+    setUnitId("");
     setType("in");
     window.setTimeout(() => document.getElementById("movement-qty")?.focus(), 0);
   };
@@ -202,11 +216,27 @@ export function Inventory({ supabase, onError, onNotice }: { supabase: Client } 
                     <MenuSelect
                       value={productId}
                       placeholder="Choose a product"
-                      onValueChange={setProductId}
+                      onValueChange={value => { setProductId(value); setUnitId(""); }}
                       options={products.map(product => ({ value: product.id, label: `${product.name} (${product.stock} on hand)` }))}
                     />
                   </Field>
-                  <Field label={copy.quantity} htmlFor="movement-qty" hint={copy.hint}>
+                  {selectedPacks.length > 0 && (
+                    <Field label="Counting in" hint="Stock is kept in single items. Counting in packs multiplies for you.">
+                      <MenuSelect
+                        value={unitId}
+                        onValueChange={setUnitId}
+                        options={[
+                          { value: "", label: "Single items" },
+                          ...selectedPacks.map(pack => ({ value: pack.id, label: `${packLabel(pack.name, pack.quantity)} (${pack.quantity} items)` })),
+                        ]}
+                      />
+                    </Field>
+                  )}
+                  <Field
+                    label={unit ? `${copy.quantity} (${unit.name.toLowerCase()}s)` : copy.quantity}
+                    htmlFor="movement-qty"
+                    hint={unit && validAmount ? `${amount} × ${unit.quantity} = ${items} single items. ${copy.hint}` : copy.hint}
+                  >
                     <Input id="movement-qty" required type="number" inputMode="numeric" min={minAmount} step="1" value={quantity} onChange={e => setQuantity(e.target.value)} />
                   </Field>
 
@@ -275,7 +305,12 @@ export function Inventory({ supabase, onError, onNotice }: { supabase: Client } 
                       {levels.map(product => (
                         <TableRow key={product.id}>
                           <TableCell className="font-semibold">{product.name}</TableCell>
-                          <TableCell><StockBadge stock={product.stock} threshold={lowAt} /></TableCell>
+                          <TableCell>
+                            <StockBadge stock={product.stock} threshold={lowAt} />
+                            {describeStock(product.stock, packs.get(product.id) ?? []) && (
+                              <p className="mt-1 text-xs text-muted-foreground">{describeStock(product.stock, packs.get(product.id) ?? [])}</p>
+                            )}
+                          </TableCell>
                           <TableCell className="hidden text-right tabular-nums text-muted-foreground md:table-cell">{formatCurrency(product.cost_price)}</TableCell>
                           <TableCell className="hidden text-right font-semibold tabular-nums sm:table-cell">{formatCurrency(product.stock * product.cost_price)}</TableCell>
                           <TableCell className="text-right">

@@ -65,7 +65,7 @@ function SectionContent({ section }: { section: Section }) {
           p_customer_id: sale.customerId,
           p_payment_method: sale.paymentMethod,
           p_discount: sale.discount,
-          p_lines: sale.lines.map(line => ({ product_id: line.productId, quantity: line.quantity })),
+          p_lines: sale.lines.map(line => ({ product_id: line.productId, quantity: line.quantity, unit_id: line.unitId })),
         });
         if (error) throw error;
       })
