@@ -27,6 +27,7 @@ same exported web application.
 | `shop_members` | Who works in which shop and as what (`owner`, `admin`, `cashier`) |
 | `shop_invites` | Pending invitations by email (14 days) |
 | `profiles` | One row per account: name and email |
+| `product_units` | Pack sizes of a product (name, number of single items, price, optional barcode). Stock is kept in single items on `products` |
 | everything else | `categories`, `products`, `customers`, `suppliers`, `sales`, `sale_lines`, `stock_movements` all carry a `shop_id` |
 
 An account belongs to **one** shop for now (`unique (user_id)` on

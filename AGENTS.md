@@ -36,9 +36,13 @@ Apply `database/schema.v2.sql` to Supabase before using the application. It is
 multi-tenant: users create or join a shop on first login, and every business
 table is scoped by `shop_id` (see `docs/MULTI_TENANCY.md`). Databases created
 before shops existed run migrations 002, 003 and 004 in order; 003 is required
-for cashiers to complete sales and 004 converts existing data into one shop.
+for cashiers to complete sales and 004 converts existing data into one shop; 005 adds
+table grants and 006 adds pack sizes.
 Checkout uses the shop-scoped `create_sale(p_shop_id, ...)`; inventory uses
-`record_stock_movement`. The Tauri
+`record_stock_movement`. Stock is always counted in single items: a pack size
+(`product_units`) sells a fixed number of them, and `create_sale` takes
+`quantity x pack size` out of stock. Any code that counts stock or units sold must use
+single items (`quantity * unit_quantity` on sale lines), never the raw line quantity. The Tauri
 client stores pending sales in `sqlite:pos.db` and synchronizes them through
 Supabase when connectivity returns.
 

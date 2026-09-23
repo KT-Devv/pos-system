@@ -125,6 +125,14 @@ single transaction, so a failure changes nothing. Afterwards, rename the shop an
 check its currency in **Settings > Shop**. If the currency is wrong, fix it with
 `update public.shops set currency = 'USD';` in the SQL editor.
 
+### Adding pack sizes to a database that already has shops
+
+Databases that already run the shop version (004, and 005 for the table grants)
+must also run `database/migrations/006_product_units.sql` once in the SQL editor
+**before** the new app is deployed: the sales, products and reports screens read
+the new pack size columns. It changes nothing about existing products, prices,
+stock or sales. Fresh installs get it from `schema.v2.sql`.
+
 ## Development commands
 
 Run these commands from the repository root:
@@ -178,6 +186,24 @@ Every shop chooses its own country and currency when it is created; amounts
 are formatted in that currency everywhere. The currency is locked once the shop
 records its first sale. Supported payment methods are cash, mobile money and
 card. Shops also set their own low-stock warning level and loyalty rules.
+
+## Pack sizes
+
+A product is priced per single item, and its stock is counted in single items.
+It can also be sold in **pack sizes**: a pack, box, strip or bag that holds a fixed
+number of those items at its own price ("Pack of 12" for 40.00, "Box of 48" for
+150.00). Add them under **Pack sizes** in the product form.
+
+- On the Sales screen each pack size is a button on the product's tile. A pack
+  is its own line in the cart, priced at the pack price, and selling one takes the
+  whole pack out of stock. Packs and singles of one product share the same stock,
+  so the tile always shows what is really left.
+- Stock stays a single number in single items. Products and Inventory also show it
+  as packs plus singles ("2 × Box of 48 + 1 × Pack of 12 + 2 singles"), and
+  Inventory can receive or recount stock in packs.
+- A pack size can have its own barcode; scanning it adds that pack.
+- Receipts name the pack on the line ("Milk 1L (Pack of 6)"), reports count single
+  items sold, and a pack sale queued offline in the desktop app keeps its pack size.
 
 ## Receipts, barcodes and labels
 

@@ -46,7 +46,8 @@ it is not bundled into the Tauri application.
 ## Supabase
 
 1. Run `database/schema.v2.sql` in the Supabase SQL Editor (existing single-shop
-   projects run migrations 002 to 004 instead; see the README).
+   projects run migrations 002 to 004 instead, and any database without pack sizes
+   also runs 006; see the README).
 2. Enable Email authentication.
 3. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in
    `apps/web/.env.local`.
