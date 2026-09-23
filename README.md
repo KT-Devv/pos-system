@@ -190,12 +190,17 @@ does not show cash received or change because the database does not store them.
 A sale rung up offline prints with an "offline sale" notice, and its receipt
 number changes once it syncs because the server assigns the final one.
 
-Products can be found by barcode three ways: a USB scanner (it types the code
+Products can be found by code three ways: a USB scanner (it types the code
 and presses Enter in the search box), the **Scan** button (the device camera,
-loaded only when opened), or typing the code. A 12-digit UPC-A and its 13-digit
-EAN-13 form count as the same code. On the Products screen admins can scan or
-generate a barcode for an item that has none (in-store EAN-13 codes starting
-with 2) and print Code 128 labels in 40 x 25, 50 x 30 or 60 x 40 mm.
+loaded only when opened), or typing the code. The camera reads retail barcodes
+and QR codes. A QR code may hold the plain code, a GS1 link, or a product link
+that ends in the code; the shop's code is found inside it. A 12-digit UPC-A, its
+13-digit EAN-13 form and the 14-digit GTIN count as the same code. The camera
+asks for autofocus, offers tap-to-focus, zoom, a light and a camera switch where
+the device supports them, and remembers which camera you chose. On the Products
+screen admins can scan or generate a code for an item that has none (in-store
+EAN-13 codes starting with 2) and print labels as a Code 128 barcode or a QR
+code in 40 x 25, 50 x 30 or 60 x 40 mm.
 
 ## License
 

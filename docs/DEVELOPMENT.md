@@ -87,6 +87,16 @@ also works in the offline desktop app. It needs a secure context (https or the
 desktop app) and a camera the user has allowed; the scanner dialog always offers
 manual entry as a fallback.
 
+html5-qrcode's own QR decoder fails on roughly 3 to 9 percent of perfectly valid codes
+(measured by decoding several hundred clean codes; jsQR reads all of them), and on
+browsers without a native barcode reader (desktop, iPhone, the Windows app) that decoder
+is the one that runs. So QR codes are also searched by jsQR, in a Web Worker
+(`features/qr-worker.ts`) because a search of a busy picture can take half a second and
+would freeze the page on the main thread. The worker is skipped where the browser
+reports a native QR reader. Retail barcodes still go through html5-qrcode alone. The
+scan area is the whole picture (no scan box), so a QR code held close is never cut off.
+Both decoders feed one handler that ignores a code that has stayed in view.
+
 ## Accessibility
 
 Use the Next.js app as the active accessibility target. Run a production build
