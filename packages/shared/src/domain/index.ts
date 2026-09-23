@@ -48,9 +48,15 @@ export interface Supplier {
 
 export interface SaleLine {
   productId: string;
+  /** Units sold: single items, or packs when unitId is set. */
   quantity: number;
+  /** Price and cost of one unit (a single, or a whole pack). */
   unitPrice: number;
   unitCost: number;
+  /** The pack size sold; absent or null for singles. */
+  unitId?: string | null;
+  /** Single items in one unit; absent or 1 for singles. */
+  unitQuantity?: number;
 }
 
 export interface Sale {

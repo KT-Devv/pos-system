@@ -156,6 +156,18 @@ export {
 } from "./domain/barcode";
 export type { BarcodeBar } from "./domain/barcode";
 
+export {
+  describeStock,
+  itemsNeeded,
+  PACK_NAME_MAX,
+  packLabel,
+  pricePerItem,
+  stockBreakdown,
+  unitsAvailable,
+  validatePackSize,
+} from "./domain/units";
+export type { PackSize, PackSizeInput, StockBreakdown } from "./domain/units";
+
 export { buildReceipt, receiptReference } from "./domain/receipt";
 export type { BuildReceiptInput, Receipt, ReceiptLine, ReceiptLineInput, ReceiptShop } from "./domain/receipt";
 

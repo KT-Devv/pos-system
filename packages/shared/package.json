@@ -13,7 +13,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "tsc && node --test dist/domain/barcode.test.js dist/domain/index.test.js dist/domain/receipt.test.js dist/domain/reports.test.js dist/domain/shop.test.js dist/lib/utils.test.js"
+    "test": "tsc && node --test dist/domain/barcode.test.js dist/domain/index.test.js dist/domain/receipt.test.js dist/domain/reports.test.js dist/domain/shop.test.js dist/domain/units.test.js dist/lib/utils.test.js"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.19",

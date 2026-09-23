@@ -15,6 +15,8 @@ export interface ReportLine {
   quantity: number;
   unit_price: number;
   unit_cost: number;
+  /** Single items in one sold unit (a pack holds several); missing on rows from before pack sizes. */
+  unit_quantity?: number | null;
   products?: { name: string } | null;
 }
 
@@ -106,7 +108,8 @@ export function summarizeSales(
     if (!name || !line.product_id) continue;
     const entry = byProduct.get(line.product_id) ?? { name, revenue: 0, units: 0 };
     entry.revenue = roundCurrency(entry.revenue + Number(line.quantity) * Number(line.unit_price));
-    entry.units += Number(line.quantity);
+    // Count single items, so a pack of 12 adds twelve, not one.
+    entry.units += Number(line.quantity) * Number(line.unit_quantity ?? 1);
     byProduct.set(line.product_id, entry);
   }
   const topProducts = [...byProduct.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 5);

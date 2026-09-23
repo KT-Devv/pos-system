@@ -124,6 +124,17 @@ describe("summarizeSales", () => {
     assert.strictEqual(result.topProducts[1].units, 3);
   });
 
+  test("a pack counts as the single items it holds, and its cost is the pack's cost", () => {
+    const s = sale(at(2026, 9, 20), 90);
+    const packLine: ReportLine = { ...line(s, 2, 40, 24, "p1", "Water"), unit_quantity: 12 };   // 2 packs of 12
+    const singles: ReportLine = { ...line(s, 10, 1, 2, "p1", "Water"), unit_quantity: 1 };      // 10 singles
+    const oldRow = line(s, 3, 1, 2, "p1", "Water");                                             // from before pack sizes
+    const result = summarizeSales([s], [packLine, singles, oldRow], at(2026, 9, 1), ["cash"]);
+    assert.strictEqual(result.topProducts[0].units, 24 + 10 + 3);
+    assert.strictEqual(result.cogs, 2 * 24 + 10 * 2 + 3 * 2);
+    assert.strictEqual(result.topProducts[0].revenue, 2 * 40 + 10 + 3);
+  });
+
   test("the same product across several sales is combined", () => {
     const a = sale(at(2026, 9, 15), 0);
     const b = sale(at(2026, 9, 16), 0);
