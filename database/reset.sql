@@ -28,6 +28,7 @@ drop trigger if exists on_auth_user_created on auth.users;
 -- 2. Tables (their policies, triggers, indexes and foreign keys go with them).
 drop table if exists
   public.sale_lines,
+  public.product_units,
   public.stock_movements,
   public.sales,
   public.customers,
@@ -52,7 +53,7 @@ begin
       and p.proname in (
         'handle_new_user', 'is_admin', 'protect_profile_role',
         'shop_role_of', 'is_shop_member', 'is_shop_admin', 'shares_shop_with',
-        'guard_shop_update', 'prevent_shop_change',
+        'guard_shop_update', 'prevent_shop_change', 'enforce_barcode_free',
         'create_shop', 'invite_member', 'revoke_invite', 'my_invites', 'accept_invite',
         'set_member_role', 'remove_member', 'create_sale', 'record_stock_movement'
       )

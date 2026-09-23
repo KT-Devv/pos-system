@@ -327,6 +327,111 @@ await test("checkout: uses catalog prices, is atomic, and recounts to zero", asy
   ok((await one(`select stock from public.products where id = $1`, [A.prod])).stock === 0, "recount to zero failed");
 });
 
+// ---- Pack sizes --------------------------------------------------------------------------------------
+// Products are priced and counted per single item; a pack size sells a fixed number of them at its own price.
+const packProd = async (owner, shop, name, stock = 100) =>
+  (await call(owner, `insert into public.products (shop_id, name, cost_price, selling_price, stock) values ($1, $2, 2, 4, $3) returning id`, [shop, name, stock])).rows[0].id;
+const packA = await packProd(U.ownerA, shopA, "Pack Water A");
+const packB = await packProd(U.ownerB, shopB, "Pack Water B");
+const unitOf = async (owner, shop, product, name, quantity, price) =>
+  (await call(owner, `insert into public.product_units (shop_id, product_id, name, quantity, selling_price) values ($1, $2, $3, $4, $5) returning id`, [shop, product, name, quantity, price])).rows[0].id;
+const packUnitA = await unitOf(U.ownerA, shopA, packA, "Pack", 12, 40);
+const packUnitB = await unitOf(U.ownerB, shopB, packB, "Pack", 6, 20);
+const sellLines = (user, shop, lines) => call(user, `select public.create_sale($1, $2, null, 'cash', 0, $3::jsonb) as id`, [shop, user.id, JSON.stringify(lines)]);
+
+await test("packs: admins add, edit and delete pack sizes; cashiers can only read them", async () => {
+  const extra = (await call(U.adminA, `insert into public.product_units (shop_id, product_id, name, quantity, selling_price) values ($1, $2, 'Box', 48, 150) returning id`, [shopA, packA])).rows[0].id;
+  await call(U.adminA, `update public.product_units set selling_price = 140 where id = $1`, [extra]);
+  ok((await call(U.cashA, `select count(*)::int c from public.product_units where shop_id = $1`, [shopA])).rows[0].c === 2, "cashier cannot read");
+  await denied(() => call(U.cashA, `insert into public.product_units (shop_id, product_id, name, quantity, selling_price) values ($1, $2, 'Sneaky', 3, 1)`, [shopA, packA]), /row-level security/, "cashier adds");
+  await noRows(() => call(U.cashA, `update public.product_units set selling_price = 0.01 where id = $1 returning id`, [extra]), "cashier edits");
+  await noRows(() => call(U.cashA, `delete from public.product_units where id = $1 returning id`, [extra]), "cashier deletes");
+  await call(U.adminA, `delete from public.product_units where id = $1`, [extra]);
+});
+await test("packs: a size needs 2 or more items, a price, a name, and can't repeat on a product", async () => {
+  const add = (name, quantity, price) => call(U.ownerA, `insert into public.product_units (shop_id, product_id, name, quantity, selling_price) values ($1, $2, $3, $4, $5)`, [shopA, packA, name, quantity, price]);
+  await denied(() => add("One", 1, 5), /check|violates/, "pack of 1");
+  await denied(() => add("Free", 3, 0), /check|violates/, "free pack");
+  await denied(() => add("   ", 3, 5), /check|violates/, "blank name");
+  await denied(() => add("Pack", 3, 5), /unique|duplicate/, "same name twice");
+  await denied(() => add("Dozen", 12, 5), /unique|duplicate/, "same size twice");
+});
+await test("packs: isolation: another shop cannot read, add, edit or point at them", async () => {
+  ok((await call(U.ownerB, `select count(*)::int c from public.product_units where shop_id = $1`, [shopA])).rows[0].c === 0, "B reads A's packs");
+  ok((await call(U.ownerB, `select count(*)::int c from public.product_units where shop_id = $1`, [shopB])).rows[0].c >= 1, "B cannot read its own");
+  await denied(() => call(U.ownerB, `insert into public.product_units (shop_id, product_id, name, quantity, selling_price) values ($1, $2, 'Injected', 3, 1)`, [shopA, packA]), /row-level security/, "insert into A");
+  await denied(() => call(U.ownerB, `insert into public.product_units (shop_id, product_id, name, quantity, selling_price) values ($1, $2, 'Crossed', 3, 1)`, [shopB, packA]), /foreign key/, "B's shop, A's product");
+  await noRows(() => call(U.ownerB, `update public.product_units set selling_price = 0.01 where id = $1 returning id`, [packUnitA]), "edit A's pack");
+  await noRows(() => call(U.ownerB, `delete from public.product_units where id = $1 returning id`, [packUnitA]), "delete A's pack");
+  await denied(() => q(`update public.product_units set shop_id = $1 where id = $2`, [shopB, packUnitA]), /shop_id cannot be changed|foreign key/, "move a pack between shops");
+});
+await test("packs: a barcode names one thing, a product or a pack size, never both", async () => {
+  await call(U.ownerA, `update public.product_units set barcode = 'PK-777' where id = $1`, [packUnitA]);
+  await denied(() => call(U.ownerA, `update public.products set barcode = 'PK-777' where id = $1`, [packA]), /already uses the barcode/, "product takes a pack's barcode");
+  await denied(() => call(U.ownerA, `insert into public.products (shop_id, name, cost_price, selling_price, barcode) values ($1, 'Clash', 1, 2, 'PK-777')`, [shopA]), /already uses the barcode/, "new product takes a pack's barcode");
+  await denied(() => call(U.ownerA, `update public.product_units set barcode = '111' where id = $1`, [packUnitA]), /already uses the barcode/, "pack takes a product's barcode");
+  await call(U.ownerB, `update public.products set barcode = 'PK-777' where id = $1`, [packB]);   // the same code in another shop is fine
+  await call(U.ownerA, `update public.product_units set barcode = null where id = $1`, [packUnitA]);
+});
+await test("checkout: a pack charges the pack's own price and takes the whole pack out of stock", async () => {
+  const before = (await one(`select stock from public.products where id = $1`, [packA])).stock;
+  const id = (await sellLines(U.cashA, shopA, [{ product_id: packA, quantity: 2, unit_id: packUnitA }])).rows[0].id;
+  ok((await one(`select stock from public.products where id = $1`, [packA])).stock === before - 24, "stock did not fall by 2 x 12");
+  const sale = await one(`select subtotal::float s, total::float t from public.sales where id = $1`, [id]);
+  ok(sale.s === 80 && sale.t === 80, JSON.stringify(sale));
+  const line = await one(`select quantity, unit_price::float p, unit_cost::float c, unit_quantity, unit_name, unit_id from public.sale_lines where sale_id = $1`, [id]);
+  ok(line.quantity === 2 && line.p === 40 && line.c === 24 && line.unit_quantity === 12 && line.unit_name === "Pack" && line.unit_id === packUnitA, JSON.stringify(line));
+  const move = await one(`select type, quantity, notes from public.stock_movements where notes like $1`, [`Sale ${id}%`]);
+  ok(move.type === "out" && move.quantity === 24, JSON.stringify(move));
+});
+await test("checkout: singles and packs of one product are counted together against stock", async () => {
+  await q(`update public.products set stock = 30 where id = $1`, [packA]);
+  await denied(() => sellLines(U.cashA, shopA, [{ product_id: packA, quantity: 2, unit_id: packUnitA }, { product_id: packA, quantity: 7 }]), /Insufficient stock/, "31 items from 30");
+  ok((await one(`select stock from public.products where id = $1`, [packA])).stock === 30, "stock changed on refusal");
+  await sellLines(U.cashA, shopA, [{ product_id: packA, quantity: 2, unit_id: packUnitA }, { product_id: packA, quantity: 6 }]);
+  ok((await one(`select stock from public.products where id = $1`, [packA])).stock === 0, "30 items from 30 should leave 0");
+  await q(`update public.products set stock = 100 where id = $1`, [packA]);
+});
+await test("checkout: a pack can't be bigger than what is in stock", async () => {
+  await q(`update public.products set stock = 11 where id = $1`, [packA]);
+  await denied(() => sellLines(U.cashA, shopA, [{ product_id: packA, quantity: 1, unit_id: packUnitA }]), /Insufficient stock/, "a pack of 12 from 11 items");
+  await q(`update public.products set stock = 100 where id = $1`, [packA]);
+});
+await test("checkout: the client can't use another product's or another shop's pack size", async () => {
+  const other = await packProd(U.ownerA, shopA, "Pack Other A");
+  await denied(() => sellLines(U.cashA, shopA, [{ product_id: other, quantity: 1, unit_id: packUnitA }]), /Pack size not found/, "another product's pack");
+  await denied(() => sellLines(U.cashA, shopA, [{ product_id: packA, quantity: 1, unit_id: packUnitB }]), /Pack size not found/, "another shop's pack");
+  await denied(() => sellLines(U.cashA, shopA, [{ product_id: packA, quantity: 1, unit_id: uuid(555) }]), /Pack size not found/, "an unknown pack");
+  await denied(() => sellLines(U.cashA, shopA, [{ product_id: packA, quantity: 0, unit_id: packUnitA }]), /must be positive/, "zero packs");
+});
+await test("checkout: the pack's current price is used, not one the client sends", async () => {
+  await call(U.ownerA, `update public.product_units set selling_price = 45 where id = $1`, [packUnitA]);
+  const id = (await sellLines(U.cashA, shopA, [{ product_id: packA, quantity: 1, unit_id: packUnitA, unit_price: 0.01 }])).rows[0].id;
+  ok((await one(`select total::float t from public.sales where id = $1`, [id])).t === 45, "client price accepted");
+  await call(U.ownerA, `update public.product_units set selling_price = 40 where id = $1`, [packUnitA]);
+});
+await test("packs: deleting a pack size keeps past sales readable", async () => {
+  const temp = await unitOf(U.ownerA, shopA, packA, "Carton", 24, 70);
+  const id = (await sellLines(U.cashA, shopA, [{ product_id: packA, quantity: 1, unit_id: temp }])).rows[0].id;
+  await call(U.ownerA, `delete from public.product_units where id = $1`, [temp]);
+  const line = await one(`select unit_id, unit_name, unit_quantity, quantity, unit_price::float p from public.sale_lines where sale_id = $1`, [id]);
+  ok(line.unit_id === null && line.unit_name === "Carton" && line.unit_quantity === 24 && line.p === 70, JSON.stringify(line));
+});
+await test("packs: deleting a product removes its pack sizes; a sold product still can't be deleted", async () => {
+  const lone = await packProd(U.ownerA, shopA, "Pack Lonely");
+  await unitOf(U.ownerA, shopA, lone, "Pack", 6, 20);
+  await call(U.ownerA, `delete from public.products where id = $1`, [lone]);
+  ok((await one(`select count(*)::int c from public.product_units where product_id = $1`, [lone])).c === 0, "orphan pack sizes left behind");
+  await denied(() => call(U.ownerA, `delete from public.products where id = $1`, [packA]), /foreign key/, "delete a sold product");
+});
+await test("packs: old clients that send no pack size keep selling singles at the single price", async () => {
+  const before = (await one(`select stock from public.products where id = $1`, [packA])).stock;
+  const id = (await sellLines(U.cashA, shopA, [{ product_id: packA, quantity: 3 }])).rows[0].id;
+  const line = await one(`select unit_id, unit_name, unit_quantity, unit_price::float p, unit_cost::float c from public.sale_lines where sale_id = $1`, [id]);
+  ok(line.unit_id === null && line.unit_name === null && line.unit_quantity === 1 && line.p === 4 && line.c === 2, JSON.stringify(line));
+  ok((await one(`select stock from public.products where id = $1`, [packA])).stock === before - 3, "stock");
+});
+
 // ---- Legacy data (upgrade path only) -----------------------------------------------------------------
 if (legacySeed) {
   await test("upgrade: existing data moved into a first shop with nothing lost", async () => {
