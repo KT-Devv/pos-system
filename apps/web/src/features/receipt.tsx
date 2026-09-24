@@ -169,7 +169,7 @@ export function ReceiptPaper({ receipt }: { receipt: Receipt }) {
       <div className={rule} />
       <footer className="text-center">
         <p className="font-semibold">Thank you for shopping at {shop.name}!</p>
-        <p className="mt-0.5 text-[11px]">We hope to see you again soon!</p>
+        <p className="mt-0.5 text-[11px]">Goods Sold are Not Returnable</p>
       </footer>
     </article>
   );
