@@ -311,7 +311,7 @@ function TerminalPreview() {
         <div className="grid content-between gap-3 rounded-xl border bg-muted/40 p-3">
           <div>
             <p className="text-xs font-bold">Current sale</p>
-            <ul className="mt-2.5 grid gap-2 text-[11px]">
+            <ul className="mt-2.5 grid gap-2 text-xs">
               <li className="flex justify-between"><span>Bottled water ×2</span><span className="font-bold tabular-nums">8.00</span></li>
               <li className="flex justify-between"><span>Fresh bread</span><span className="font-bold tabular-nums">12.50</span></li>
               <li className="flex justify-between"><span>Shea butter</span><span className="font-bold tabular-nums">35.00</span></li>

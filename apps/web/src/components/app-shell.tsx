@@ -94,7 +94,7 @@ export function AppShell({
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-40 flex h-14 items-center justify-between gap-3 border-b bg-background/90 px-4 backdrop-blur md:h-16 md:px-8">
-          <Link href="/" className="flex min-w-0 items-center gap-2.5 md:hidden" aria-label="KT POS System home">
+          <Link href="/" className="flex min-h-11 min-w-0 items-center gap-2.5 md:hidden" aria-label="KT POS System home">
             <Logo size={30} />
             <span className="truncate text-[15px] font-extrabold tracking-tight">{shopName}</span>
           </Link>

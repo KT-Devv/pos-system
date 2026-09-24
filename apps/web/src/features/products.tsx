@@ -252,6 +252,53 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
         </div>
         <CardContent className="p-0">
           {filtered.length > 0 ? (
+            <>
+            <ul className="divide-y md:hidden">
+              {filtered.map(product => {
+                const productPacks = packs.get(product.id) ?? [];
+                const stockNote = describeStock(product.stock, productPacks);
+                return (
+                  <li key={product.id} className="grid gap-2.5 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold">{product.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {product.categories?.name || "Uncategorised"}
+                          {product.barcode && <span className="font-mono"> · {product.barcode}</span>}
+                        </p>
+                      </div>
+                      <p className="shrink-0 font-bold tabular-nums">{formatCurrency(product.selling_price)}</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <StockBadge stock={product.stock} threshold={lowAt} />
+                      {stockNote && <span className="text-xs text-muted-foreground">{stockNote}</span>}
+                    </div>
+                    {productPacks.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {productPacks.map(pack => `${packLabel(pack.name, pack.quantity)} · ${formatCurrency(pack.selling_price)}`).join("  ·  ")}
+                      </p>
+                    )}
+                    {isAdmin && (
+                      <div className="flex gap-2 pt-1">
+                        <Button variant="outline" size="sm" className="flex-1" onClick={() => setLabelFor(product)} aria-label={`Print barcode label for ${product.name}`}>
+                          <ScanBarcode />
+                          Label
+                        </Button>
+                        <Button variant="outline" size="sm" className="flex-1" onClick={() => openEdit(product)} aria-label={`Edit ${product.name}`}>
+                          <Pencil />
+                          Edit
+                        </Button>
+                        <Button variant="outline" size="sm" className="flex-1 text-destructive" onClick={() => setDeleting(product)} aria-label={`Delete ${product.name}`}>
+                          <Trash2 />
+                          Delete
+                        </Button>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+              <div className="hidden md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -321,6 +368,8 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
                 ))}
               </TableBody>
             </Table>
+              </div>
+            </>
           ) : (
             <EmptyState
               icon={Package}
@@ -344,7 +393,7 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
               {editing ? "Update the details below." : "Create a product with its pricing and opening stock."}
             </DialogDescription>
           </DialogHeader>
-          <form id="product-form" onSubmit={saveProduct} className="grid gap-4 sm:grid-cols-2">
+          <form id="product-form" onSubmit={saveProduct} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Product name" htmlFor="product-name" className="sm:col-span-2">
               <Input id="product-name" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
             </Field>

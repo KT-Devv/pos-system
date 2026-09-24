@@ -57,7 +57,7 @@ const DialogContent = React.forwardRef<
       }}
       {...props}
     >
-      <div className="grid min-h-0 gap-4 overflow-x-visible overflow-y-auto">{children}</div>
+      <div className="-mx-1 grid min-h-0 grid-cols-[minmax(0,1fr)] gap-4 overflow-y-auto px-1">{children}</div>
       <DialogPrimitive.Close className="absolute right-3.5 top-3.5 grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none">
         <X className="h-4 w-4" />
         <span className="sr-only">Close</span>

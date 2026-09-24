@@ -273,7 +273,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
               onChange={setSearch}
               onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); scan(); } }}
               className="flex-1"
-              inputClassName="h-12 text-[15px]"
+              inputClassName="h-12 text-base"
             />
             <Button type="button" variant="outline" className="h-12 shrink-0 px-4" aria-label="Scan a barcode with the camera" onClick={() => setScannerOpen(true)}>
               <Camera />
@@ -331,7 +331,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
                       className="flex flex-1 flex-col justify-between gap-2 rounded-xl p-3.5 text-left active:bg-accent disabled:opacity-60"
                     >
                       <div className="min-w-0">
-                        {cat && <p className="truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{cat}</p>}
+                        {cat && <p className="truncate text-xs font-semibold uppercase tracking-wider text-muted-foreground">{cat}</p>}
                         <p className="line-clamp-2 text-sm font-semibold leading-snug">{product.name}</p>
                       </div>
                       <div className="flex items-end justify-between gap-2">
@@ -350,7 +350,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
                             disabled={remaining < pack.quantity}
                             onClick={() => add(product, pack)}
                             aria-label={`Add ${product.name}, ${packLabel(pack.name, pack.quantity)}, ${formatCurrency(pack.selling_price)}`}
-                            className="rounded-md border bg-secondary px-2 py-1 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
+                            className="rounded-md border bg-secondary px-2 py-1.5 text-xs font-semibold hover:bg-accent disabled:opacity-50"
                           >
                             {packLabel(pack.name, pack.quantity)} · {formatCurrency(pack.selling_price)}
                           </button>
@@ -471,7 +471,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
                             max={room}
                             value={item.quantity}
                             onChange={e => updateQuantity(key, e.target.value)}
-                            className="h-8 w-12 px-1 text-center font-semibold tabular-nums"
+                            className="h-8 w-12 px-1 text-center font-semibold tabular-nums max-md:h-10 max-md:w-14"
                           />
                           <Button
                             type="button"
