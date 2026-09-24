@@ -72,7 +72,7 @@ export function SegmentedControl<T extends string>({
             }}
             className={cn(
               "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3 font-semibold disabled:opacity-50 [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0",
-              size === "md" ? "h-8 text-sm max-md:h-10" : "h-11 text-sm",
+              size === "md" ? "h-8 text-sm max-md:h-10 max-md:min-w-0 max-md:px-1.5 max-md:text-[13px]" : "h-11 text-sm",
               fullWidth && "flex-1",
               checked
                 ? "bg-raised text-foreground shadow-sm"
