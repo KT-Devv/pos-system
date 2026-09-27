@@ -547,6 +547,12 @@ begin
   if not public.is_shop_member(p_shop_id) then raise exception 'You do not have access to this shop'; end if;
   select * into shop_row from public.shops where id = p_shop_id;
 
+  -- The cashier on a sale is an identity, not a price: it is trusted from the client only when the
+  -- caller names themselves. An admin may ring up a sale on a teammate's behalf; anyone else can only
+  -- sell under their own name, so a cashier can never pin a sale on a coworker.
+  if p_cashier_id is distinct from auth.uid() and not public.is_shop_admin(p_shop_id) then
+    raise exception 'You can only record sales under your own name';
+  end if;
   if not exists (select 1 from public.shop_members where shop_id = p_shop_id and user_id = p_cashier_id) then
     raise exception 'The cashier is not a member of this shop';
   end if;
@@ -798,21 +804,16 @@ create policy "members update suppliers"
 create policy "admins delete suppliers"
   on public.suppliers for delete to authenticated using (public.is_shop_admin(shop_id));
 
--- Sales history and stock movements are written by the RPCs; direct access is read-only for staff.
+-- Sales history and stock movements are written only by create_sale() and record_stock_movement()
+-- (both security definer, so they bypass these grants/policies). Nobody, including admins, can
+-- insert, edit or delete these rows through the API directly: that would let a sale's total or a
+-- stock count diverge from the checkout math, or let someone erase the trail of a mistake or theft.
 create policy "members read sales"
   on public.sales for select to authenticated using (public.is_shop_member(shop_id));
-create policy "admins manage sales"
-  on public.sales for all to authenticated using (public.is_shop_admin(shop_id)) with check (public.is_shop_admin(shop_id));
-
 create policy "members read sale lines"
   on public.sale_lines for select to authenticated using (public.is_shop_member(shop_id));
-create policy "admins manage sale lines"
-  on public.sale_lines for all to authenticated using (public.is_shop_admin(shop_id)) with check (public.is_shop_admin(shop_id));
-
 create policy "members read stock movements"
   on public.stock_movements for select to authenticated using (public.is_shop_member(shop_id));
-create policy "admins manage stock movements"
-  on public.stock_movements for all to authenticated using (public.is_shop_admin(shop_id)) with check (public.is_shop_admin(shop_id));
 
 -- @@ backfill -----------------------------------------------------------------------------------
 
@@ -852,11 +853,16 @@ grant insert, update, delete on
   public.products,
   public.product_units,
   public.customers,
-  public.suppliers,
-  public.sales,
-  public.sale_lines,
-  public.stock_movements
+  public.suppliers
 to authenticated;
+
+-- sales, sale_lines and stock_movements are deliberately not granted insert/update/delete: they are
+-- written only by create_sale() and record_stock_movement(), which run with definer rights and so
+-- do not need these grants. Without them, even an admin's own access token cannot rewrite or erase
+-- a sale or a stock movement directly through the API. The revoke is explicit (not just "left out
+-- of the grant above") so it holds even on a project where these tables ever picked up broader
+-- default privileges.
+revoke insert, update, delete on public.sales, public.sale_lines, public.stock_movements from authenticated;
 
 grant update on public.shops to authenticated;
 

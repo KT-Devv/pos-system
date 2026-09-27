@@ -48,7 +48,15 @@ Isolation is enforced in the database, not in the UI, in three layers:
 3. **RPCs check membership themselves.** `create_sale`, `record_stock_movement`
    and the team functions run with definer rights, so each one verifies the
    caller belongs to the shop, and that every product, customer, supplier and
-   cashier involved belongs to it too.
+   cashier involved belongs to it too. `create_sale` also requires the cashier
+   on the sale to be the caller, unless the caller is an admin or owner ringing
+   it up on someone's behalf -- a plain cashier can never pin a sale on a
+   coworker.
+4. **The ledger is append-only.** `sales`, `sale_lines` and `stock_movements`
+   grant no direct insert/update/delete to anyone, including admins; only
+   `create_sale` and `record_stock_movement` write them. A stolen admin
+   session cannot rewrite a sale's total or erase a stock movement through the
+   API -- it can only do what those two functions allow.
 
 ## Roles
 

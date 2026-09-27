@@ -165,9 +165,12 @@ await test("isolation: an owner cannot edit or delete another shop's rows", asyn
 await test("isolation: rows cannot be pointed at another shop's data (composite foreign keys)", async () => {
   await denied(() => call(U.ownerA, `insert into public.products (shop_id, name, category_id, cost_price, selling_price) values ($1, 'X', $2, 1, 2)`, [shopA, B.cat]), /foreign key/, "product -> foreign category");
   await denied(() => call(U.ownerA, `update public.products set category_id = $1 where id = $2`, [B.cat, A.prod]), /foreign key/, "re-point category");
-  await denied(() => call(U.ownerA, `insert into public.stock_movements (shop_id, product_id, type, quantity) values ($1, $2, 'in', 1)`, [shopA, B.prod]), /foreign key/, "movement -> foreign product");
-  await denied(() => call(U.ownerA, `insert into public.sale_lines (shop_id, sale_id, product_id, quantity, unit_price, unit_cost) values ($1, $2, $3, 1, 1, 1)`, [shopA, saleA, B.prod]), /foreign key/, "sale line -> foreign product");
-  await denied(() => call(U.ownerA, `insert into public.sale_lines (shop_id, sale_id, product_id, quantity, unit_price, unit_cost) values ($1, $2, $3, 1, 1, 1)`, [shopA, saleB, A.prod]), /foreign key/, "sale line -> foreign sale");
+  // sales, sale_lines and stock_movements no longer grant direct writes to anyone (see migration 007),
+  // so these two go in as a superuser -- the same trust level as the security-definer RPCs that are the
+  // only real writers -- to prove the composite foreign key holds even there.
+  await denied(() => q(`insert into public.stock_movements (shop_id, product_id, type, quantity) values ($1, $2, 'in', 1)`, [shopA, B.prod]), /foreign key/, "movement -> foreign product");
+  await denied(() => q(`insert into public.sale_lines (shop_id, sale_id, product_id, quantity, unit_price, unit_cost) values ($1, $2, $3, 1, 1, 1)`, [shopA, saleA, B.prod]), /foreign key/, "sale line -> foreign product");
+  await denied(() => q(`insert into public.sale_lines (shop_id, sale_id, product_id, quantity, unit_price, unit_cost) values ($1, $2, $3, 1, 1, 1)`, [shopA, saleB, A.prod]), /foreign key/, "sale line -> foreign sale");
 });
 await test("isolation: even a superuser-level slip cannot move a row between shops", async () => {
   await denied(() => q(`update public.products set shop_id = $1 where id = $2`, [shopB, A.prod]), /shop_id cannot be changed|foreign key/);
@@ -186,7 +189,13 @@ await test("isolation: create_sale refuses another shop, its products, customers
   await denied(() => call(U.cashA, `select public.create_sale($1, $2, null, 'cash', 0, $3::jsonb)`, [shopB, U.cashA.id, lines(B.prod)]), /do not have access/, "sell into shop B");
   await denied(() => call(U.cashA, `select public.create_sale($1, $2, null, 'cash', 0, $3::jsonb)`, [shopA, U.cashA.id, lines(B.prod)]), /Product not found/, "sell B's product");
   await denied(() => call(U.cashA, `select public.create_sale($1, $2, $3, 'cash', 0, $4::jsonb)`, [shopA, U.cashA.id, B.cust, lines(A.prod)]), /Customer not found/, "B's customer");
-  await denied(() => call(U.cashA, `select public.create_sale($1, $2, null, 'cash', 0, $3::jsonb)`, [shopA, U.cashB.id, lines(A.prod)]), /not a member/, "attribute to B's cashier");
+  await denied(() => call(U.cashA, `select public.create_sale($1, $2, null, 'cash', 0, $3::jsonb)`, [shopA, U.cashB.id, lines(A.prod)]), /own name/, "attribute to B's cashier");
+});
+await test("isolation: a cashier cannot pin a sale on a coworker, but an admin can ring one up for them", async () => {
+  const lines = (p) => JSON.stringify([{ product_id: p, quantity: 1 }]);
+  await denied(() => call(U.cashA, `select public.create_sale($1, $2, null, 'cash', 0, $3::jsonb)`, [shopA, U.adminA.id, lines(A.prod)]), /own name/, "cashier attributes to admin");
+  const id = (await call(U.adminA, `select public.create_sale($1, $2, null, 'cash', 0, $3::jsonb) as id`, [shopA, U.cashA.id, lines(A.prod)])).rows[0].id;
+  ok((await one(`select cashier_id from public.sales where id = $1`, [id])).cashier_id === U.cashA.id, "admin's override was not recorded");
 });
 await test("isolation: record_stock_movement cannot touch another shop's product or supplier", async () => {
   await denied(() => call(U.cashA, `select public.record_stock_movement($1, 'in', 5)`, [B.prod]), /Product not found/);
@@ -212,10 +221,17 @@ await test("cashier: cannot change the catalog, sales history, or delete custome
   await noRows(() => call(U.cashA, `update public.products set selling_price = 0.01 where id = $1 returning id`, [A.prod]), "edit price");
   await noRows(() => call(U.cashA, `delete from public.products where id = $1 returning id`, [A.prod]), "delete product");
   await noRows(() => call(U.cashA, `update public.categories set name = 'x' where id = $1 returning id`, [A.cat]), "edit category");
-  await noRows(() => call(U.cashA, `update public.sales set total = 0.01 returning id`), "edit sales");
-  await noRows(() => call(U.cashA, `delete from public.sales returning id`), "delete sales");
+  await denied(() => call(U.cashA, `update public.sales set total = 0.01 returning id`), /permission denied/, "edit sales");
+  await denied(() => call(U.cashA, `delete from public.sales returning id`), /permission denied/, "delete sales");
   await noRows(() => call(U.cashA, `delete from public.customers where id = $1 returning id`, [A.cust]), "delete customer");
-  await denied(() => call(U.cashA, `insert into public.sales (shop_id, cashier_id, subtotal, total, payment_method) values ($1, $2, 1, 1, 'cash')`, [shopA, U.cashA.id]), /row-level security/, "forge a sale");
+  await denied(() => call(U.cashA, `insert into public.sales (shop_id, cashier_id, subtotal, total, payment_method) values ($1, $2, 1, 1, 'cash')`, [shopA, U.cashA.id]), /permission denied/, "forge a sale");
+});
+await test("admin: cannot write sales, sale lines or stock movements directly either -- only the RPCs can", async () => {
+  const saleId = (await call(U.adminA, `select id from public.sales where shop_id = $1 limit 1`, [shopA])).rows[0].id;
+  await denied(() => call(U.adminA, `insert into public.sales (shop_id, cashier_id, subtotal, total, payment_method) values ($1, $2, 1, 1, 'cash')`, [shopA, U.adminA.id]), /permission denied/, "admin forges a sale");
+  await denied(() => call(U.adminA, `update public.sales set total = 0.01 where id = $1`, [saleId]), /permission denied/, "admin edits a sale");
+  await denied(() => call(U.adminA, `delete from public.sales where id = $1`, [saleId]), /permission denied/, "admin deletes a sale");
+  await denied(() => call(U.adminA, `insert into public.stock_movements (shop_id, product_id, type, quantity, notes) values ($1, $2, 'in', 1, 'off the books')`, [shopA, A.prod]), /permission denied/, "admin forges a stock movement");
 });
 await test("cashier: cannot edit shop settings, invite, promote or remove anyone", async () => {
   await noRows(() => call(U.cashA, `update public.shops set name = 'Mine now' where id = $1 returning id`, [shopA]), "rename shop");

@@ -37,7 +37,10 @@ multi-tenant: users create or join a shop on first login, and every business
 table is scoped by `shop_id` (see `docs/MULTI_TENANCY.md`). Databases created
 before shops existed run migrations 002, 003 and 004 in order; 003 is required
 for cashiers to complete sales and 004 converts existing data into one shop; 005 adds
-table grants and 006 adds pack sizes.
+table grants, 006 adds pack sizes, and 007 removes direct write access to `sales`,
+`sale_lines` and `stock_movements` (written only by `create_sale`/`record_stock_movement`)
+and stops a cashier from recording a sale under a coworker's name. Every database created
+before 007 existed must run it.
 Checkout uses the shop-scoped `create_sale(p_shop_id, ...)`; inventory uses
 `record_stock_movement`. Stock is always counted in single items: a pack size
 (`product_units`) sells a fixed number of them, and `create_sale` takes
