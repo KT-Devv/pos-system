@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Badge,
   Button,
   Card,
   CardContent,
@@ -36,12 +37,23 @@ import {
   Textarea,
 } from "@pos/shared";
 import { useWorkspace } from "@/lib/workspace";
-import { ArrowDownToLine, ArrowRight, ArrowUpFromLine, PackageSearch, Plus, SlidersHorizontal, Truck } from "lucide-react";
+import {
+  ArrowDownToLine,
+  ArrowRight,
+  ArrowUpFromLine,
+  History as HistoryIcon,
+  type LucideIcon,
+  PackageSearch,
+  Plus,
+  SlidersHorizontal,
+  Truck,
+} from "lucide-react";
 import {
   type Client,
   Field,
   type Feedback,
   fail,
+  fetchAll,
   loadPackSizes,
   MenuSelect,
   type PackSizeRow,
@@ -53,21 +65,32 @@ import {
 
 type MovementType = "in" | "out" | "adjustment";
 type LevelFilter = "all" | "low" | "out";
+type HistoryRange = "7" | "30" | "90" | "all";
+/** One row of the stock ledger: a restock, a removal, or a recount. Quantity is single items;
+ * for a recount it is the change (positive or negative) made to reach the counted stock. */
+type StockMovementRow = { id: string; created_at: string; type: MovementType; quantity: number; notes: string | null; product_id: string; supplier_id: string | null };
 
 const emptySupplier = { name: "", phone: "", email: "", address: "" };
 
-const TYPE_COPY: Record<MovementType, { quantity: string; hint: string; submit: string }> = {
-  in: { quantity: "Quantity received", hint: "Adds to the stock on hand.", submit: "Record stock in" },
-  out: { quantity: "Quantity removed", hint: "Removes from stock (damage, samples, transfers).", submit: "Record stock out" },
-  adjustment: { quantity: "Counted stock", hint: "Sets the stock on hand to exactly this number.", submit: "Save adjustment" },
+const TYPE_COPY: Record<MovementType, { quantity: string; hint: string; submit: string; label: string; icon: LucideIcon }> = {
+  in: { quantity: "Quantity received", hint: "Adds to the stock on hand.", submit: "Record stock in", label: "Stock in", icon: ArrowDownToLine },
+  out: { quantity: "Quantity removed", hint: "Removes from stock (damage, samples, transfers).", submit: "Record stock out", label: "Stock out", icon: ArrowUpFromLine },
+  adjustment: { quantity: "Counted stock", hint: "Sets the stock on hand to exactly this number.", submit: "Save adjustment", label: "Recount", icon: SlidersHorizontal },
 };
+const HISTORY_RANGES: { value: HistoryRange; label: string }[] = [
+  { value: "7", label: "7 days" },
+  { value: "30", label: "30 days" },
+  { value: "90", label: "90 days" },
+  { value: "all", label: "All time" },
+];
 
 export function Inventory({ supabase, onError, onNotice }: { supabase: Client } & Feedback) {
   const { shop } = useWorkspace();
   const lowAt = shop.low_stock_threshold;
-  const [activeTab, setActiveTab] = useState<"movements" | "suppliers">("movements");
+  const [activeTab, setActiveTab] = useState<"movements" | "history" | "suppliers">("movements");
   const [products, setProducts] = useState<Product[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [movements, setMovements] = useState<StockMovementRow[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   const [productId, setProductId] = useState("");
@@ -83,18 +106,25 @@ export function Inventory({ supabase, onError, onNotice }: { supabase: Client } 
   const [levelFilter, setLevelFilter] = useState<LevelFilter>("all");
   const [search, setSearch] = useState("");
 
+  const [historyType, setHistoryType] = useState<MovementType | "all">("in");
+  const [historyRange, setHistoryRange] = useState<HistoryRange>("30");
+  const [historySearch, setHistorySearch] = useState("");
+
   const [supplierOpen, setSupplierOpen] = useState(false);
   const [supplierForm, setSupplierForm] = useState(emptySupplier);
 
   const load = useCallback(async () => {
-    const [{ data: prodData, error: prodError }, { data: suppData, error: suppError }, packRes] = await Promise.all([
+    const [{ data: prodData, error: prodError }, { data: suppData, error: suppError }, packRes, movRes] = await Promise.all([
       supabase.from("products").select("id,name,cost_price,selling_price,stock,barcode").order("name"),
       supabase.from("suppliers").select("id,name,phone,email,address").order("name"),
       loadPackSizes(supabase),
+      fetchAll<StockMovementRow>((from, to) =>
+        supabase.from("stock_movements").select("id,created_at,type,quantity,notes,product_id,supplier_id").order("created_at", { ascending: false }).order("id").range(from, to)),
     ]);
     if (prodError) fail(onError, prodError); else setProducts((prodData ?? []) as Product[]);
     if (suppError) fail(onError, suppError); else setSuppliers((suppData ?? []) as Supplier[]);
     if (packRes.error) fail(onError, packRes.error); else setPacks(packRes.data);
+    if (movRes.error) fail(onError, movRes.error); else setMovements(movRes.data);
     setLoaded(true);
   }, [supabase, onError]);
 
@@ -173,6 +203,32 @@ export function Inventory({ supabase, onError, onNotice }: { supabase: Client } 
   const valuation = products.reduce((sum, p) => sum + p.stock * p.cost_price, 0);
   const copy = TYPE_COPY[type];
 
+  const productById = useMemo(() => new Map(products.map(p => [p.id, p])), [products]);
+  const supplierById = useMemo(() => new Map(suppliers.map(s => [s.id, s])), [suppliers]);
+
+  const history = useMemo(() => {
+    const cutoff = historyRange === "all" ? null : Date.now() - Number(historyRange) * 24 * 60 * 60 * 1000;
+    const term = historySearch.trim().toLowerCase();
+    const rows = movements
+      .filter(m => historyType === "all" || m.type === historyType)
+      .filter(m => !cutoff || new Date(m.created_at).getTime() >= cutoff)
+      .filter(m => {
+        if (!term) return true;
+        const product = productById.get(m.product_id);
+        const supplier = m.supplier_id ? supplierById.get(m.supplier_id) : null;
+        return `${product?.name ?? ""} ${supplier?.name ?? ""} ${m.notes ?? ""}`.toLowerCase().includes(term);
+      })
+      .map(m => {
+        const product = productById.get(m.product_id);
+        const supplier = m.supplier_id ? supplierById.get(m.supplier_id) : null;
+        const cost = m.quantity * (product?.cost_price ?? 0);
+        return { ...m, productName: product?.name ?? "Deleted product", supplierName: supplier?.name ?? null, cost };
+      });
+    const totalQuantity = rows.reduce((sum, r) => sum + r.quantity, 0);
+    const totalCost = rows.reduce((sum, r) => sum + r.cost, 0);
+    return { rows, totalQuantity, totalCost };
+  }, [movements, historyType, historyRange, historySearch, productById, supplierById]);
+
   return (
     <div className="grid gap-6">
       <PageHeader
@@ -189,6 +245,7 @@ export function Inventory({ supabase, onError, onNotice }: { supabase: Client } 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)}>
         <TabsList>
           <TabsTrigger value="movements">Stock</TabsTrigger>
+          <TabsTrigger value="history">History</TabsTrigger>
           <TabsTrigger value="suppliers">Suppliers ({suppliers.length})</TabsTrigger>
         </TabsList>
 
@@ -330,6 +387,89 @@ export function Inventory({ supabase, onError, onNotice }: { supabase: Client } 
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="history">
+          <Card>
+            <div className="flex flex-col gap-3 border-b p-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <SearchInput label="Search history" placeholder="Product, supplier or note…" value={historySearch} onChange={setHistorySearch} className="sm:w-64" />
+                <SegmentedControl
+                  aria-label="Filter by movement type"
+                  value={historyType}
+                  onValueChange={setHistoryType}
+                  options={[
+                    { value: "all", label: "All" },
+                    { value: "in", label: "In" },
+                    { value: "out", label: "Out" },
+                    { value: "adjustment", label: "Recounts" },
+                  ]}
+                />
+              </div>
+              <SegmentedControl aria-label="Period" value={historyRange} onValueChange={setHistoryRange} options={HISTORY_RANGES} />
+            </div>
+
+            {history.rows.length > 0 && (
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-1 border-b bg-muted/40 px-4 py-2.5 text-sm">
+                <span className="font-semibold">{history.rows.length.toLocaleString()} {history.rows.length === 1 ? "movement" : "movements"}</span>
+                <span className="text-muted-foreground tabular-nums">{history.totalQuantity.toLocaleString()} items</span>
+                <span className="text-muted-foreground tabular-nums">
+                  {history.totalCost < 0 ? `−${formatCurrency(Math.abs(history.totalCost))}` : formatCurrency(history.totalCost)} at cost
+                </span>
+              </div>
+            )}
+
+            <CardContent className="p-0">
+              {history.rows.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Product</TableHead>
+                      <TableHead className="hidden sm:table-cell">Type</TableHead>
+                      <TableHead className="text-right">Quantity</TableHead>
+                      <TableHead className="hidden text-right md:table-cell">Cost</TableHead>
+                      <TableHead className="hidden lg:table-cell">Supplier</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {history.rows.map(row => {
+                      const type = TYPE_COPY[row.type];
+                      const Icon = type.icon;
+                      const signed = row.type === "adjustment" && row.quantity > 0;
+                      return (
+                        <TableRow key={row.id}>
+                          <TableCell className="whitespace-nowrap text-muted-foreground">
+                            {new Date(row.created_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
+                          </TableCell>
+                          <TableCell className="font-semibold">
+                            {row.productName}
+                            {row.notes && <p className="text-xs font-normal text-muted-foreground">{row.notes}</p>}
+                          </TableCell>
+                          <TableCell className="hidden sm:table-cell">
+                            <Badge variant="secondary"><Icon />{type.label}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right font-semibold tabular-nums">
+                            {signed ? "+" : ""}{row.quantity.toLocaleString()}
+                          </TableCell>
+                          <TableCell className="hidden text-right tabular-nums text-muted-foreground md:table-cell">
+                            {row.cost < 0 ? `−${formatCurrency(Math.abs(row.cost))}` : formatCurrency(row.cost)}
+                          </TableCell>
+                          <TableCell className="hidden text-muted-foreground lg:table-cell">{row.supplierName ?? "—"}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              ) : (
+                <EmptyState
+                  icon={HistoryIcon}
+                  title={!loaded ? "Loading history…" : movements.length === 0 ? "No stock movements yet" : "Nothing matches"}
+                  description={!loaded ? undefined : movements.length === 0 ? "Restocks and other movements you record will show up here." : "Try a different search, type or period."}
+                />
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="suppliers">
