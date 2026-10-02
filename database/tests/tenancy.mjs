@@ -448,6 +448,96 @@ await test("packs: old clients that send no pack size keep selling singles at th
   ok((await one(`select stock from public.products where id = $1`, [packA])).stock === before - 3, "stock");
 });
 
+// ---- Bulk entry (migration 008) ----------------------------------------------------------------------
+const importRows = (rows) => JSON.stringify(rows);
+const countNamed = async (shop, like) => (await one(`select count(*)::int c from public.products where shop_id = $1 and name like $2`, [shop, like])).c;
+await test("bulk import: only admins and owners can import products", async () => {
+  const rows = importRows([{ name: "BULK Cashier Try", cost_price: 1, selling_price: 2 }]);
+  await denied(() => call(U.cashA, `select public.bulk_import_products($1, $2::jsonb)`, [shopA, rows]), /Only admins/, "cashier imports");
+  await denied(() => call(U.ownerB, `select public.bulk_import_products($1, $2::jsonb)`, [shopA, rows]), /Only admins/, "another shop's owner imports");
+  await denied(() => call(null, `select public.bulk_import_products($1, $2::jsonb)`, [shopA, rows]), /permission denied/, "visitor imports");
+  ok((await countNamed(shopA, "BULK%")) === 0, "something was created");
+});
+await test("bulk import: creates products, new categories (once) and pack sizes; re-uploading adds nothing", async () => {
+  const rows = importRows([
+    { name: "BULK Milk", category: "Dairy", cost_price: 8, selling_price: 12.5, stock: 20, barcode: "BULK-1", packs: [{ name: "Carton", quantity: 24, selling_price: 260, barcode: "BULK-C" }, { name: "Pack", quantity: 6, selling_price: 70, barcode: null }] },
+    { name: "  BULK   Cheese ", category: "dairy", cost_price: 3, selling_price: 5 },
+    { name: "BULK Water", category: "Drinks", cost_price: 1, selling_price: 2, stock: 5 },
+  ]);
+  const first = (await call(U.adminA, `select public.bulk_import_products($1, $2::jsonb) as r`, [shopA, rows])).rows[0].r;
+  ok(first.products === 3 && first.packs === 2 && first.categories === 1 && first.skipped === 0, JSON.stringify(first));
+  const cats = (await q(`select name from public.categories where shop_id = $1 and lower(name) in ('dairy','drinks') order by name`, [shopA])).rows.map(r => r.name);
+  ok(cats.join() === "Dairy,Drinks", cats.join());
+  const milk = await one(`select p.stock, c.name cat, (select count(*)::int from public.product_units u where u.product_id = p.id) packs from public.products p join public.categories c on c.id = p.category_id where p.shop_id = $1 and p.name = 'BULK Milk'`, [shopA]);
+  ok(milk.stock === 20 && milk.cat === "Dairy" && milk.packs === 2, JSON.stringify(milk));
+  ok((await countNamed(shopA, "BULK Cheese")) === 1, "name was not tidied");
+  const again = (await call(U.adminA, `select public.bulk_import_products($1, $2::jsonb) as r`, [shopA, rows])).rows[0].r;
+  ok(again.products === 0 && again.skipped === 3 && again.categories === 0, JSON.stringify(again));
+  ok((await countNamed(shopA, "BULK%")) === 3, "a duplicate was created");
+});
+await test("bulk import: one bad row rolls back the whole file and names the row", async () => {
+  const before = await countNamed(shopA, "ATOMIC%");
+  await denied(() => call(U.adminA, `select public.bulk_import_products($1, $2::jsonb)`, [shopA, importRows([
+    { name: "ATOMIC One", category: "Never made", cost_price: 1, selling_price: 2 },
+    { name: "ATOMIC Two", cost_price: 1, selling_price: 0 },
+  ])]), /Row 2:/, "free product");
+  await denied(() => call(U.adminA, `select public.bulk_import_products($1, $2::jsonb)`, [shopA, importRows([
+    { name: "ATOMIC Three", cost_price: 1, selling_price: 2, barcode: "111" },
+  ])]), /Row 1:/, "barcode taken by a product");
+  await denied(() => call(U.adminA, `select public.bulk_import_products($1, $2::jsonb)`, [shopA, importRows([
+    { name: "ATOMIC Four", cost_price: 1, selling_price: 2, packs: [{ name: "Box", quantity: 1, selling_price: 5 }] },
+  ])]), /Row 1:/, "pack of one");
+  await denied(() => call(U.adminA, `select public.bulk_import_products($1, $2::jsonb)`, [shopA, importRows([
+    { name: "ATOMIC Five", cost_price: 1, selling_price: 2, barcode: "BULK-1" },
+  ])]), /Row 1:/, "barcode taken by another import");
+  await denied(() => call(U.adminA, `select public.bulk_import_products($1, $2::jsonb)`, [shopA, importRows([{ name: "ATOMIC Six", cost_price: "abc", selling_price: 2 }])]), /Row 1:/, "text for a price");
+  ok((await countNamed(shopA, "ATOMIC%")) === before, "part of a failed file was kept");
+  ok((await one(`select count(*)::int c from public.categories where shop_id = $1 and name = 'Never made'`, [shopA])).c === 0, "a category from a failed file was kept");
+});
+await test("bulk import: empty, oversized and malformed input is refused", async () => {
+  await denied(() => call(U.adminA, `select public.bulk_import_products($1, '[]'::jsonb)`, [shopA]), /no rows/);
+  await denied(() => call(U.adminA, `select public.bulk_import_products($1, '{"a":1}'::jsonb)`, [shopA]), /no rows/);
+  await denied(() => call(U.adminA, `select public.bulk_import_products($1, $2::jsonb)`, [shopA, JSON.stringify(Array.from({ length: 2001 }, (_, i) => ({ name: `X${i}`, cost_price: 1, selling_price: 2 })))]), /at most 2000/);
+  await denied(() => call(U.adminA, `select public.bulk_import_products($1, '[5]'::jsonb)`, [shopA]), /Row 1:/);
+});
+
+await test("bulk stock: any member can record many movements in order, with suppliers and notes", async () => {
+  const milk = (await one(`select id from public.products where shop_id = $1 and name = 'BULK Milk'`, [shopA])).id;
+  const water = (await one(`select id from public.products where shop_id = $1 and name = 'BULK Water'`, [shopA])).id;
+  const n = (await call(U.cashA, `select public.bulk_record_stock($1, $2::jsonb) as n`, [shopA, importRows([
+    { product_id: milk, type: "in", quantity: 48, supplier_id: A.sup, notes: "Weekly delivery" },
+    { product_id: milk, type: "out", quantity: 8, supplier_id: null, notes: null },
+    { product_id: water, type: "adjustment", quantity: 11 },
+  ])])).rows[0].n;
+  ok(n === 3, `n=${n}`);
+  ok((await one(`select stock from public.products where id = $1`, [milk])).stock === 60, "milk stock");
+  ok((await one(`select stock from public.products where id = $1`, [water])).stock === 11, "water stock");
+  const moves = (await q(`select type, quantity, supplier_id, notes from public.stock_movements where product_id = $1 order by created_at, type`, [milk])).rows;
+  ok(moves.some(m => m.type === "in" && m.quantity === 48 && m.supplier_id === A.sup && m.notes === "Weekly delivery"), JSON.stringify(moves));
+});
+await test("bulk stock: one bad row rolls back every row before it", async () => {
+  const milk = (await one(`select id, stock from public.products where shop_id = $1 and name = 'BULK Milk'`, [shopA]));
+  const movesBefore = (await one(`select count(*)::int c from public.stock_movements where product_id = $1`, [milk.id])).c;
+  await denied(() => call(U.cashA, `select public.bulk_record_stock($1, $2::jsonb)`, [shopA, importRows([
+    { product_id: milk.id, type: "in", quantity: 5 },
+    { product_id: milk.id, type: "out", quantity: 99999 },
+  ])]), /Row 2: Insufficient stock/, "take out more than there is");
+  await denied(() => call(U.cashA, `select public.bulk_record_stock($1, $2::jsonb)`, [shopA, importRows([
+    { product_id: milk.id, type: "in", quantity: 5, supplier_id: B.sup },
+  ])]), /Row 1: Supplier not found/, "another shop's supplier");
+  await denied(() => call(U.cashA, `select public.bulk_record_stock($1, $2::jsonb)`, [shopA, importRows([{ product_id: milk.id, type: "in", quantity: 0 }])]), /Row 1:/, "zero quantity");
+  await denied(() => call(U.cashA, `select public.bulk_record_stock($1, $2::jsonb)`, [shopA, importRows([{ product_id: milk.id, type: "sideways", quantity: 1 }])]), /Row 1:/, "unknown type");
+  ok((await one(`select stock from public.products where id = $1`, [milk.id])).stock === milk.stock, "stock changed by a failed file");
+  ok((await one(`select count(*)::int c from public.stock_movements where product_id = $1`, [milk.id])).c === movesBefore, "a movement was kept");
+});
+await test("bulk stock: cannot touch another shop's products or be called by outsiders", async () => {
+  await denied(() => call(U.cashA, `select public.bulk_record_stock($1, $2::jsonb)`, [shopA, importRows([{ product_id: B.prod, type: "in", quantity: 1 }])]), /Row 1: Product not found/, "B's product through A");
+  await denied(() => call(U.cashA, `select public.bulk_record_stock($1, $2::jsonb)`, [shopB, importRows([{ product_id: B.prod, type: "in", quantity: 1 }])]), /do not have access/, "into shop B");
+  await denied(() => call(null, `select public.bulk_record_stock($1, $2::jsonb)`, [shopA, importRows([{ product_id: A.prod, type: "in", quantity: 1 }])]), /permission denied/, "visitor");
+  await denied(() => call(U.cashA, `select public.bulk_record_stock($1, '[]'::jsonb)`, [shopA]), /no rows/);
+  ok((await one(`select stock from public.products where id = $1`, [B.prod])).stock === 19, "B's stock changed");
+});
+
 // ---- Legacy data (upgrade path only) -----------------------------------------------------------------
 if (legacySeed) {
   await test("upgrade: existing data moved into a first shop with nothing lost", async () => {

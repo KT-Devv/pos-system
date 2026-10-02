@@ -212,3 +212,39 @@ export {
   validateShopInput,
 } from "./domain/shop";
 export type { ShopInput, ShopRole } from "./domain/shop";
+
+export {
+  cellText,
+  columnsFor,
+  csvLine,
+  examplesFor,
+  EXAMPLE_PREFIX,
+  IMPORT_BARCODE_MAX,
+  IMPORT_MAX_FILE_BYTES,
+  IMPORT_MAX_ROWS,
+  IMPORT_NOTES_MAX,
+  parseCsv,
+  parseNumber,
+  planProductImport,
+  planStockImport,
+  PRODUCT_COLUMNS,
+  readTable,
+  STOCK_COLUMNS,
+  templateCsv,
+} from "./domain/bulk-import";
+export type {
+  Cell as ImportCell,
+  ExistingCatalog,
+  ImportColumn,
+  ImportIssue,
+  ImportKind,
+  ImportRecord,
+  ProductImportPlan,
+  ProductImportRow,
+  RawTable,
+  StockImportPlan,
+  StockImportProduct,
+  StockImportRow,
+  StockImportType,
+  TableReading,
+} from "./domain/bulk-import";

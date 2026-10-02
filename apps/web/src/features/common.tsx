@@ -79,6 +79,9 @@ export function friendlyError(message: string): string {
   if (/product_units/.test(message) && /schema cache|does not exist|Could not find/i.test(message)) {
     return "This database needs the pack sizes upgrade. Run database/migrations/006_product_units.sql in the Supabase SQL editor, then reload.";
   }
+  if (/bulk_(import_products|record_stock)/.test(message) && /schema cache|does not exist|Could not find/i.test(message)) {
+    return "This database needs the bulk import upgrade. Run database/migrations/008_bulk_import.sql in the Supabase SQL editor, then reload.";
+  }
   if (/row-level security/i.test(message)) return "You don't have permission to do that.";
   if (/currency cannot be changed/i.test(message)) return "The currency can't be changed after sales have been recorded.";
   return message;

@@ -133,6 +133,13 @@ must also run `database/migrations/006_product_units.sql` once in the SQL editor
 the new pack size columns. It changes nothing about existing products, prices,
 stock or sales. Fresh installs get it from `schema.v2.sql`.
 
+### Adding bulk import to a database that already has shops
+
+Run `database/migrations/008_bulk_import.sql` once in the SQL editor (after 007) **before**
+deploying the app that has the Import buttons. It only adds two functions,
+`bulk_import_products` and `bulk_record_stock`; nothing existing changes. Fresh installs get it
+from `schema.v2.sql`.
+
 ## Development commands
 
 Run these commands from the repository root:
@@ -223,6 +230,24 @@ number of those items at its own price ("Pack of 12" for 40.00, "Box of 48" for
 - A pack size can have its own barcode; scanning it adds that pack.
 - Receipts name the pack on the line ("Milk 1L (Pack of 6)"), reports count single
   items sold, and a pack sale queued offline in the desktop app keeps its pack size.
+
+## Importing products and stock from a spreadsheet
+
+**Products > Import** (admins) and **Inventory > Import stock** (anyone on the team) add many rows at
+once from an Excel (`.xlsx`) or CSV file. Each dialog offers a template to download: fill it in below
+the heading row and upload it.
+
+- The file is checked in the browser first, and every problem is listed with its row number.
+  Nothing is imported while any row has a problem, and the database imports the whole file in one
+  transaction, so a file is never half-imported.
+- Products: a name, cost price and selling price are required. Categories that do not exist are
+  created, and one product can have pack sizes (repeat its name on a new row for more). A product whose
+  name is already in the shop is skipped, so uploading a file twice adds nothing.
+- Stock: name each product by name or barcode, with a quantity in single items and a type of In (the
+  default), Out or Recount. Rows run in order, and a supplier must already exist.
+- Rows starting with `e.g.` (the template's examples) are ignored. Limits: 5 MB and 2,000 rows a file.
+- Spreadsheet cells are read as data only (no formulas run) and the file never leaves the browser until
+  you confirm the import.
 
 ## Receipts, barcodes and labels
 

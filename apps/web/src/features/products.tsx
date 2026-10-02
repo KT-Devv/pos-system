@@ -31,7 +31,7 @@ import {
   TableRow,
   validateProductInput,
 } from "@pos/shared";
-import { Camera, FolderPlus, Info, Package, Pencil, Plus, ScanBarcode, Trash2, WandSparkles } from "lucide-react";
+import { Camera, FolderPlus, Info, Package, Pencil, Plus, ScanBarcode, Trash2, Upload, WandSparkles } from "lucide-react";
 import { useWorkspace } from "@/lib/workspace";
 import {
   type Category,
@@ -48,6 +48,7 @@ import {
   StockBadge,
 } from "./common";
 import { BarcodeLabelDialog } from "./barcode-label";
+import { BulkImportDialog } from "./bulk-import";
 import { BarcodeScannerDialog, type ScanResult } from "./scanner";
 import { draftErrors, draftsFrom, type PackDraft, PackSizesEditor, savePackSizes } from "./pack-sizes";
 
@@ -75,6 +76,7 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
   const [deleting, setDeleting] = useState<Product | null>(null);
   const [labelFor, setLabelFor] = useState<Product | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [packs, setPacks] = useState<Map<string, PackSizeRow[]>>(new Map());
   const [drafts, setDrafts] = useState<PackDraft[]>([]);
 
@@ -215,6 +217,10 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
         }
         actions={isAdmin && (
           <>
+            <Button variant="outline" onClick={() => setImporting(true)}>
+              <Upload />
+              Import
+            </Button>
             <Button variant="outline" onClick={() => setCategoryOpen(true)}>
               <FolderPlus />
               New category
@@ -451,6 +457,16 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
         doneLabel="Cancel"
       />
       <BarcodeLabelDialog key={labelFor?.id} product={labelFor} onClose={() => setLabelFor(null)} />
+      {isAdmin && (
+        <BulkImportDialog
+          kind="products"
+          open={importing}
+          onClose={() => setImporting(false)}
+          supabase={supabase}
+          onError={onError}
+          onImported={message => { onNotice(message); void load(); }}
+        />
+      )}
 
       <Dialog open={categoryOpen} onOpenChange={setCategoryOpen}>
         <DialogContent className="max-w-sm">

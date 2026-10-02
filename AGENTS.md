@@ -40,7 +40,9 @@ for cashiers to complete sales and 004 converts existing data into one shop; 005
 table grants, 006 adds pack sizes, and 007 removes direct write access to `sales`,
 `sale_lines` and `stock_movements` (written only by `create_sale`/`record_stock_movement`)
 and stops a cashier from recording a sale under a coworker's name. Every database created
-before 007 existed must run it.
+before 007 existed must run it. 008 adds `bulk_import_products` and `bulk_record_stock`, the
+all-or-nothing functions behind the Import buttons (spreadsheet parsing and row checks live in
+`packages/shared/src/domain/bulk-import.ts`; the database re-checks every row).
 Checkout uses the shop-scoped `create_sale(p_shop_id, ...)`; inventory uses
 `record_stock_movement`. Stock is always counted in single items: a pack size
 (`product_units`) sells a fixed number of them, and `create_sale` takes

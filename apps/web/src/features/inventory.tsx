@@ -47,7 +47,9 @@ import {
   Plus,
   SlidersHorizontal,
   Truck,
+  Upload,
 } from "lucide-react";
+import { BulkImportDialog } from "./bulk-import";
 import {
   type Client,
   Field,
@@ -111,6 +113,7 @@ export function Inventory({ supabase, onError, onNotice }: { supabase: Client } 
   const [historySearch, setHistorySearch] = useState("");
 
   const [supplierOpen, setSupplierOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [supplierForm, setSupplierForm] = useState(emptySupplier);
 
   const load = useCallback(async () => {
@@ -234,10 +237,15 @@ export function Inventory({ supabase, onError, onNotice }: { supabase: Client } 
       <PageHeader
         title="Inventory"
         description={loaded ? `${unitsOnHand.toLocaleString()} units on hand · valued at ${formatCurrency(valuation)} at cost` : "Record stock movements and manage your suppliers."}
-        actions={activeTab === "suppliers" && (
+        actions={activeTab === "suppliers" ? (
           <Button onClick={() => setSupplierOpen(true)}>
             <Plus />
             Add supplier
+          </Button>
+        ) : (
+          <Button variant="outline" onClick={() => setImporting(true)}>
+            <Upload />
+            Import stock
           </Button>
         )}
       />
@@ -508,6 +516,15 @@ export function Inventory({ supabase, onError, onNotice }: { supabase: Client } 
           </Card>
         </TabsContent>
       </Tabs>
+
+      <BulkImportDialog
+        kind="stock"
+        open={importing}
+        onClose={() => setImporting(false)}
+        supabase={supabase}
+        onError={onError}
+        onImported={message => { onNotice(message); void load(); }}
+      />
 
       <Dialog open={supplierOpen} onOpenChange={setSupplierOpen}>
         <DialogContent>
