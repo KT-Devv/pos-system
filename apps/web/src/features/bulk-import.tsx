@@ -254,6 +254,7 @@ export function BulkImportDialog({
           category: row.category,
           cost_price: row.costPrice,
           selling_price: row.sellingPrice,
+          retail_price: row.retailPrice,
           stock: row.stock,
           barcode: row.barcode,
           packs: row.packs.map((pack) => ({ name: pack.name, quantity: pack.quantity, selling_price: pack.sellingPrice, barcode: pack.barcode })),

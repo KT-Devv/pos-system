@@ -60,7 +60,8 @@ export const PRODUCT_COLUMNS: readonly ImportColumn[] = [
   { key: "name", header: "Name", required: true, aliases: ["product", "productname", "item", "itemname"], help: "The product's name, for example Milk 1L. Required." },
   { key: "category", header: "Category", required: false, aliases: ["categoryname", "group"], help: "Created for you if it does not exist yet. Leave blank for no category." },
   { key: "costPrice", header: "Cost price", required: true, aliases: ["cost", "buyingprice", "purchaseprice"], help: "What one item costs you. Required. A number such as 8 or 8.50, without a currency symbol." },
-  { key: "sellingPrice", header: "Selling price", required: true, aliases: ["price", "sellprice", "retailprice"], help: "What one item sells for. Required, above zero." },
+  { key: "sellingPrice", header: "Selling price", required: true, aliases: ["price", "sellprice", "regularprice"], help: "What one item sells for. Required, above zero." },
+  { key: "retailPrice", header: "Retail price", required: false, aliases: ["retail", "retailsellingprice"], help: "Optional second price for retail sales. Leave blank if the product only has one price." },
   { key: "stock", header: "Stock", required: false, aliases: ["quantity", "qty", "stockonhand", "openingstock"], help: "How many single items you have now, as a whole number. Blank means 0." },
   { key: "barcode", header: "Barcode", required: false, aliases: ["barcodeqr", "code", "ean", "upc", "sku"], help: "Optional. Numbers that start with 0 may lose it in Excel: format the column as Text first." },
   { key: "packName", header: "Pack name", required: false, aliases: ["packsizename"], help: "Optional pack size, such as Pack, Box or Strip." },
@@ -79,9 +80,9 @@ export const STOCK_COLUMNS: readonly ImportColumn[] = [
 ];
 
 export const PRODUCT_EXAMPLES: readonly (readonly string[])[] = [
-  ["e.g. Milk 1L", "Groceries", "8", "12.50", "20", "5901234123457", "Carton", "24", "260", ""],
-  ["e.g. Milk 1L", "", "", "", "", "", "Pack", "6", "70", ""],
-  ["e.g. Soap", "Household", "3", "6", "", "", "", "", "", ""],
+  ["e.g. Milk 1L", "Groceries", "8", "12.50", "14", "20", "5901234123457", "Carton", "24", "260", ""],
+  ["e.g. Milk 1L", "", "", "", "", "", "", "Pack", "6", "70", ""],
+  ["e.g. Soap", "Household", "3", "6", "", "", "", "", "", "", ""],
 ];
 
 export const STOCK_EXAMPLES: readonly (readonly string[])[] = [
@@ -282,6 +283,7 @@ export interface ProductImportRow {
   category: string | null;
   costPrice: number;
   sellingPrice: number;
+  retailPrice: number | null;
   stock: number;
   barcode: string | null;
   packs: ProductImportPack[];
@@ -353,7 +355,7 @@ export function planProductImport(records: readonly ImportRecord[], existing: Ex
 
     const earlier = rowByName.get(key);
     if (earlier) {
-      const packOnly = hasPack && [v.costPrice, v.sellingPrice, v.stock, v.barcode, v.category].every((x) => x === "");
+      const packOnly = hasPack && [v.costPrice, v.sellingPrice, v.retailPrice, v.stock, v.barcode, v.category].every((x) => x === "");
       if (!packOnly) {
         addIssue(rowNumber, `"${name}" is listed twice (rows ${earlier.rowNumber} and ${rowNumber}). To add another pack size, repeat the name on a new row with only the pack columns filled in.`);
         continue;
@@ -374,6 +376,8 @@ export function planProductImport(records: readonly ImportRecord[], existing: Ex
       ? { error: hasPack ? "Selling price is empty. A row that only adds a pack size must come after its product's own row." : "Selling price is empty" }
       : money("Selling price", v.sellingPrice, { allowZero: false });
     if ("error" in price) addIssue(rowNumber, price.error);
+    const retail = v.retailPrice === "" ? { value: null as number | null } : money("Retail price", v.retailPrice, { allowZero: false });
+    if ("error" in retail) addIssue(rowNumber, retail.error);
     const stock = v.stock === "" ? { value: 0 } : whole("Stock", v.stock, 0);
     if ("error" in stock) addIssue(rowNumber, stock.error);
 
@@ -395,6 +399,7 @@ export function planProductImport(records: readonly ImportRecord[], existing: Ex
       category,
       costPrice: "value" in cost ? cost.value : 0,
       sellingPrice: "value" in price ? price.value : 0,
+      retailPrice: "value" in retail ? retail.value : null,
       stock: "value" in stock ? stock.value : 0,
       barcode,
       packs: [],

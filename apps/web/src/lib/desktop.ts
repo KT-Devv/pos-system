@@ -23,6 +23,7 @@ export async function queueDesktopSale(input: CreateSaleInput & { id: string; sh
         product_id: line.productId,
         quantity: line.quantity,
         unit_id: line.unitId ?? null,
+        price_tier: line.priceTier ?? "regular",
       })),
     },
   });
@@ -36,7 +37,7 @@ type SyncSale = {
   customerId: string | null;
   paymentMethod: "cash" | "momo" | "card";
   discount: number;
-  lines: { productId: string; quantity: number; unitPrice: number; unitCost: number; unitId: string | null }[];
+  lines: { productId: string; quantity: number; unitPrice: number; unitCost: number; unitId: string | null; priceTier: "regular" | "retail" }[];
 };
 
 /** Maximum attempts before a sale the server keeps rejecting is dropped from the queue. */
@@ -87,7 +88,7 @@ async function runSync(shopId: string, createSale: (sale: SyncSale) => Promise<v
         customer_id: string | null;
         payment_method: "cash" | "momo" | "card";
         discount: number;
-        lines: { product_id: string; quantity: number; unit_id?: string | null }[];
+        lines: { product_id: string; quantity: number; unit_id?: string | null; price_tier?: "regular" | "retail" }[];
       };
       // Sales queued before shops existed have no shop_id; they belong to the shop that was migrated.
       if (payload.shop_id && payload.shop_id !== shopId) continue;
@@ -103,6 +104,7 @@ async function runSync(shopId: string, createSale: (sale: SyncSale) => Promise<v
           unitPrice: 0,
           unitCost: 0,
           unitId: line.unit_id ?? null,
+          priceTier: line.price_tier === "retail" ? "retail" : "regular",
         })),
       });
       await invoke("remove_operation", { id: operation.id });

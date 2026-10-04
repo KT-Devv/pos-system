@@ -252,7 +252,6 @@ body {
   font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
 }
 
 h1,
@@ -292,8 +291,9 @@ input[type="number"] {
   appearance: textfield;
 }
 
-/* Thin, quiet scrollbars. */
-* {
+/* Thin, quiet scrollbars, on the things that scroll rather than on every element: Safari re-styles each
+   element this applies to, which adds up on a page with hundreds of product tiles. */
+:where(html, textarea, .overflow-auto, .overflow-y-auto, .overflow-x-auto) {
   scrollbar-width: thin;
   scrollbar-color: var(--input) transparent;
 }

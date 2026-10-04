@@ -42,7 +42,10 @@ table grants, 006 adds pack sizes, and 007 removes direct write access to `sales
 and stops a cashier from recording a sale under a coworker's name. Every database created
 before 007 existed must run it. 008 adds `bulk_import_products` and `bulk_record_stock`, the
 all-or-nothing functions behind the Import buttons (spreadsheet parsing and row checks live in
-`packages/shared/src/domain/bulk-import.ts`; the database re-checks every row).
+`packages/shared/src/domain/bulk-import.ts`; the database re-checks every row). 009 adds the optional
+`products.retail_price` and `sale_lines.price_tier`: `create_sale` charges a line's `price_tier` (regular
+or retail) only where the product has a retail price, and pack sizes always use their own price. Run
+009 before deploying the Retail switch.
 Checkout uses the shop-scoped `create_sale(p_shop_id, ...)`; inventory uses
 `record_stock_movement`. Stock is always counted in single items: a pack size
 (`product_units`) sells a fixed number of them, and `create_sale` takes
@@ -64,6 +67,10 @@ Supabase when connectivity returns.
 - Chart colors come from the validated `--chart-*` tokens; assign them by entity (for
   example payment method), never by rank.
 - Keep business validation in `packages/shared` or the Supabase RPCs.
+- Never render a whole catalog at once. Long product lists (Sales tiles, Products, Inventory) page through
+  `useProgressiveList`, and per-item components that re-render with the cart are memoised: hundreds of
+  tiles built on every keystroke is what made Safari lag. Avoid `backdrop-blur` and other full-screen
+  compositing effects for the same reason.
 - Keep web and desktop behavior aligned; desktop should only add native/offline
   capabilities.
 - Never hardcode a currency, symbol or store-specific value. Read the shop's

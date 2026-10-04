@@ -36,6 +36,7 @@ import {
   TabsTrigger,
   Textarea,
 } from "@pos/shared";
+import { useProgressiveList } from "@/lib/use-progressive-list";
 import { useWorkspace } from "@/lib/workspace";
 import {
   ArrowDownToLine,
@@ -201,6 +202,7 @@ export function Inventory({ supabase, onError, onNotice }: { supabase: Client } 
     const matchFilter = levelFilter === "all" || stockLevel(p.stock, lowAt) === (levelFilter === "out" ? "out" : "low");
     return matchFilter && `${p.name} ${p.barcode ?? ""}`.toLowerCase().includes(search.toLowerCase());
   }), [products, levelFilter, search, lowAt]);
+  const stockRows = useProgressiveList(levels, 50, `${levelFilter}|${search}`);
 
   const unitsOnHand = products.reduce((sum, p) => sum + p.stock, 0);
   const valuation = products.reduce((sum, p) => sum + p.stock * p.cost_price, 0);
@@ -356,6 +358,7 @@ export function Inventory({ supabase, onError, onNotice }: { supabase: Client } 
               </div>
               <CardContent className="p-0">
                 {levels.length > 0 ? (
+                  <>
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -367,7 +370,7 @@ export function Inventory({ supabase, onError, onNotice }: { supabase: Client } 
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {levels.map(product => (
+                      {stockRows.visible.map(product => (
                         <TableRow key={product.id}>
                           <TableCell className="font-semibold">{product.name}</TableCell>
                           <TableCell>
@@ -385,6 +388,12 @@ export function Inventory({ supabase, onError, onNotice }: { supabase: Client } 
                       ))}
                     </TableBody>
                   </Table>
+                  {stockRows.remaining > 0 && (
+                    <div className="border-t p-3 text-center">
+                      <Button ref={stockRows.sentinelRef} type="button" variant="outline" onClick={stockRows.showMore}>Show more products ({stockRows.remaining} more)</Button>
+                    </div>
+                  )}
+                  </>
                 ) : (
                   <EmptyState
                     icon={PackageSearch}

@@ -538,6 +538,53 @@ await test("bulk stock: cannot touch another shop's products or be called by out
   ok((await one(`select stock from public.products where id = $1`, [B.prod])).stock === 19, "B's stock changed");
 });
 
+// ---- Retail prices (migration 009) ---------------------------------------------------------------------
+await test("retail price: admins set it, cashiers cannot, and it must be above zero", async () => {
+  const id = (await call(U.adminA, `insert into public.products (shop_id, name, cost_price, selling_price, retail_price, stock) values ($1, 'RETAIL Item', 2, 4, 6, 50) returning id`, [shopA])).rows[0].id;
+  ok(Number((await one(`select retail_price from public.products where id = $1`, [id])).retail_price) === 6, "not stored");
+  await noRows(() => call(U.cashA, `update public.products set retail_price = 1 where id = $1 returning id`, [id]), "cashier edits retail price");
+  await denied(() => call(U.adminA, `update public.products set retail_price = 0 where id = $1`, [id]), /check|violates/, "zero retail price");
+  await call(U.adminA, `update public.products set retail_price = null where id = $1`, [id]);
+  await call(U.adminA, `update public.products set retail_price = 6 where id = $1`, [id]);
+  ok(Number((await one(`select retail_price from public.products where id = $1`, [id])).retail_price) === 6, "reset failed");
+});
+await test("retail price: a retail line is charged the retail price, everything else the regular price, and the tier is recorded", async () => {
+  const item = (await one(`select id from public.products where shop_id = $1 and name = 'RETAIL Item'`, [shopA])).id;
+  const plain = (await call(U.adminA, `insert into public.products (shop_id, name, cost_price, selling_price, stock) values ($1, 'RETAIL Plain', 1, 3, 50) returning id`, [shopA])).rows[0].id;
+  const packed = (await call(U.adminA, `insert into public.products (shop_id, name, cost_price, selling_price, retail_price, stock) values ($1, 'RETAIL Packed', 1, 3, 9, 100) returning id`, [shopA])).rows[0].id;
+  const pack = (await call(U.adminA, `insert into public.product_units (shop_id, product_id, name, quantity, selling_price) values ($1, $2, 'Box', 10, 25) returning id`, [shopA, packed])).rows[0].id;
+  const sell = async (lines) => (await call(U.cashA, `select public.create_sale($1, $2, null, 'cash', 0, $3::jsonb) as id`, [shopA, U.cashA.id, JSON.stringify(lines)])).rows[0].id;
+  const lineRows = async (id) => (await q(`select p.name, l.quantity, l.unit_price::float up, l.price_tier from public.sale_lines l join public.products p on p.id = l.product_id where l.sale_id = $1 order by p.name, l.unit_price`, [id])).rows;
+
+  const retailSale = await sell([
+    { product_id: item, quantity: 2, price_tier: "retail" },
+    { product_id: plain, quantity: 1, price_tier: "retail" },
+    { product_id: packed, quantity: 1, unit_id: pack, price_tier: "retail" },
+    { product_id: packed, quantity: 3, price_tier: "retail" },
+  ]);
+  const retail = await lineRows(retailSale);
+  ok(JSON.stringify(retail.map(r => [r.name, r.up, r.price_tier])) === JSON.stringify([["RETAIL Item", 6, "retail"], ["RETAIL Packed", 9, "retail"], ["RETAIL Packed", 25, "regular"], ["RETAIL Plain", 3, "regular"]]), JSON.stringify(retail));
+  ok(Number((await one(`select total from public.sales where id = $1`, [retailSale])).total) === 12 + 3 + 25 + 27, "retail total");
+
+  const regularSale = await sell([{ product_id: item, quantity: 2 }, { product_id: item, quantity: 1, price_tier: "regular" }, { product_id: packed, quantity: 1, price_tier: "" }]);
+  const regular = await lineRows(regularSale);
+  ok(regular.every(r => r.price_tier === "regular") && regular.filter(r => r.name === "RETAIL Item").every(r => r.up === 4), JSON.stringify(regular));
+  ok(Number((await one(`select total from public.sales where id = $1`, [regularSale])).total) === 8 + 4 + 3, "regular total");
+
+  await denied(() => sell([{ product_id: item, quantity: 1, price_tier: "wholesale" }]), /Unknown price tier/, "made-up tier");
+  ok((await one(`select stock from public.products where id = $1`, [item])).stock === 50 - 2 - 3, "a refused sale took stock");
+});
+await test("retail price: bulk import stores it and ignores a blank one", async () => {
+  await call(U.adminA, `select public.bulk_import_products($1, $2::jsonb)`, [shopA, JSON.stringify([
+    { name: "RETAIL Imported", cost_price: 1, selling_price: 4, retail_price: 5 },
+    { name: "RETAIL Imported Blank", cost_price: 1, selling_price: 4, retail_price: "" },
+    { name: "RETAIL Imported Null", cost_price: 1, selling_price: 4, retail_price: null },
+  ])]);
+  const rows = (await q(`select name, retail_price::float r from public.products where shop_id = $1 and name like 'RETAIL Imported%' order by name`, [shopA])).rows;
+  ok(JSON.stringify(rows.map(r => [r.name, r.r])) === JSON.stringify([["RETAIL Imported", 5], ["RETAIL Imported Blank", null], ["RETAIL Imported Null", null]]), JSON.stringify(rows));
+  await denied(() => call(U.adminA, `select public.bulk_import_products($1, $2::jsonb)`, [shopA, JSON.stringify([{ name: "RETAIL Bad", cost_price: 1, selling_price: 4, retail_price: 0 }])]), /Row 1:/, "zero retail price");
+});
+
 // ---- Legacy data (upgrade path only) -----------------------------------------------------------------
 if (legacySeed) {
   await test("upgrade: existing data moved into a first shop with nothing lost", async () => {

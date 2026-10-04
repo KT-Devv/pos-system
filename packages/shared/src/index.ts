@@ -130,11 +130,14 @@ export type {
   ProductInput,
   PaymentMethod as DomainPaymentMethod,
   StockMovementType,
+  PriceTier,
 } from "./domain";
 
 export {
   calculateSaleTotal,
   roundCurrency,
+  unitPriceForTier,
+  usesRetailPrice,
   validateProductInput,
   validateSaleInput,
 } from "./domain";

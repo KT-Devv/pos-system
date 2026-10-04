@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Badge,
   Button,
@@ -17,14 +17,18 @@ import {
   Input,
   loyaltyPointsFor,
   packLabel,
+  type PriceTier,
   type Receipt as SaleReceipt,
   SegmentedControl,
   stockLevel,
+  unitPriceForTier,
   unitsAvailable,
+  usesRetailPrice,
   validateSaleInput,
 } from "@pos/shared";
 import { Camera, Check, Minus, PackageSearch, Plus, Receipt, ReceiptText, ShoppingCart, Trash2 } from "lucide-react";
 import { isTauri, queueDesktopSale } from "@/lib/desktop";
+import { useProgressiveList } from "@/lib/use-progressive-list";
 import { useWorkspace } from "@/lib/workspace";
 import {
   type Category,
@@ -51,7 +55,9 @@ type CartLine = Product & { quantity: number; pack: PackSizeRow | null };
 
 /** Single items one unit of this line takes out of stock. */
 const sizeOf = (line: Pick<CartLine, "pack">) => line.pack?.quantity ?? 1;
-const priceOf = (line: CartLine) => line.pack?.selling_price ?? line.selling_price;
+/** What one unit of the line is charged: a pack its own price, a single the retail price on a retail sale when it has one. */
+const priceOf = (line: CartLine, tier: PriceTier) => line.pack?.selling_price ?? unitPriceForTier(line.selling_price, line.retail_price, tier);
+const NO_PACKS: PackSizeRow[] = [];
 const costOf = (line: CartLine) => line.cost_price * sizeOf(line);
 const keyOf = (line: Pick<CartLine, "id" | "pack">) => `${line.id}:${line.pack?.id ?? "single"}`;
 const nameOf = (line: CartLine) => (line.pack ? `${line.name} (${packLabel(line.pack.name, line.pack.quantity)})` : line.name);
@@ -61,6 +67,75 @@ const claimedBy = (cart: readonly CartLine[], productId: string, exceptKey?: str
 type RecentSale = { id: string; total: number; payment_method: string; created_at: string };
 
 const WALK_IN = "walk-in";
+
+/**
+ * One product on the grid. Memoised so a keystroke or a cart change only re-renders the tiles whose own
+ * numbers changed, not the whole catalog (hundreds of tiles, which is what made Safari stutter).
+ */
+const ProductTile = memo(function ProductTile({ product, packs, category, remaining, units, lowAt, tier, onAdd }: {
+  product: Product;
+  packs: PackSizeRow[];
+  category: string | null;
+  remaining: number;
+  units: number;
+  lowAt: number;
+  tier: PriceTier;
+  onAdd: (product: Product, pack?: PackSizeRow | null) => void;
+}) {
+  const retail = usesRetailPrice(product.retail_price, tier);
+  const price = unitPriceForTier(product.selling_price, product.retail_price, tier);
+  return (
+    <div
+      className={cn(
+        "relative flex min-h-[112px] flex-col rounded-xl border bg-card shadow-xs hover:border-primary/60 hover:shadow-sm",
+        units > 0 && "border-primary ring-1 ring-primary",
+      )}
+    >
+      {units > 0 && (
+        <span className="absolute -right-2 -top-2 z-10 grid h-6 min-w-6 place-items-center rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground shadow-sm">
+          {units}
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={() => onAdd(product)}
+        disabled={remaining < 1}
+        aria-label={`Add ${product.name}, ${formatCurrency(price)}${retail ? " retail" : ""}${units ? `, ${units} in cart` : ""}`}
+        className="flex flex-1 flex-col justify-between gap-2 rounded-xl p-3.5 text-left active:bg-accent disabled:opacity-60"
+      >
+        <div className="min-w-0">
+          {category && <p className="truncate text-xs font-semibold uppercase tracking-wider text-muted-foreground">{category}</p>}
+          <p className="line-clamp-2 text-sm font-semibold leading-snug">{product.name}</p>
+        </div>
+        <div className="flex items-end justify-between gap-2">
+          <span className="min-w-0 text-base font-extrabold tracking-tight">
+            {formatCurrency(price)}
+            {retail && <span className="ml-1 text-xs font-semibold text-primary">Retail</span>}
+          </span>
+          <span className={cn("shrink-0 whitespace-nowrap text-xs font-semibold", stockLevel(remaining, lowAt) === "low" ? "text-warning" : "text-muted-foreground")}>
+            {remaining} left
+          </span>
+        </div>
+      </button>
+      {packs.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 px-3.5 pb-3">
+          {packs.map(pack => (
+            <button
+              key={pack.id}
+              type="button"
+              disabled={remaining < pack.quantity}
+              onClick={() => onAdd(product, pack)}
+              aria-label={`Add ${product.name}, ${packLabel(pack.name, pack.quantity)}, ${formatCurrency(pack.selling_price)}`}
+              className="rounded-md border bg-secondary px-2 py-1.5 text-xs font-semibold hover:bg-accent disabled:opacity-50"
+            >
+              {packLabel(pack.name, pack.quantity)} · {formatCurrency(pack.selling_price)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
 
 export function Sales({ supabase, userId, onError, onNotice }: { supabase: Client; userId: string } & Feedback) {
   const { shop, user } = useWorkspace();
@@ -81,10 +156,12 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
   const [reprinting, setReprinting] = useState<string | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [packs, setPacks] = useState<Map<string, PackSizeRow[]>>(new Map());
+  /** Which of a product's two prices this sale is rung up at. */
+  const [tier, setTier] = useState<PriceTier>("regular");
 
   const load = useCallback(async () => {
     const [{ data: catalog, error: catalogError }, { data: sales, error: salesError }, { data: customerRows, error: customerError }, { data: catRows }, packRes] = await Promise.all([
-      supabase.from("products").select("id,name,category_id,cost_price,selling_price,stock,barcode").gt("stock", 0).order("name"),
+      supabase.from("products").select("id,name,category_id,cost_price,selling_price,retail_price,stock,barcode").gt("stock", 0).order("name"),
       supabase.from("sales").select("id,total,payment_method,created_at").order("created_at", { ascending: false }).limit(8),
       supabase.from("customers").select("id,name,phone,email,loyalty_points").order("name"),
       supabase.from("categories").select("id,name").order("name"),
@@ -107,22 +184,30 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
     return categories.filter(c => used.has(c.id));
   }, [categories, products]);
   /** Single items each product's cart lines take from stock, so tiles show what is really left. */
-  const claimed = useMemo(() => {
-    const totals = new Map<string, number>();
-    for (const line of cart) totals.set(line.id, (totals.get(line.id) ?? 0) + line.quantity * sizeOf(line));
-    return totals;
+  const { claimed, cartUnits } = useMemo(() => {
+    const claimedItems = new Map<string, number>();
+    const units = new Map<string, number>();
+    for (const line of cart) {
+      claimedItems.set(line.id, (claimedItems.get(line.id) ?? 0) + line.quantity * sizeOf(line));
+      units.set(line.id, (units.get(line.id) ?? 0) + line.quantity);
+    }
+    return { claimed: claimedItems, cartUnits: units };
   }, [cart]);
 
-  const filtered = products.filter(p => {
-    const matchCat = selectedCat === "all" || p.category_id === selectedCat;
-    const packCodes = (packs.get(p.id) ?? []).map(pack => pack.barcode ?? "").join(" ");
-    const matchSearch = `${p.name} ${p.barcode ?? ""} ${packCodes}`.toLowerCase().includes(search.toLowerCase());
-    return matchCat && matchSearch;
-  });
+  // The lower-cased text each product is searched by, built once per catalog rather than on every keystroke.
+  const searchText = useMemo(() => new Map(products.map(p =>
+    [p.id, `${p.name} ${p.barcode ?? ""} ${(packs.get(p.id) ?? []).map(pack => pack.barcode ?? "").join(" ")}`.toLowerCase()])), [products, packs]);
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return products.filter(p => (selectedCat === "all" || p.category_id === selectedCat) && (searchText.get(p.id) ?? "").includes(term));
+  }, [products, selectedCat, search, searchText]);
+  // A page of tiles at a time: the rest load as the cashier scrolls, and a search narrows it anyway.
+  const tiles = useProgressiveList(filtered, 60, `${selectedCat}|${search}`);
+  const hasRetail = useMemo(() => products.some(p => p.retail_price != null), [products]);
 
   const selectedCustomer = customers.find(c => c.id === customerId);
 
-  const add = (product: Product, pack: PackSizeRow | null = null) => setCart(current => {
+  const add = useCallback((product: Product, pack: PackSizeRow | null = null) => setCart(current => {
     const line: CartLine = { ...product, quantity: 1, pack };
     const key = keyOf(line);
     const room = unitsAvailable(product.stock, claimedBy(current, product.id, key), sizeOf(line));
@@ -130,7 +215,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
     return current.some(item => keyOf(item) === key)
       ? current.map(item => keyOf(item) === key ? { ...item, quantity: Math.min(item.quantity + 1, room) } : item)
       : [...current, line];
-  });
+  }), []);
 
   const setQuantity = (key: string, quantity: number) =>
     setCart(current => current.map(line => {
@@ -181,7 +266,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
   };
 
   const totals = calculateSaleTotal(
-    cart.map(line => ({ productId: line.id, quantity: line.quantity, unitPrice: priceOf(line), unitCost: costOf(line) })),
+    cart.map(line => ({ productId: line.id, quantity: line.quantity, unitPrice: priceOf(line, tier), unitCost: costOf(line) })),
     Number(discount) || 0,
   );
   const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0);
@@ -194,6 +279,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
     setDiscount("0");
     setCashReceived("");
     setCustomerId("");
+    setTier("regular");
   };
 
   const checkout = async () => {
@@ -207,7 +293,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
       shop: receiptShop(shop),
       cashier: user.name,
       customer: selectedCustomer?.name,
-      lines: cart.map(line => ({ name: nameOf(line), quantity: line.quantity, unitPrice: priceOf(line) })),
+      lines: cart.map(line => ({ name: nameOf(line), quantity: line.quantity, unitPrice: priceOf(line, tier) })),
       discount: totals.discount,
       paymentMethod: payment,
       cashReceived: tendered,
@@ -218,7 +304,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
       customerId: customerId || null,
       paymentMethod: payment,
       discount: totals.discount,
-      lines: cart.map(line => ({ productId: line.id, quantity: line.quantity, unitPrice: priceOf(line), unitCost: costOf(line), unitId: line.pack?.id ?? null, unitQuantity: sizeOf(line) })),
+      lines: cart.map(line => ({ productId: line.id, quantity: line.quantity, unitPrice: priceOf(line, tier), unitCost: costOf(line), unitId: line.pack?.id ?? null, unitQuantity: sizeOf(line), priceTier: line.pack ? "regular" as const : tier })),
     };
     const saleValidationErrors = validateSaleInput(input);
     if (saleValidationErrors.length > 0) {
@@ -246,7 +332,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
         p_customer_id: customerId || null,
         p_payment_method: payment,
         p_discount: totals.discount,
-        p_lines: cart.map(line => ({ product_id: line.id, quantity: line.quantity, unit_id: line.pack?.id ?? null })),
+        p_lines: cart.map(line => ({ product_id: line.id, quantity: line.quantity, unit_id: line.pack?.id ?? null, price_tier: line.pack ? "regular" : tier })),
       });
       if (error) throw error;
       // Read the sale back so the receipt shows what the server charged (prices may have changed since
@@ -281,6 +367,19 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
             </Button>
           </div>
 
+          {hasRetail && (
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-semibold text-muted-foreground">Price</span>
+              <SegmentedControl
+                aria-label="Price for this sale"
+                value={tier}
+                onValueChange={setTier}
+                options={[{ value: "regular", label: "Regular" }, { value: "retail", label: "Retail" }]}
+              />
+              {tier === "retail" && <span className="text-xs text-muted-foreground">Items without a retail price stay at the regular price.</span>}
+            </div>
+          )}
+
           {sellableCategories.length > 0 && (
             <div role="group" aria-label="Filter by category" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {[{ id: "all", name: "All" }, ...sellableCategories].map(cat => (
@@ -304,62 +403,24 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
 
           {filtered.length > 0 ? (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
-              {filtered.map(product => {
-                const productPacks = packs.get(product.id) ?? [];
-                const units = cart.filter(line => line.id === product.id).reduce((sum, line) => sum + line.quantity, 0);
-                const cat = product.category_id ? categoryName.get(product.category_id) : null;
-                // What is left once the cart has taken its share, in single items.
-                const remaining = product.stock - (claimed.get(product.id) ?? 0);
-                return (
-                  <div
-                    key={product.id}
-                    className={cn(
-                      "relative flex min-h-[112px] flex-col rounded-xl border bg-card shadow-xs hover:border-primary/60 hover:shadow-sm",
-                      units > 0 && "border-primary ring-1 ring-primary",
-                    )}
-                  >
-                    {units > 0 && (
-                      <span className="absolute -right-2 -top-2 z-10 grid h-6 min-w-6 place-items-center rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground shadow-sm">
-                        {units}
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => add(product)}
-                      disabled={remaining < 1}
-                      aria-label={`Add ${product.name}, ${formatCurrency(product.selling_price)}${units ? `, ${units} in cart` : ""}`}
-                      className="flex flex-1 flex-col justify-between gap-2 rounded-xl p-3.5 text-left active:bg-accent disabled:opacity-60"
-                    >
-                      <div className="min-w-0">
-                        {cat && <p className="truncate text-xs font-semibold uppercase tracking-wider text-muted-foreground">{cat}</p>}
-                        <p className="line-clamp-2 text-sm font-semibold leading-snug">{product.name}</p>
-                      </div>
-                      <div className="flex items-end justify-between gap-2">
-                        <span className="text-base font-extrabold tracking-tight">{formatCurrency(product.selling_price)}</span>
-                        <span className={cn("text-xs font-semibold", stockLevel(remaining, shop.low_stock_threshold) === "low" ? "text-warning" : "text-muted-foreground")}>
-                          {remaining} left
-                        </span>
-                      </div>
-                    </button>
-                    {productPacks.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 px-3.5 pb-3">
-                        {productPacks.map(pack => (
-                          <button
-                            key={pack.id}
-                            type="button"
-                            disabled={remaining < pack.quantity}
-                            onClick={() => add(product, pack)}
-                            aria-label={`Add ${product.name}, ${packLabel(pack.name, pack.quantity)}, ${formatCurrency(pack.selling_price)}`}
-                            className="rounded-md border bg-secondary px-2 py-1.5 text-xs font-semibold hover:bg-accent disabled:opacity-50"
-                          >
-                            {packLabel(pack.name, pack.quantity)} · {formatCurrency(pack.selling_price)}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+              {tiles.visible.map(product => (
+                <ProductTile
+                  key={product.id}
+                  product={product}
+                  packs={packs.get(product.id) ?? NO_PACKS}
+                  category={product.category_id ? categoryName.get(product.category_id) ?? null : null}
+                  remaining={product.stock - (claimed.get(product.id) ?? 0)}
+                  units={cartUnits.get(product.id) ?? 0}
+                  lowAt={shop.low_stock_threshold}
+                  tier={tier}
+                  onAdd={add}
+                />
+              ))}
+              {tiles.remaining > 0 && (
+                <Button ref={tiles.sentinelRef} type="button" variant="outline" className="col-span-full" onClick={tiles.showMore}>
+                  Show more products ({tiles.remaining} more)
+                </Button>
+              )}
             </div>
           ) : (
             <Card>
@@ -447,10 +508,10 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
                           <p className="truncate text-sm font-semibold">{item.name}</p>
                           <p className="text-xs text-muted-foreground">
                             {item.pack && <span className="font-semibold text-foreground">{packLabel(item.pack.name, item.pack.quantity)} · </span>}
-                            {formatCurrency(priceOf(item))} each
+                            {formatCurrency(priceOf(item, tier))} each{!item.pack && usesRetailPrice(item.retail_price, tier) && <span className="font-semibold text-primary"> · Retail</span>}
                           </p>
                         </div>
-                        <p className="text-sm font-bold tabular-nums">{formatCurrency(priceOf(item) * item.quantity)}</p>
+                        <p className="text-sm font-bold tabular-nums">{formatCurrency(priceOf(item, tier) * item.quantity)}</p>
                       </div>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1">

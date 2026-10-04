@@ -13,6 +13,11 @@ pub struct SaleLine {
     /// not listed would be silently dropped and a pack would sync as singles.
     #[serde(default)]
     pub unit_id: Option<String>,
+    /// "regular" or "retail": the price the line was rung up at. Sales queued before retail prices existed
+    /// have none and mean regular. A field here for the same reason as `unit_id`: the queue re-serialises
+    /// this struct, so anything not listed would be dropped and a retail sale would sync at the regular price.
+    #[serde(default)]
+    pub price_tier: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

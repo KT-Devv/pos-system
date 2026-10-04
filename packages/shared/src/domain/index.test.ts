@@ -3,6 +3,8 @@ import { test, describe } from "node:test";
 import {
   calculateSaleTotal,
   roundCurrency,
+  unitPriceForTier,
+  usesRetailPrice,
   validateProductInput,
   validateSaleInput,
 } from "./index.js";
@@ -102,5 +104,34 @@ describe("domain business logic", () => {
       });
       assert.ok(errors.length >= 2);
     });
+  });
+});
+
+describe("retail prices", () => {
+  test("a retail sale is charged the retail price only where the product has one", () => {
+    assert.strictEqual(unitPriceForTier(4, 6, "retail"), 6);
+    assert.strictEqual(unitPriceForTier(4, null, "retail"), 4);
+    assert.strictEqual(unitPriceForTier(4, undefined, "retail"), 4);
+    assert.strictEqual(unitPriceForTier(4, 6, "regular"), 4);
+    assert.strictEqual(usesRetailPrice(6, "retail"), true);
+    assert.strictEqual(usesRetailPrice(null, "retail"), false);
+    assert.strictEqual(usesRetailPrice(6, "regular"), false);
+  });
+
+  test("a retail price is optional but must be above zero when given", () => {
+    const base = { name: "Milk", costPrice: 1, sellingPrice: 2 };
+    assert.deepStrictEqual(validateProductInput({ ...base }), []);
+    assert.deepStrictEqual(validateProductInput({ ...base, retailPrice: null }), []);
+    assert.deepStrictEqual(validateProductInput({ ...base, retailPrice: 3 }), []);
+    assert.match(validateProductInput({ ...base, retailPrice: 0 })[0], /Retail price/);
+    assert.match(validateProductInput({ ...base, retailPrice: Number.NaN })[0], /Retail price/);
+  });
+
+  test("a sale line can only name a known price tier", () => {
+    const line = { productId: "p", quantity: 1, unitPrice: 2, unitCost: 1 };
+    const sale = (priceTier?: string) => validateSaleInput({ cashierId: "c", paymentMethod: "cash", lines: [{ ...line, priceTier: priceTier as "retail" }] });
+    assert.deepStrictEqual(sale("retail"), []);
+    assert.deepStrictEqual(sale(undefined), []);
+    assert.deepStrictEqual(sale("wholesale"), ["Unknown price tier"]);
   });
 });
