@@ -25,7 +25,7 @@ const DialogOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
-    className={cn("fixed inset-0 z-50 bg-foreground/55", className)}
+    className={cn("kt-overlay fixed inset-0 z-50 bg-foreground/55", className)}
     {...props}
   />
 ));
@@ -40,7 +40,7 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed left-[50%] top-[50%] z-[60] grid max-h-[90vh] w-[calc(100vw-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-visible rounded-2xl border bg-card p-6 text-card-foreground shadow-lg",
+        "kt-dialog fixed left-[50%] top-[50%] z-[60] grid max-h-[90vh] w-[calc(100vw-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-visible rounded-2xl border bg-card p-6 text-card-foreground shadow-lg",
         className,
       )}
       onPointerDownOutside={(event) => {

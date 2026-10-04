@@ -20,7 +20,7 @@ function Toast({ tone, children, onDismiss }: { tone: "success" | "error"; child
     <div
       role={tone === "error" ? "alert" : "status"}
       className={cn(
-        "pointer-events-auto flex w-full max-w-md items-start gap-3 rounded-xl border bg-card p-3.5 shadow-lg",
+        "kt-toast pointer-events-auto flex w-full max-w-md items-start gap-3 rounded-xl border bg-card p-3.5 shadow-lg",
         tone === "success" ? "border-success/40" : "border-destructive/40",
       )}
     >

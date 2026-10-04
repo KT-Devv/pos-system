@@ -502,7 +502,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
                   // The most of this line the stock allows, given what the other lines already take.
                   const room = unitsAvailable(item.stock, claimedBy(cart, item.id, key), sizeOf(item));
                   return (
-                    <li key={key} className="grid gap-2 px-5 py-3">
+                    <li key={key} className="kt-enter grid gap-2 px-5 py-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold">{item.name}</p>

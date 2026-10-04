@@ -56,8 +56,11 @@ Supabase when connectivity returns.
 
 ## Change guidance
 
-- Preserve the no-animation UI requirement. `globals.css` disables animation and
-  transitions globally; do not add `animate-*`/`transition-*` utilities.
+- Motion is deliberate, small and quick (the old "no animation" rule was lifted on request). The `kt-*`
+  keyframes and classes live in `globals.css`: pages fade in and out, dialogs and menus rise and settle,
+  new cart lines and alerts fade in. Animate only opacity and transform, keep it under about 220ms, never
+  animate a list of hundreds of items, never put a transform on `<main>` or on anything containing a
+  `position: fixed` element, and keep the `prefers-reduced-motion` block that switches it all off.
 - Design tokens (light and dark) live in `apps/web/src/app/globals.css`. Style with
   token classes (`bg-card`, `text-muted-foreground`, `bg-success-soft`) rather than raw
   hex so both themes stay correct. Shared primitives are in `packages/shared`; screens

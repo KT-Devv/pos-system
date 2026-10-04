@@ -64,7 +64,7 @@ const SelectContent = React.forwardRef<
       ref={ref}
       data-radix-select-content=""
       className={cn(
-        "relative z-[200] max-h-[min(24rem,var(--radix-select-content-available-height))] min-w-[8rem] overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-lg",
+        "kt-popover relative z-[200] max-h-[min(24rem,var(--radix-select-content-available-height))] min-w-[8rem] overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-lg",
         className,
       )}
       position={position}

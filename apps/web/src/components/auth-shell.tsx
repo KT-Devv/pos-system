@@ -91,7 +91,7 @@ export function AuthShell({ children, wide = false }: { children: ReactNode; wid
           <ThemeToggle />
         </div>
         <main className="grid flex-1 place-items-center px-5 pb-12 pt-2 sm:px-8">
-          <div className={wide ? "w-full max-w-[560px]" : "w-full max-w-[400px]"}>{children}</div>
+          <div className={wide ? "kt-page-enter w-full max-w-[560px]" : "kt-page-enter w-full max-w-[400px]"}>{children}</div>
         </main>
       </div>
     </div>
