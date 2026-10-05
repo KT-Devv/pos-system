@@ -303,6 +303,16 @@ input[type="number"] {
 }
 
 /*
+ * While a dialog is open the page behind it must not scroll. Radix does that with a <style> element it creates
+ * at run time, which the desktop app's content-security-policy refuses (no inline <style>), so the rule lives
+ * here instead and works the same on the web.
+ */
+body[data-scroll-locked] {
+  overflow: hidden !important;
+  overscroll-behavior: contain;
+}
+
+/*
  * Motion. Small and quick: pages fade, dialogs rise and settle, menus pop, new things fade in. Only opacity and
  * transform are animated (they cost the least in Safari), nothing runs longer than about 220ms, and everything is
  * switched off for people who ask their device for reduced motion. Radix keeps a closing dialog or menu on screen

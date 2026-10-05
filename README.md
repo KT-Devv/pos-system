@@ -71,6 +71,12 @@ For Tauri development and Windows packaging:
 - Windows 10/11 SDK
 - WebView2 runtime
 
+For macOS packaging (it must be built on a Mac; Tauri cannot cross-compile from Windows):
+
+- Xcode command line tools (`xcode-select --install`)
+- Rust toolchain with Cargo
+- Node.js and npm, as above
+
 ## Setup
 
 Clone the repository and install workspace dependencies:
@@ -179,8 +185,31 @@ apps/desktop/src-tauri/target/release/bundle/nsis/
 
 The generated artifacts are:
 
-- `KT POS System_1.0.0_x64_en-US.msi`
-- `KT POS System_1.0.0_x64-setup.exe`
+- `KT POS System_<version>_x64_en-US.msi`
+- `KT POS System_<version>_x64-setup.exe` (the one to install)
+
+## macOS app and installer
+
+On a Mac, copy `apps/web/.env.local` over (it is not in Git), run `npm install`, then:
+
+```bash
+npm run build:tauri
+```
+
+The `.app` and `.dmg` are written to `apps/desktop/src-tauri/target/release/bundle/macos/` and `.../dmg/`.
+For one build that runs on both Apple Silicon and Intel Macs, run `rustup target add aarch64-apple-darwin
+x86_64-apple-darwin` once and build with `npm run build:tauri -- --target universal-apple-darwin`.
+
+- **Icon:** `icons/icon.icns` (and the PNGs beside it) are generated from the app's logo with the padding macOS
+  expects. To change the logo, run `npx tauri icon <1024px png or svg> -o <folder>` from `apps/desktop` and copy
+  the `.icns` and `.png` files into `apps/desktop/src-tauri/icons/`.
+- **Camera:** barcode and QR scanning needs `NSCameraUsageDescription` (in `src-tauri/Info.plist`, which macOS shows
+  in its permission prompt) and, once the app is signed, the camera entitlement in `src-tauri/Entitlements.plist`.
+  Both are already set up. The app needs macOS 12 or newer, which is when its web view gained camera access.
+- **First launch:** the app is not signed or notarized, so macOS blocks it the first time: right-click the app,
+  choose Open, then Open again. To avoid that for other people, sign and notarize it with an Apple Developer ID.
+- The macOS build has not been tried on a Mac yet. The web view there is Safari's engine, so check scanning,
+  printing and the file picker on a real Mac before handing the app out.
 
 Build output under `target/`, `out/`, `dist/`, and `.next/` is ignored by Git.
 

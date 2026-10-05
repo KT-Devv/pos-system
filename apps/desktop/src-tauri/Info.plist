@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- macOS shows this text in the permission prompt the first time the app opens the camera (barcode and QR scanning). -->
+  <key>NSCameraUsageDescription</key>
+  <string>KT POS System uses the camera to scan product barcodes and QR codes.</string>
+</dict>
+</plist>

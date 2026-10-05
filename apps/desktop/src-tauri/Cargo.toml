@@ -1,6 +1,6 @@
 [package]
 name = "pos-desktop"
-version = "1.0.0"
+version = "1.1.0"
 description = "KT POS System offline desktop client"
 authors = ["KT-Devv"]
 edition = "2021"
