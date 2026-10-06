@@ -256,7 +256,7 @@ It can also be sold in **pack sizes**: a pack, box, strip or bag that holds a fi
 number of those items at its own price ("Pack of 12" for 40.00, "Box of 48" for
 150.00). Add them under **Pack sizes** in the product form.
 
-- On the Sales screen each pack size is a button on the product's tile. A pack
+- On the Sales screen each pack size is a button on the product's search result. A pack
   is its own line in the cart, priced at the pack price, and selling one takes the
   whole pack out of stock. Packs and singles of one product share the same stock,
   so the tile always shows what is really left.

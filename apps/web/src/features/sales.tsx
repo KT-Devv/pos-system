@@ -141,7 +141,6 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
   const { shop, user } = useWorkspace();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [selectedCat, setSelectedCat] = useState("all");
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [search, setSearch] = useState("");
@@ -178,11 +177,6 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
   useEffect(() => { void load(); }, [load]);
 
   const categoryName = useMemo(() => new Map(categories.map(c => [c.id, c.name])), [categories]);
-  // Only categories that have something to sell: a shop can have dozens, most of them empty at any moment.
-  const sellableCategories = useMemo(() => {
-    const used = new Set(products.map(p => p.category_id));
-    return categories.filter(c => used.has(c.id));
-  }, [categories, products]);
   /** Single items each product's cart lines take from stock, so tiles show what is really left. */
   const { claimed, cartUnits } = useMemo(() => {
     const claimedItems = new Map<string, number>();
@@ -197,12 +191,14 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
   // The lower-cased text each product is searched by, built once per catalog rather than on every keystroke.
   const searchText = useMemo(() => new Map(products.map(p =>
     [p.id, `${p.name} ${p.barcode ?? ""} ${(packs.get(p.id) ?? []).map(pack => pack.barcode ?? "").join(" ")}`.toLowerCase()])), [products, packs]);
-  const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return products.filter(p => (selectedCat === "all" || p.category_id === selectedCat) && (searchText.get(p.id) ?? "").includes(term));
-  }, [products, selectedCat, search, searchText]);
-  // A page of tiles at a time: the rest load as the cashier scrolls, and a search narrows it anyway.
-  const tiles = useProgressiveList(filtered, 60, `${selectedCat}|${search}`);
+  // The screen lists nothing until the cashier searches: matches whose name starts with the text come first.
+  const term = search.trim().toLowerCase();
+  const matches = useMemo(() => {
+    if (!term) return [];
+    const found = products.filter(p => (searchText.get(p.id) ?? "").includes(term));
+    return [...found.filter(p => p.name.toLowerCase().startsWith(term)), ...found.filter(p => !p.name.toLowerCase().startsWith(term))];
+  }, [products, term, searchText]);
+  const results = useProgressiveList(matches, 12, term);
   const hasRetail = useMemo(() => products.some(p => p.retail_price != null), [products]);
 
   const selectedCustomer = customers.find(c => c.id === customerId);
@@ -250,12 +246,32 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
     return { ok: true, message: `Added ${product.name}${label ? ` (${label})` : ""}` };
   };
 
-  // USB barcode scanners type the code and press Enter: add the exact match straight to the cart.
-  const scan = () => {
-    const code = search.trim();
-    if (!code || !findByBarcode(scanTargets, code)) return;
-    if (addByBarcode(code).ok) setSearch("");
+  /** After something is added the search is cleared and ready for the next one (a USB scanner types into it). */
+  const focusSearch = () => {
+    if (window.matchMedia("(pointer: fine)").matches) window.setTimeout(() => document.getElementById("search-products")?.focus(), 0);
   };
+  const addFromSearch = useCallback((product: Product, pack: PackSizeRow | null = null) => {
+    add(product, pack);
+    setSearch("");
+    focusSearch();
+  }, [add]);
+
+  // Enter adds what the text is: a scanned barcode (USB scanners type the code and press Enter), or the one
+  // product left when the search has narrowed to a single item with no pack sizes to choose between.
+  const submitSearch = () => {
+    const code = search.trim();
+    if (!code) return;
+    if (findByBarcode(scanTargets, code)) {
+      if (addByBarcode(code).ok) { setSearch(""); focusSearch(); }
+      return;
+    }
+    if (matches.length === 1 && (packs.get(matches[0].id) ?? NO_PACKS).length === 0) addFromSearch(matches[0]);
+  };
+
+  // A till is used with a keyboard or a scanner: start with the cursor in the search box (not on phones, where it would open the keyboard).
+  useEffect(() => {
+    if (window.matchMedia("(pointer: fine)").matches) document.getElementById("search-products")?.focus();
+  }, []);
 
   const reprint = async (saleId: string) => {
     setReprinting(saleId);
@@ -349,7 +365,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
   return (
     <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_400px]">
       <div className="grid gap-6">
-        <section aria-label="Products" className="grid gap-4">
+        <section aria-label="Find products" className="grid gap-4">
           <div className="flex gap-2">
             <SearchInput
               id="search-products"
@@ -357,7 +373,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
               placeholder="Search products, or scan a barcode…"
               value={search}
               onChange={setSearch}
-              onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); scan(); } }}
+              onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); submitSearch(); } }}
               className="flex-1"
               inputClassName="h-12 text-base"
             />
@@ -380,56 +396,39 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
             </div>
           )}
 
-          {sellableCategories.length > 0 && (
-            <div role="group" aria-label="Filter by category" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {[{ id: "all", name: "All" }, ...sellableCategories].map(cat => (
-                <button
-                  key={cat.id}
-                  type="button"
-                  aria-pressed={selectedCat === cat.id}
-                  onClick={() => setSelectedCat(cat.id)}
-                  className={cn(
-                    "h-9 shrink-0 rounded-full border px-4 text-[13px] font-semibold",
-                    selectedCat === cat.id
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "bg-card text-foreground hover:bg-accent",
-                  )}
-                >
-                  {cat.name}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {filtered.length > 0 ? (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
-              {tiles.visible.map(product => (
-                <ProductTile
-                  key={product.id}
-                  product={product}
-                  packs={packs.get(product.id) ?? NO_PACKS}
-                  category={product.category_id ? categoryName.get(product.category_id) ?? null : null}
-                  remaining={product.stock - (claimed.get(product.id) ?? 0)}
-                  units={cartUnits.get(product.id) ?? 0}
-                  lowAt={shop.low_stock_threshold}
-                  tier={tier}
-                  onAdd={add}
+          {term ? (
+            matches.length > 0 ? (
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
+                {results.visible.map(product => (
+                  <ProductTile
+                    key={product.id}
+                    product={product}
+                    packs={packs.get(product.id) ?? NO_PACKS}
+                    category={product.category_id ? categoryName.get(product.category_id) ?? null : null}
+                    remaining={product.stock - (claimed.get(product.id) ?? 0)}
+                    units={cartUnits.get(product.id) ?? 0}
+                    lowAt={shop.low_stock_threshold}
+                    tier={tier}
+                    onAdd={addFromSearch}
+                  />
+                ))}
+                {results.remaining > 0 && (
+                  <Button ref={results.sentinelRef} type="button" variant="outline" className="col-span-full" onClick={results.showMore}>
+                    Show more matches ({results.remaining} more)
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <Card>
+                <EmptyState
+                  icon={PackageSearch}
+                  title={loaded ? "No products found" : "Loading products…"}
+                  description={loaded ? "Try a different name or barcode. Products that are out of stock are not listed." : undefined}
                 />
-              ))}
-              {tiles.remaining > 0 && (
-                <Button ref={tiles.sentinelRef} type="button" variant="outline" className="col-span-full" onClick={tiles.showMore}>
-                  Show more products ({tiles.remaining} more)
-                </Button>
-              )}
-            </div>
+              </Card>
+            )
           ) : (
-            <Card>
-              <EmptyState
-                icon={PackageSearch}
-                title={loaded ? "No products found" : "Loading products…"}
-                description={loaded ? (search ? "Try a different name or barcode." : "Products in stock will appear here.") : undefined}
-              />
-            </Card>
+            <p className="text-sm text-muted-foreground">{loaded ? "Search by name or barcode, or scan, to add a product to the sale." : "Loading products…"}</p>
           )}
         </section>
 
@@ -491,7 +490,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
               <EmptyState
                 icon={ShoppingCart}
                 title="Cart is empty"
-                description="Tap a product to add it, or scan a barcode."
+                description="Search for a product to add it, or scan a barcode."
                 className="py-8"
               />
             ) : (

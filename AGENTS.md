@@ -70,7 +70,7 @@ Supabase when connectivity returns.
 - Chart colors come from the validated `--chart-*` tokens; assign them by entity (for
   example payment method), never by rank.
 - Keep business validation in `packages/shared` or the Supabase RPCs.
-- Never render a whole catalog at once. Long product lists (Sales tiles, Products, Inventory) page through
+- Never render a whole catalog at once. Long product lists (Sales search results, Products, Inventory) page through
   `useProgressiveList`, and per-item components that re-render with the cart are memoised: hundreds of
   tiles built on every keystroke is what made Safari lag. Avoid `backdrop-blur` and other full-screen
   compositing effects for the same reason.

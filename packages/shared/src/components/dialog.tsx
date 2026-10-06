@@ -40,7 +40,7 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "kt-dialog fixed left-[50%] top-[50%] z-[60] grid max-h-[90vh] w-[calc(100vw-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-visible rounded-2xl border bg-card p-6 text-card-foreground shadow-lg",
+        "kt-dialog fixed left-[50%] top-[50%] z-[60] flex max-h-[90dvh] w-[calc(100vw-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] flex-col overflow-visible rounded-2xl border bg-card p-6 text-card-foreground shadow-lg",
         className,
       )}
       onPointerDownOutside={(event) => {
@@ -57,7 +57,8 @@ const DialogContent = React.forwardRef<
       }}
       {...props}
     >
-      <div className="-mx-1 grid min-h-0 grid-cols-[minmax(0,1fr)] gap-4 overflow-y-auto px-1">{children}</div>
+      {/* The one scrolling part: a dialog taller than the screen scrolls here (its sticky footer stays in view) rather than running off the screen. */}
+      <div className="-mx-1 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] content-start gap-4 overflow-y-auto px-1">{children}</div>
       <DialogPrimitive.Close className="absolute right-3.5 top-3.5 grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none">
         <X className="h-4 w-4" />
         <span className="sr-only">Close</span>
