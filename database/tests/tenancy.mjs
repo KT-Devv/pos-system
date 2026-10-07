@@ -100,13 +100,12 @@ await test("anonymous visitors cannot create shops", () =>
 
 await call(U.ownerB, `select public.create_shop('Beta Store', 'NGN', 'NG') as id`).then(r => { shopB = r.rows[0].id; });
 
-// Team for shop A (via the real RPCs).
-await call(U.ownerA, `select public.invite_member($1, $2, 'admin')`, [shopA, U.adminA.email]);
-await call(U.ownerA, `select public.invite_member($1, $2, 'cashier')`, [shopA, U.cashA.email]);
-await call(U.adminA, `select public.accept_invite((select invite_id from public.my_invites() limit 1))`);
-await call(U.cashA, `select public.accept_invite((select invite_id from public.my_invites() limit 1))`);
-await call(U.ownerB, `select public.invite_member($1, $2, 'cashier')`, [shopB, U.cashB.email]);
-await call(U.cashB, `select public.accept_invite((select invite_id from public.my_invites() limit 1))`);
+// Team for shop A (via the real RPCs): an invitation code is created, then typed in by the person joining.
+const newInvite = async (user, shop, role, label = null) => (await call(user, `select public.create_invite($1, $2, $3) as r`, [shop, role, label])).rows[0].r;
+const redeem = async (user, code) => (await call(user, `select public.redeem_invite($1) as r`, [code])).rows[0].r;
+await redeem(U.adminA, (await newInvite(U.ownerA, shopA, "admin")).code);
+await redeem(U.cashA, (await newInvite(U.ownerA, shopA, "cashier")).code);
+await redeem(U.cashB, (await newInvite(U.ownerB, shopB, "cashier")).code);
 
 // Seed catalog + customers for both shops through the app's own permissions.
 const seed = async (owner, shop, tag) => {
@@ -134,7 +133,7 @@ for (const t of ["categories", "products", "customers", "suppliers", "sales", "s
 await test("isolation: other shops' settings, team and invitations are invisible", async () => {
   ok((await call(U.ownerB, `select count(*)::int c from public.shops where id = $1`, [shopA])).rows[0].c === 0, "shop row visible");
   ok((await call(U.ownerB, `select count(*)::int c from public.shop_members where shop_id = $1`, [shopA])).rows[0].c === 0, "members visible");
-  await call(U.ownerA, `select public.invite_member($1, 'someone@x.test', 'cashier')`, [shopA]);
+  await newInvite(U.ownerA, shopA, "cashier");
   ok((await call(U.ownerB, `select count(*)::int c from public.shop_invites where shop_id = $1`, [shopA])).rows[0].c === 0, "invites visible");
 });
 await test("isolation: profiles are visible only to teammates", async () => {
@@ -203,7 +202,7 @@ await test("isolation: record_stock_movement cannot touch another shop's product
   ok((await one(`select stock from public.products where id = $1`, [B.prod])).stock === 19, "B's stock changed");
 });
 await test("anonymous visitors cannot call any RPC", async () => {
-  for (const sql of [`select public.create_sale('${shopA}', '${U.cashA.id}', null, 'cash', 0, '[]'::jsonb)`, `select public.record_stock_movement('${A.prod}', 'in', 1)`, `select public.my_invites()`, `select public.invite_member('${shopA}', 'x@y.zz', 'cashier')`, `select public.accept_invite('${uuid(99)}')`, `select public.set_member_role('${shopA}', '${U.cashA.id}', 'admin')`, `select public.remove_member('${shopA}', '${U.cashA.id}')`]) {
+  for (const sql of [`select public.create_sale('${shopA}', '${U.cashA.id}', null, 'cash', 0, '[]'::jsonb)`, `select public.record_stock_movement('${A.prod}', 'in', 1)`, `select public.create_invite('${shopA}', 'cashier')`, `select public.redeem_invite('ABCDE23456')`, `select public.revoke_invite('${uuid(99)}')`, `select public.set_member_role('${shopA}', '${U.cashA.id}', 'admin')`, `select public.remove_member('${shopA}', '${U.cashA.id}')`]) {
     await denied(() => call(null, sql), /permission denied/, sql.slice(0, 40));
   }
 });
@@ -235,7 +234,7 @@ await test("admin: cannot write sales, sale lines or stock movements directly ei
 });
 await test("cashier: cannot edit shop settings, invite, promote or remove anyone", async () => {
   await noRows(() => call(U.cashA, `update public.shops set name = 'Mine now' where id = $1 returning id`, [shopA]), "rename shop");
-  await denied(() => call(U.cashA, `select public.invite_member($1, 'z@z.zz', 'cashier')`, [shopA]), /Only admins/);
+  await denied(() => call(U.cashA, `select public.create_invite($1, 'cashier')`, [shopA]), /Only admins/);
   await denied(() => call(U.cashA, `select public.set_member_role($1, $2, 'admin')`, [shopA, U.cashA.id]), /Only the owner/);
   await denied(() => call(U.cashA, `select public.remove_member($1, $2)`, [shopA, U.adminA.id]), /Only admins/);
   ok((await call(U.cashA, `select count(*)::int c from public.shop_invites`)).rows[0].c === 0, "saw pending invitations");
@@ -248,8 +247,8 @@ await test("admin: manages the catalog and shop settings, but not ownership", as
   await denied(() => call(U.adminA, `update public.shops set owner_id = $2 where id = $1`, [shopA, U.adminA.id]), /owner cannot be changed/, "take ownership");
 });
 await test("admin: can invite and remove cashiers only", async () => {
-  await call(U.adminA, `select public.invite_member($1, 'temp.cashier@x.test', 'cashier')`, [shopA]);
-  await denied(() => call(U.adminA, `select public.invite_member($1, 'temp.admin@x.test', 'admin')`, [shopA]), /Only the owner can invite admins/);
+  await newInvite(U.adminA, shopA, "cashier");
+  await denied(() => call(U.adminA, `select public.create_invite($1, 'admin')`, [shopA]), /Only the owner can invite admins/);
   await denied(() => call(U.adminA, `select public.set_member_role($1, $2, 'admin')`, [shopA, U.cashA.id]), /Only the owner/);
   await denied(() => call(U.adminA, `select public.remove_member($1, $2)`, [shopA, ownerId(U.ownerA)]), /owner cannot be removed/);
   function ownerId(u) { return u.id; }
@@ -271,43 +270,100 @@ await test("profiles: people can rename themselves, but not change email or edit
 });
 
 // ---- Invitations -------------------------------------------------------------------------------------
-await test("invitations: only the addressee can see and accept one (email is case-insensitive)", async () => {
-  await call(U.ownerA, `select public.invite_member($1, '  INVITEE@shop.test ', 'cashier')`, [shopA]);
-  ok((await call(U.stranger, `select * from public.my_invites()`)).rows.length === 0, "stranger sees the invite");
-  const mine = (await call(U.invitee, `select * from public.my_invites()`)).rows;
-  ok(mine.length === 1 && mine[0].shop_name === "Alpha Mart" && mine[0].role === "cashier", JSON.stringify(mine));
-  await denied(() => call(U.stranger, `select public.accept_invite($1)`, [mine[0].invite_id]), /no longer valid/, "stranger accepts");
-  ok((await one(`select count(*)::int c from public.shop_members where user_id = $1`, [U.stranger.id])).c === 0, "stranger joined");
-  ok((await call(U.invitee, `select count(*)::int c from public.shop_invites`)).rows[0].c === 0, "invitee reads the invites table directly");
+const CODE = /^[2-9A-HJKMNP-Z]{10}$/;
+await test("invitations: an owner or admin creates a code that works once and expires in a day; only admins can read codes", async () => {
+  const made = await newInvite(U.ownerA, shopA, "cashier", "  Kofi at the till ");
+  ok(CODE.test(made.code), `code looks wrong: ${made.code}`);
+  ok(made.role === "cashier" && made.label === "Kofi at the till", JSON.stringify(made));
+  const hours = (new Date(made.expires_at) - Date.now()) / 36e5;
+  ok(hours > 23.9 && hours <= 24.01, `expires in ${hours}h`);
+  ok((await call(U.adminA, `select count(*)::int c from public.shop_invites where code = $1`, [made.code])).rows[0].c === 1, "admin cannot read the code");
+  for (const user of [U.cashA, U.stranger, U.ownerB]) ok((await call(user, `select count(*)::int c from public.shop_invites where code = $1`, [made.code])).rows[0].c === 0, "someone else can read the code");
+  const other = await newInvite(U.ownerA, shopA, "cashier");
+  ok(other.code !== made.code, "two codes were the same");
 });
-await test("invitations: accepting joins the shop with the invited role and consumes the invite", async () => {
-  const inv = (await call(U.invitee, `select * from public.my_invites()`)).rows[0];
-  const r = await call(U.invitee, `select public.accept_invite($1) as shop`, [inv.invite_id]);
-  ok(r.rows[0].shop === shopA, "wrong shop");
+await test("invitations: nobody can write the invitations table directly, or reach the attempts log or the code generator", async () => {
+  await denied(() => call(U.ownerA, `insert into public.shop_invites (shop_id, code, role) values ($1, 'AAAAAAAAAA', 'admin')`, [shopA]), /permission denied/, "owner writes a code");
+  await denied(() => call(U.adminA, `update public.shop_invites set expires_at = now() + interval '90 days'`), /permission denied/, "extend a code");
+  await denied(() => call(U.cashA, `select * from public.invite_attempts`), /permission denied/, "read the attempts log");
+  await denied(() => call(U.ownerA, `select public.generate_invite_code()`), /permission denied/, "call the generator");
+});
+await test("invitations: typing the code joins that shop with the invited role, and uses the code up", async () => {
+  const made = await newInvite(U.ownerA, shopA, "cashier");
+  const joined = await redeem(U.invitee, made.code);
+  ok(joined.shop_id === shopA && joined.role === "cashier", JSON.stringify(joined));
   ok((await one(`select role from public.shop_members where user_id = $1`, [U.invitee.id])).role === "cashier", "wrong role");
   ok((await call(U.invitee, `select count(*)::int c from public.products where shop_id = $1`, [shopA])).rows[0].c > 0, "cannot read shop data after joining");
-  ok((await call(U.invitee, `select * from public.my_invites()`)).rows.length === 0, "invite still listed");
+  const used = await one(`select used_at, used_by from public.shop_invites where code = $1`, [made.code]);
+  ok(used.used_at && used.used_by === U.invitee.id, "the code was not marked used");
+  ok((await redeem(U.stranger, made.code)).error === "invalid_code", "a used code worked a second time");
+  ok((await one(`select count(*)::int c from public.shop_members where user_id = $1`, [U.stranger.id])).c === 0, "stranger joined with a used code");
 });
-await test("invitations: existing members can't be invited or accept a second shop", async () => {
-  await denied(() => call(U.ownerA, `select public.invite_member($1, $2, 'cashier')`, [shopA, U.cashB.email]), /already belongs/);
-  await q(`insert into public.shop_invites (shop_id, email, role) values ($1, $2, 'cashier')`, [shopB, U.adminA.email]);
-  const inv = (await call(U.adminA, `select * from public.my_invites()`)).rows[0];
-  await denied(() => call(U.adminA, `select public.accept_invite($1)`, [inv.invite_id]), /already belong/);
+await test("invitations: a code is read leniently (any case, spaces and dashes) and a wrong one is refused the same way as an expired or used one", async () => {
+  const made = await newInvite(U.ownerB, shopB, "cashier");
+  const typed = ` ${made.code.slice(0, 5).toLowerCase()}-${made.code.slice(5).toLowerCase()} `;
+  const wrong = await redeem(U.newbie, "ZZZZZZZZZZ");
+  ok(wrong.error === "invalid_code", JSON.stringify(wrong));
+  const expired = await newInvite(U.ownerB, shopB, "cashier");
+  await q(`update public.shop_invites set expires_at = now() - interval '1 minute' where code = $1`, [expired.code]);
+  ok((await redeem(U.newbie, expired.code)).error === "invalid_code", "an expired code worked");
+  ok((await one(`select count(*)::int c from public.shop_members where user_id = $1`, [U.newbie.id])).c === 0, "newbie joined with a bad code");
+  const ok1 = await redeem(U.newbie, typed);
+  ok(ok1.shop_id === shopB, `lenient entry failed: ${JSON.stringify(ok1)}`);
+  await q(`delete from public.shop_members where user_id = $1`, [U.newbie.id]);
+  await q(`delete from public.invite_attempts where user_id = $1`, [U.newbie.id]);
 });
-await test("invitations: expired invitations disappear and cannot be accepted", async () => {
-  const id = (await call(U.ownerB, `select public.invite_member($1, $2, 'cashier') as id`, [shopB, U.stranger.email])).rows[0].id;
-  await q(`update public.shop_invites set expires_at = now() - interval '1 day' where id = $1`, [id]);
-  ok((await call(U.stranger, `select * from public.my_invites()`)).rows.length === 0, "expired invite listed");
-  await denied(() => call(U.stranger, `select public.accept_invite($1)`, [id]), /no longer valid/);
+await test("invitations: someone who already belongs to a shop cannot use a code, and the code is left unused", async () => {
+  const made = await newInvite(U.ownerB, shopB, "cashier");
+  await denied(() => call(U.adminA, `select public.redeem_invite($1)`, [made.code]), /already belong/);
+  ok((await one(`select used_at from public.shop_invites where code = $1`, [made.code])).used_at === null, "the code was used up");
 });
-await test("invitations: re-inviting refreshes the role, and admins can revoke", async () => {
-  await call(U.ownerA, `select public.invite_member($1, 'refresh@x.test', 'cashier')`, [shopA]);
-  await call(U.ownerA, `select public.invite_member($1, 'refresh@x.test', 'admin')`, [shopA]);
-  const rows = (await call(U.ownerA, `select id, role from public.shop_invites where email = 'refresh@x.test'`)).rows;
-  ok(rows.length === 1 && rows[0].role === "admin", JSON.stringify(rows));
-  await call(U.adminA, `select public.revoke_invite($1)`, [rows[0].id]);
-  await denied(() => call(U.ownerB, `select public.revoke_invite($1)`, [rows[0].id]), /not found/, "revoke a deleted invite");
-  await denied(() => call(U.ownerA, `select public.invite_member($1, 'not-an-email', 'cashier')`, [shopA]), /valid email/);
+await test("invitations: a code cannot be used by two different people", async () => {
+  const made = await newInvite(U.ownerA, shopA, "cashier");
+  const results = [];
+  for (const user of [U.newbie, U.stranger]) results.push(await redeem(user, made.code));
+  ok(results.filter((r) => r.shop_id).length === 1 && results.filter((r) => r.error === "invalid_code").length === 1, JSON.stringify(results));
+  await q(`delete from public.shop_members where user_id in ($1, $2)`, [U.newbie.id, U.stranger.id]);
+  await q(`delete from public.invite_attempts`);
+});
+await test("invitations: roles - admins only create cashier codes, nobody creates an owner code, and notes are limited", async () => {
+  await denied(() => call(U.adminA, `select public.create_invite($1, 'admin')`, [shopA]), /Only the owner can invite admins/);
+  await denied(() => call(U.ownerA, `select public.create_invite($1, 'owner')`, [shopA]), /exactly one owner/);
+  await denied(() => call(U.cashA, `select public.create_invite($1, 'cashier')`, [shopA]), /Only admins/);
+  await denied(() => call(U.ownerB, `select public.create_invite($1, 'cashier')`, [shopA]), /Only admins/, "another shop's owner");
+  await denied(() => call(U.ownerA, `select public.create_invite($1, 'cashier', $2)`, [shopA, "x".repeat(61)]), /at most 60/);
+  const adminCode = await newInvite(U.ownerA, shopA, "admin");
+  ok(adminCode.role === "admin", "owner could not create an admin code");
+});
+await test("invitations: admins can cancel a code, which then stops working; other shops cannot", async () => {
+  const made = await newInvite(U.adminA, shopA, "cashier");
+  const id = made.id;
+  await denied(() => call(U.ownerB, `select public.revoke_invite($1)`, [id]), /not found/, "another shop cancels it");
+  await denied(() => call(U.cashA, `select public.revoke_invite($1)`, [id]), /not found/, "a cashier cancels it");
+  await call(U.adminA, `select public.revoke_invite($1)`, [id]);
+  ok((await redeem(U.newbie, made.code)).error === "invalid_code", "a cancelled code worked");
+  await denied(() => call(U.ownerA, `select public.revoke_invite($1)`, [id]), /not found/, "cancel it twice");
+  await q(`delete from public.invite_attempts`);
+});
+await test("invitations: ten wrong codes in an hour lock guessing out, even for the right code, until the hour passes", async () => {
+  const made = await newInvite(U.ownerA, shopA, "cashier");
+  for (let i = 0; i < 10; i += 1) ok((await redeem(U.stranger, `WRONGCODE${i}`)).error === "invalid_code", `try ${i}`);
+  ok((await one(`select count(*)::int c from public.invite_attempts where user_id = $1`, [U.stranger.id])).c === 10, "attempts were not recorded");
+  ok((await redeem(U.stranger, made.code)).error === "too_many_attempts", "the right code got through while locked out");
+  ok((await one(`select count(*)::int c from public.shop_members where user_id = $1`, [U.stranger.id])).c === 0, "locked-out user joined");
+  ok((await redeem(U.newbie, `NOPENOPENO`)).error === "invalid_code", "someone else was locked out too");
+  await q(`update public.invite_attempts set created_at = now() - interval '2 hours' where user_id = $1`, [U.stranger.id]);
+  const after = await redeem(U.stranger, made.code);
+  ok(after.shop_id === shopA, `still locked out after the hour: ${JSON.stringify(after)}`);
+  await q(`delete from public.shop_members where user_id = $1`, [U.stranger.id]);
+  await q(`delete from public.invite_attempts`);
+});
+await test("invitations: at most 25 unused codes per shop", async () => {
+  await q(`delete from public.shop_invites where shop_id = $1`, [shopB]);
+  for (let i = 0; i < 25; i += 1) await newInvite(U.ownerB, shopB, "cashier");
+  await denied(() => call(U.ownerB, `select public.create_invite($1, 'cashier')`, [shopB]), /already 25/);
+  await q(`delete from public.shop_invites where shop_id = $1`, [shopB]);
+  await newInvite(U.ownerB, shopB, "cashier");
 });
 
 // ---- Shop settings -----------------------------------------------------------------------------------

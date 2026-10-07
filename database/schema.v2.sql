@@ -54,13 +54,26 @@ create unique index shop_members_one_owner_idx on public.shop_members(shop_id) w
 create table public.shop_invites (
   id uuid primary key default gen_random_uuid(),
   shop_id uuid not null references public.shops(id) on delete cascade,
-  email text not null check (email = lower(email)),
+  -- What the invited person types in to join the shop. Created by create_invite(), used once by redeem_invite().
+  code text not null unique,
   role public.shop_role not null check (role in ('admin', 'cashier')),
+  -- Who the code is for, so the owner can tell their codes apart. Used for nothing else.
+  label text check (label is null or char_length(label) <= 60),
   invited_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
-  expires_at timestamptz not null default now() + interval '14 days',
-  unique (shop_id, email)
+  -- A code works for one day, and once.
+  expires_at timestamptz not null default now() + interval '1 day',
+  used_at timestamptz,
+  used_by uuid references public.profiles(id) on delete set null
 );
+
+-- Wrong invitation codes, so guessing can be slowed down (see redeem_invite). Not reachable through the API.
+create table public.invite_attempts (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+create index invite_attempts_user_idx on public.invite_attempts(user_id, created_at);
 
 create table public.categories (
   id uuid primary key default gen_random_uuid(),
@@ -192,7 +205,7 @@ create index if not exists sale_lines_shop_idx on public.sale_lines(shop_id);
 create index if not exists sale_lines_sale_id_idx on public.sale_lines(sale_id);
 create index if not exists stock_movements_shop_idx on public.stock_movements(shop_id);
 create index if not exists stock_movements_product_id_idx on public.stock_movements(product_id);
-create index if not exists shop_invites_email_idx on public.shop_invites(email);
+create index if not exists shop_invites_shop_idx on public.shop_invites(shop_id);
 
 -- @@ tenancy-functions --------------------------------------------------------------------------
 
@@ -381,40 +394,71 @@ begin
 end;
 $$;
 
--- Team management. Owners can invite admins and cashiers; admins can invite cashiers.
-create or replace function public.invite_member(p_shop_id uuid, p_email text, p_role public.shop_role)
-returns uuid
+-- Team management. A person joins a shop with an invitation code: an owner (or admin) creates one, passes it on,
+-- and the person types it in when they sign up (or at first sign-in). Owners can create admin and cashier codes; admins
+-- can create cashier codes. A code works once and expires after a day.
+
+-- Codes use letters and digits that cannot be mistaken for each other (no 0 or O, no 1, I or L): ten of them, about
+-- 8 x 10^14 possibilities. Not callable through the API; create_invite() uses it.
+create or replace function public.generate_invite_code()
+returns text
+language plpgsql
+volatile
+set search_path = public
+as $$
+declare
+  alphabet constant text := '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+  random_bytes bytea := decode(replace(gen_random_uuid()::text, '-', ''), 'hex');
+  -- skips the two bytes of a version-4 uuid that are not random
+  picks constant integer[] := array[0, 1, 2, 3, 4, 5, 9, 10, 11, 12];
+  result text := '';
+  pick integer;
+begin
+  foreach pick in array picks loop
+    result := result || substr(alphabet, 1 + (get_byte(random_bytes, pick) % 31), 1);
+  end loop;
+  return result;
+end;
+$$;
+
+create or replace function public.create_invite(p_shop_id uuid, p_role public.shop_role, p_label text default null)
+returns jsonb
 language plpgsql
 security definer
 set search_path = public
 as $$
 declare
   actor public.shop_role := public.shop_role_of(p_shop_id);
-  clean text := lower(btrim(p_email));
-  invite_id uuid;
+  clean_label text := nullif(btrim(coalesce(p_label, '')), '');
+  inv public.shop_invites;
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
-  if actor is null or actor = 'cashier' then raise exception 'Only admins can invite people'; end if;
+  if actor is null or actor = 'cashier' then raise exception 'Only admins can create invitation codes'; end if;
   if p_role = 'owner' then raise exception 'A shop has exactly one owner'; end if;
   if p_role = 'admin' and actor <> 'owner' then raise exception 'Only the owner can invite admins'; end if;
-  if clean !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' then
-    raise exception 'Enter a valid email address';
-  end if;
-  if exists (
-    select 1 from public.profiles p
-    join public.shop_members m on m.user_id = p.id
-    where lower(p.email) = clean
-  ) then
-    raise exception 'That person already belongs to a shop';
+  if clean_label is not null and char_length(clean_label) > 60 then
+    raise exception 'The name or note can be at most 60 characters';
   end if;
 
-  insert into public.shop_invites (shop_id, email, role, invited_by)
-  values (p_shop_id, clean, p_role, auth.uid())
-  on conflict (shop_id, email) do update
-    set role = excluded.role, invited_by = excluded.invited_by,
-        created_at = now(), expires_at = now() + interval '14 days'
-  returning id into invite_id;
-  return invite_id;
+  -- Old codes that were used or expired a month ago are no use to anyone.
+  delete from public.shop_invites
+  where shop_id = p_shop_id and coalesce(used_at, expires_at) < now() - interval '30 days';
+  if (select count(*) from public.shop_invites where shop_id = p_shop_id and used_at is null and expires_at > now()) >= 25 then
+    raise exception 'There are already 25 unused invitation codes. Cancel some, or wait for them to expire.';
+  end if;
+
+  loop
+    begin
+      insert into public.shop_invites (shop_id, code, role, label, invited_by)
+      values (p_shop_id, public.generate_invite_code(), p_role, clean_label, auth.uid())
+      returning * into inv;
+      exit;
+    exception when unique_violation then
+      null; -- the code was already taken (a one-in-a-trillion clash): make another
+    end;
+  end loop;
+
+  return jsonb_build_object('id', inv.id, 'code', inv.code, 'role', inv.role, 'label', inv.label, 'expires_at', inv.expires_at);
 end;
 $$;
 
@@ -435,47 +479,42 @@ begin
 end;
 $$;
 
--- Invitations addressed to the signed-in user's email (they are not members yet, so RLS can't show them).
-create or replace function public.my_invites()
-returns table (invite_id uuid, shop_id uuid, shop_name text, role public.shop_role, invited_by_name text, expires_at timestamptz)
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select i.id, i.shop_id, s.name, i.role, p.name, i.expires_at
-  from public.shop_invites i
-  join public.shops s on s.id = i.shop_id
-  left join public.profiles p on p.id = i.invited_by
-  where auth.uid() is not null
-    and i.email = lower(auth.jwt() ->> 'email')
-    and i.expires_at > now()
-  order by i.created_at desc;
-$$;
-
-create or replace function public.accept_invite(p_invite_id uuid)
-returns uuid
+-- Joins the caller to the shop the code belongs to, with the role it was created for, and uses the code up.
+-- Returns {"shop_id", "role"} when it worked, or {"error": "invalid_code"} / {"error": "too_many_attempts"}. Those two are
+-- returned rather than raised so that a wrong guess is still recorded: raising would roll the record back. A wrong
+-- code, an expired one and a used one all look the same, and ten wrong tries in an hour lock the caller out for that hour.
+create or replace function public.redeem_invite(p_code text)
+returns jsonb
 language plpgsql
 security definer
 set search_path = public
 as $$
 declare
+  clean text := upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g'));
   inv public.shop_invites;
-  my_email text := lower(auth.jwt() ->> 'email');
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
-  select * into inv from public.shop_invites where id = p_invite_id;
-  if not found or inv.email is distinct from my_email or inv.expires_at < now() then
-    raise exception 'This invitation is no longer valid';
-  end if;
   if exists (select 1 from public.shop_members where user_id = auth.uid()) then
     raise exception 'You already belong to a shop';
   end if;
 
+  delete from public.invite_attempts where created_at < now() - interval '1 day';
+  if (select count(*) from public.invite_attempts where user_id = auth.uid() and created_at > now() - interval '1 hour') >= 10 then
+    return jsonb_build_object('error', 'too_many_attempts');
+  end if;
+
+  -- Locking the row makes two people typing the same code at once safe: the second finds it already used.
+  select * into inv from public.shop_invites
+  where code = clean and used_at is null and expires_at > now()
+  for update;
+  if not found then
+    insert into public.invite_attempts (user_id) values (auth.uid());
+    return jsonb_build_object('error', 'invalid_code');
+  end if;
+
   insert into public.shop_members (shop_id, user_id, role) values (inv.shop_id, auth.uid(), inv.role);
-  -- One shop per account: any other open invitations for this address are now moot.
-  delete from public.shop_invites where email = my_email;
-  return inv.shop_id;
+  update public.shop_invites set used_at = now(), used_by = auth.uid() where id = inv.id;
+  return jsonb_build_object('shop_id', inv.shop_id, 'role', inv.role);
 end;
 $$;
 
@@ -870,14 +909,13 @@ $$;
 -- Only signed-in users may call the RPCs.
 revoke all on function public.create_shop(text, text, text, text, text, text, integer, boolean, numeric) from public, anon;
 grant execute on function public.create_shop(text, text, text, text, text, text, integer, boolean, numeric) to authenticated;
-revoke all on function public.invite_member(uuid, text, public.shop_role) from public, anon;
-grant execute on function public.invite_member(uuid, text, public.shop_role) to authenticated;
+revoke all on function public.generate_invite_code() from public, anon, authenticated;
+revoke all on function public.create_invite(uuid, public.shop_role, text) from public, anon;
+grant execute on function public.create_invite(uuid, public.shop_role, text) to authenticated;
 revoke all on function public.revoke_invite(uuid) from public, anon;
 grant execute on function public.revoke_invite(uuid) to authenticated;
-revoke all on function public.my_invites() from public, anon;
-grant execute on function public.my_invites() to authenticated;
-revoke all on function public.accept_invite(uuid) from public, anon;
-grant execute on function public.accept_invite(uuid) to authenticated;
+revoke all on function public.redeem_invite(text) from public, anon;
+grant execute on function public.redeem_invite(text) to authenticated;
 revoke all on function public.set_member_role(uuid, uuid, public.shop_role) from public, anon;
 grant execute on function public.set_member_role(uuid, uuid, public.shop_role) to authenticated;
 revoke all on function public.remove_member(uuid, uuid) from public, anon;
@@ -897,6 +935,9 @@ alter table public.profiles enable row level security;
 alter table public.shops enable row level security;
 alter table public.shop_members enable row level security;
 alter table public.shop_invites enable row level security;
+alter table public.invite_attempts enable row level security;
+-- No policies and no grants: only redeem_invite() (security definer) reads or writes it.
+revoke all on public.invite_attempts from anon, authenticated;
 alter table public.categories enable row level security;
 alter table public.products enable row level security;
 alter table public.customers enable row level security;
@@ -1037,6 +1078,11 @@ to authenticated;
 -- of the grant above") so it holds even on a project where these tables ever picked up broader
 -- default privileges.
 revoke insert, update, delete on public.sales, public.sale_lines, public.stock_movements from authenticated;
+
+-- Team membership and invitation codes change only through the functions above (create_invite, redeem_invite,
+-- revoke_invite, set_member_role, remove_member). Revoked explicitly rather than left to row-level security alone,
+-- so a project whose tables get broad default privileges still cannot write them directly.
+revoke insert, update, delete on public.shop_members, public.shop_invites from anon, authenticated;
 
 grant update on public.shops to authenticated;
 

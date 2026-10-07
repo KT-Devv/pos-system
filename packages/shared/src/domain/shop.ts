@@ -71,15 +71,38 @@ export function invitableRoles(actor: ShopRole | null | undefined): ShopRole[] {
   return [];
 }
 
+/** An invitation code is this many letters and digits (the database makes them; see create_invite). */
+export const INVITE_CODE_LENGTH = 10;
+/** How long a code works for. The database sets the real expiry; this is only for wording. */
+export const INVITE_CODE_HOURS = 24;
+
+/** A code as the database wants it: letters and digits only, upper case, whatever was typed or pasted. */
+export function normalizeInviteCode(text: string): string {
+  return text.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+}
+
+/** "7KQ4MX9HTP" -> "7KQ4M-X9HTP": easier to read out, and to type. */
+export function formatInviteCode(text: string): string {
+  const code = normalizeInviteCode(text);
+  return code.length > 5 ? `${code.slice(0, 5)}-${code.slice(5)}` : code;
+}
+
+export function looksLikeInviteCode(text: string): boolean {
+  return normalizeInviteCode(text).length === INVITE_CODE_LENGTH;
+}
+
 /**
- * The message an owner or admin passes on when an invitation email cannot be sent (or is not enough): who is
- * inviting them to what, where to go and which email address to use, since the invitation is tied to it.
+ * The message an owner or admin sends along with a new invitation code. With the shop's web address it carries a
+ * sign-up link that fills the code in; either way the code is there to type.
  */
-export function invitationMessage(input: { shopName: string; role: ShopRole; email: string; siteUrl?: string | null }): string {
+export function invitationMessage(input: { shopName: string; role: ShopRole; code: string; siteUrl?: string | null }): string {
   const role = ROLE_LABELS[input.role].toLowerCase();
   const article = /^[aeiou]/.test(role) ? "an" : "a";
-  const where = input.siteUrl ? `Open ${input.siteUrl} and sign up` : "Sign up";
-  return `You've been invited to join ${input.shopName} on KT POS System as ${article} ${role}. ${where} (or sign in, if you already have an account) with this email address: ${input.email}. Your invitation will be waiting for you.`;
+  const code = formatInviteCode(input.code);
+  const how = input.siteUrl
+    ? `Sign up here: ${input.siteUrl}/login?tab=signup&code=${normalizeInviteCode(input.code)}\nYour invitation code (already filled in if you use that link): ${code}`
+    : `Sign up on KT POS System and type this invitation code when it asks for one: ${code}`;
+  return `You've been invited to join ${input.shopName} on KT POS System as ${article} ${role}.\n${how}\nThe code works once and expires in ${INVITE_CODE_HOURS} hours.`;
 }
 
 /** Whether `actor` may remove a member holding `target`. Nobody removes the owner. */

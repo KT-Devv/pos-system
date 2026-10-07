@@ -84,9 +84,6 @@ export function friendlyError(message: string): string {
   if (/bulk_(import_products|record_stock)/.test(message) && /schema cache|does not exist|Could not find/i.test(message)) {
     return "This database needs the bulk import upgrade. Run database/migrations/008_bulk_import.sql in the Supabase SQL editor, then reload.";
   }
-  if (/That person already belongs to a shop/i.test(message)) {
-    return "That email address already has an account with a shop of its own, and an account can only work in one shop. Ask them to use a different email address.";
-  }
   if (/row-level security/i.test(message)) return "You don't have permission to do that.";
   if (/currency cannot be changed/i.test(message)) return "The currency can't be changed after sales have been recorded.";
   return message;

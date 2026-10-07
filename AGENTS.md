@@ -46,8 +46,9 @@ all-or-nothing functions behind the Import buttons (spreadsheet parsing and row 
 product price and `sale_lines.price_tier`, and 010 renames it to wholesale (`products.wholesale_price`, tier
 `regular` or `wholesale`): `create_sale` charges a line's `price_tier` only where the product has a wholesale price,
 and pack sizes always use their own price. Run 009 then 010 before deploying the Wholesale switch.
-Invitations are saved by `invite_member`; the `supabase/functions/invite-member` Edge Function calls it as the caller and then
-sends the email (see `docs/INVITATIONS.md`; `npm run test:functions`). Never put the service-role key in the app.
+011 replaces email invitations with invitation codes: `create_invite` makes a single-use code that expires after a day, `redeem_invite`
+(typed at sign-up or on the shop set-up screen) joins the caller to that shop, and wrong guesses are rate-limited (see
+`docs/INVITATIONS.md`). Run 011 before deploying the code screens. Never put the service-role key in the app.
 Checkout uses the shop-scoped `create_sale(p_shop_id, ...)`; inventory uses
 `record_stock_movement`. Stock is always counted in single items: a pack size
 (`product_units`) sells a fixed number of them, and `create_sale` takes

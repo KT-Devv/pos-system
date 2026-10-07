@@ -5,8 +5,8 @@
 //
 // Three scenarios are exercised with the same tenancy/roles/invitations checks:
 //   1. a fresh install of schema.v2.sql
-//   2. an existing single-shop database (with data) upgraded by migrations 004, 006, 007, 008, 009 and 010
-//   3. an empty database upgraded by migrations 004, 006, 007, 008, 009 and 010
+//   2. an existing single-shop database (with data) upgraded by migrations 004, 006, 007, 008, 009, 010 and 011
+//   3. an empty database upgraded by migrations 004, 006, 007, 008, 009, 010 and 011
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,14 +20,15 @@ const lockLedger = path.join(database, "migrations", "007_lock_ledger_writes.sql
 const bulkImport = path.join(database, "migrations", "008_bulk_import.sql");
 const retailPrice = path.join(database, "migrations", "009_retail_price.sql");
 const wholesalePrice = path.join(database, "migrations", "010_wholesale_price.sql");
+const inviteCodes = path.join(database, "migrations", "011_invitation_codes.sql");
 const before = path.join(here, "fixtures", "schema_before_shops.sql");
 const legacySeed = path.join(here, "fixtures", "legacy_seed.sql");
 const suite = path.join(here, "tenancy.mjs");
 
 const scenarios = [
   ["Fresh install of schema.v2.sql", [schema]],
-  ["Upgrade of a single-shop database with data (migrations 004, 006, 007, 008, 009, 010)", ["--legacy", legacySeed, before, migration, packSizes, lockLedger, bulkImport, retailPrice, wholesalePrice]],
-  ["Upgrade of an empty single-shop database (migrations 004, 006, 007, 008, 009, 010)", [before, migration, packSizes, lockLedger, bulkImport, retailPrice, wholesalePrice]],
+  ["Upgrade of a single-shop database with data (migrations 004, 006, 007, 008, 009, 010, 011)", ["--legacy", legacySeed, before, migration, packSizes, lockLedger, bulkImport, retailPrice, wholesalePrice, inviteCodes]],
+  ["Upgrade of an empty single-shop database (migrations 004, 006, 007, 008, 009, 010, 011)", [before, migration, packSizes, lockLedger, bulkImport, retailPrice, wholesalePrice, inviteCodes]],
 ];
 
 let failed = 0;

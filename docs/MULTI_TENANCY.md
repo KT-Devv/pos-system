@@ -9,7 +9,7 @@ features.
 
 1. They sign up (or sign in) with email and password.
 2. If they have no shop yet, the workspace shows **first-login setup**:
-   - If someone has invited their email address, they can **join** that shop.
+   - If someone gave them an invitation code, they can **join** that shop with it.
    - Otherwise they **create a shop**: name, country, currency, optional phone,
      email and address, then a low-stock warning level and loyalty rules.
 3. They land on their shop's overview. Everything in the app (prices, reports,
@@ -25,7 +25,7 @@ same exported web application.
 | --- | --- |
 | `shops` | One row per business: name, currency, country, contact details, `low_stock_threshold`, `loyalty_enabled`, `loyalty_spend_per_point`, `owner_id` |
 | `shop_members` | Who works in which shop and as what (`owner`, `admin`, `cashier`) |
-| `shop_invites` | Pending invitations by email (14 days) |
+| `shop_invites` | Invitation codes: single use, role, optional note, expire after 1 day |
 | `profiles` | One row per account: name and email |
 | `product_units` | Pack sizes of a product (name, number of single items, price, optional barcode). Stock is kept in single items on `products` |
 | everything else | `categories`, `products`, `customers`, `suppliers`, `sales`, `sale_lines`, `stock_movements` all carry a `shop_id` |
@@ -78,11 +78,10 @@ historic amount would silently change meaning. Only the SQL editor bypasses this
 
 ## Invitations
 
-There is no outbound email yet. An owner or admin enters a colleague's address in
-**Settings > Team**; the colleague signs up or signs in with **that exact
-address** (case-insensitive) and is offered the invitation on first login. To send
-real email later, add a Supabase Edge Function that calls
-`auth.admin.inviteUserByEmail` after `invite_member`.
+People join a shop with an **invitation code**, not an email address. An owner or
+admin creates one in **Settings > Team** (`create_invite`); the person types it in
+when they sign up, or on the shop set-up screen (`redeem_invite`). A code works once
+and expires after a day, and wrong guesses are rate-limited. See `INVITATIONS.md`.
 
 ## Adding a feature
 
@@ -111,6 +110,6 @@ Postgres that imitates Supabase's roles and JWT claims, then checks, for a fresh
 install and for an upgraded single-shop database: a user in shop B cannot read,
 insert into, update or delete shop A's rows; foreign keys reject cross-shop
 references; each RPC refuses another shop's ids; cashiers cannot change the
-catalog or promote themselves; invitations only work for their addressee; and
+catalog or promote themselves; invitation codes are single-use, expire and cannot be guessed; and
 anonymous callers cannot execute any function. Run it after every change to the
 schema, and extend `database/tests/tenancy.mjs` when you add a table or RPC.

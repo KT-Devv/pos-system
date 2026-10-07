@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Alert, AlertDescription, Button, Input, Label, SegmentedControl } from "@pos/shared";
+import { Alert, AlertDescription, Button, formatInviteCode, Input, Label, looksLikeInviteCode, normalizeInviteCode, SegmentedControl } from "@pos/shared";
 import { AlertCircle, CheckCircle2, MailCheck } from "lucide-react";
 import { AuthShell } from "@/components/auth-shell";
 import { PasswordInput } from "@/components/password-input";
@@ -24,6 +24,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [canResend, setCanResend] = useState(false);
@@ -37,6 +38,12 @@ export default function LoginPage() {
     const url = new URL(window.location.href);
     const tab = url.searchParams.get("tab");
     if (tab === "signup" || tab === "forgot") setMode(tab);
+    // An invitation link carries its code: fill it in and open sign-up.
+    const sharedCode = url.searchParams.get("code");
+    if (sharedCode && looksLikeInviteCode(sharedCode)) {
+      setInviteCode(formatInviteCode(sharedCode));
+      setMode("signup");
+    }
 
     const linkError = readUrlAuthError(url);
     if (linkError) setError(linkError.message);
@@ -109,12 +116,16 @@ export default function LoginPage() {
       throw new Error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters long.`);
     }
     if (password !== confirmPassword) throw new Error("Passwords do not match.");
+    if (inviteCode.trim() && !looksLikeInviteCode(inviteCode)) {
+      throw new Error("That invitation code should be 10 letters and numbers. Leave it empty if you weren't given one.");
+    }
 
     const { data, error: signUpError } = await createSupabaseBrowserClient().auth.signUp({
       email: address,
       password,
       options: {
-        data: { display_name: name.trim() },
+        // The code rides along with the new account and is used at first sign-in (see lib/workspace.tsx).
+        data: { display_name: name.trim(), ...(inviteCode.trim() ? { invite_code: normalizeInviteCode(inviteCode) } : {}) },
         emailRedirectTo: redirectUrl("/login"),
       },
     });
@@ -265,6 +276,26 @@ export default function LoginPage() {
               value={confirmPassword}
               onChange={(event) => setConfirmPassword(event.target.value)}
             />
+          </div>
+        )}
+
+        {mode === "signup" && (
+          <div className="grid gap-2">
+            <Label htmlFor="signup-invite">Invitation code <span className="font-normal text-muted-foreground">(only if you were invited)</span></Label>
+            <Input
+              id="signup-invite"
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              placeholder="XXXXX-XXXXX"
+              maxLength={14}
+              className="h-11 font-mono uppercase tracking-wider"
+              value={inviteCode}
+              onChange={(event) => setInviteCode(event.target.value.toUpperCase())}
+            />
+            <p className="text-xs text-muted-foreground">
+              {inviteCode.trim() ? "You'll join that shop as soon as you sign in." : "No code? Leave this empty and you'll set up your own shop."}
+            </p>
           </div>
         )}
 

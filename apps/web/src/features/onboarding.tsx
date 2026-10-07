@@ -6,75 +6,63 @@ import {
   AlertDescription,
   Button,
   currencyForCountry,
-  ROLE_LABELS,
-  type ShopRole,
+  formatInviteCode,
+  Input,
+  Label,
+  looksLikeInviteCode,
   validateShopInput,
 } from "@pos/shared";
-import { AlertCircle, ArrowLeft, ArrowRight, Check, Store } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Check, KeyRound } from "lucide-react";
 import { AuthShell } from "@/components/auth-shell";
+import { redeemInviteCode } from "@/lib/invite";
 import type { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { emptyShopForm, guessCountry, ShopForm, type ShopFormValues, toShopInput } from "./shop-form";
 
 type Client = ReturnType<typeof createSupabaseBrowserClient>;
 
-type Invite = {
-  invite_id: string;
-  shop_id: string;
-  shop_name: string;
-  role: ShopRole;
-  invited_by_name: string | null;
-};
-
-type Step = "invites" | "basics" | "preferences";
+type Step = "join" | "basics" | "preferences";
 
 /**
- * First-login setup. Someone with no shop either accepts an invitation to an existing one or
- * creates their own, choosing its name, country, currency and a few preferences.
+ * First-login setup. Someone with no shop either sets up their own (name, country, currency and a few preferences) or,
+ * if they were invited, joins one by typing the invitation code they were given. A code typed at sign-up is tried
+ * before this screen is reached; if it did not work, `joinError` says why and the code is filled in to correct.
  */
 export function Onboarding({
   supabase,
   user,
-  invites,
+  joinError,
+  code,
   onDone,
   onSignOut,
 }: {
   supabase: Client;
   user: { name: string; email: string | null };
-  invites: Invite[];
+  joinError?: string;
+  code?: string;
   onDone: () => Promise<void>;
   onSignOut: () => void;
 }) {
-  const [step, setStep] = useState<Step>(invites.length > 0 ? "invites" : "basics");
+  const [step, setStep] = useState<Step>(joinError || code ? "join" : "basics");
+  const [inviteCode, setInviteCode] = useState(code ? formatInviteCode(code) : "");
   const [values, setValues] = useState<ShopFormValues>(() => {
     const country = guessCountry();
     return emptyShopForm({ country, currency: currencyForCountry(country) ?? "USD" });
   });
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(joinError ?? null);
   const [busy, setBusy] = useState(false);
 
   const firstName = user.name.trim().split(" ")[0] || "there";
 
-  // An invitation can arrive while this screen is open: when one does, show it instead of shop set-up.
-  const [seenInvites, setSeenInvites] = useState(invites.length);
-  const [checkedNone, setCheckedNone] = useState(false);
-  if (invites.length > seenInvites) {
-    setSeenInvites(invites.length);
-    if (step === "basics") setStep("invites");
-  }
-  const check = async () => {
-    setBusy(true);
-    setCheckedNone(false);
-    await onDone();
-    setBusy(false);
-    setCheckedNone(true);
-  };
-
-  const accept = async (invite: Invite) => {
+  const join = async () => {
+    if (!looksLikeInviteCode(inviteCode)) {
+      setError("An invitation code is 10 letters and numbers, like 7KQ4M-X9HTP.");
+      return;
+    }
     setBusy(true);
     setError(null);
-    const { error: acceptError } = await supabase.rpc("accept_invite", { p_invite_id: invite.invite_id });
-    if (acceptError) {
-      setError(acceptError.message);
+    const result = await redeemInviteCode(supabase, inviteCode);
+    if (!result.ok) {
+      setError(result.message);
       setBusy(false);
       return;
     }
@@ -123,7 +111,7 @@ export function Onboarding({
 
   return (
     <AuthShell wide>
-      {step !== "invites" && (
+      {step !== "join" && (
         <div className="mb-6 flex items-center gap-3" aria-label={`Step ${stepNumber} of 2`}>
           {[1, 2].map((n) => (
             <span key={n} className={`h-1.5 w-12 rounded-full ${n <= stepNumber ? "bg-primary" : "bg-border"}`} />
@@ -132,38 +120,51 @@ export function Onboarding({
         </div>
       )}
 
-      {step === "invites" && (
+      {step === "join" && (
         <>
           <div className="mb-6">
-            <h1 className="text-[28px] font-extrabold leading-tight tracking-tight">Welcome, {firstName}</h1>
+            <h1 className="text-[28px] font-extrabold leading-tight tracking-tight">Join a shop, {firstName}</h1>
             <p className="mt-1.5 text-sm text-muted-foreground">
-              {invites.length === 1 ? "You've been invited to join a shop." : "You've been invited to join shops."}
+              Type the invitation code you were given. It works once, and expires a day after it was made.
             </p>
           </div>
-          <ul className="grid gap-3">
-            {invites.map((invite) => (
-              <li key={invite.invite_id} className="flex items-center gap-4 rounded-xl border bg-card p-4">
-                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-accent text-accent-foreground">
-                  <Store className="h-5 w-5" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-bold">{invite.shop_name}</p>
-                  <p className="text-sm text-muted-foreground">
-                    Join as {ROLE_LABELS[invite.role].toLowerCase()}
-                    {invite.invited_by_name ? ` · invited by ${invite.invited_by_name}` : ""}
-                  </p>
-                </div>
-                <Button disabled={busy} onClick={() => void accept(invite)}>
-                  <Check />
-                  Join
-                </Button>
-              </li>
-            ))}
-          </ul>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void join();
+            }}
+            className="grid gap-4"
+          >
+            <div className="grid gap-2">
+              <Label htmlFor="join-code">Invitation code</Label>
+              <Input
+                id="join-code"
+                autoFocus
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                placeholder="XXXXX-XXXXX"
+                maxLength={14}
+                className="h-12 font-mono text-lg uppercase tracking-widest"
+                value={inviteCode}
+                onChange={(event) => { setInviteCode(event.target.value.toUpperCase()); setError(null); }}
+              />
+            </div>
+            {error && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            <Button type="submit" size="xl" disabled={busy}>
+              <KeyRound />
+              {busy ? "Joining…" : "Join this shop"}
+            </Button>
+          </form>
           <div className="mt-6 border-t pt-5">
-            <p className="text-sm text-muted-foreground">Want to run your own shop instead?</p>
-            <Button variant="outline" className="mt-2" onClick={() => setStep("basics")}>
-              Create a new shop
+            <p className="text-sm text-muted-foreground">No code? You can run your own shop instead.</p>
+            <Button variant="outline" className="mt-2" onClick={() => { setError(null); setStep("basics"); }}>
+              Set up my own shop
             </Button>
           </div>
         </>
@@ -192,30 +193,23 @@ export function Onboarding({
               </Alert>
             )}
             <div className="flex items-center justify-between gap-3">
-              {invites.length > 0 ? (
-                <Button type="button" variant="ghost" onClick={() => { setError(null); setStep("invites"); }}>
-                  <ArrowLeft />
-                  Invitations
-                </Button>
-              ) : <span />}
+              <span />
               <Button type="submit" size="lg">
                 Continue
                 <ArrowRight />
               </Button>
             </div>
           </form>
-          {invites.length === 0 && (
-            <div className="mt-6 rounded-xl border bg-muted/40 p-4">
-              <p className="text-sm font-semibold">Waiting to be invited to someone else&apos;s shop?</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Don&apos;t create a shop: an account can only work in one. Ask them to invite {user.email ?? "your email address"}, then check again.
-              </p>
-              <Button type="button" variant="outline" size="sm" className="mt-3" disabled={busy} onClick={() => void check()}>
-                {busy ? "Checking…" : "Check for invitations"}
-              </Button>
-              {checkedNone && <p className="mt-2 text-sm text-muted-foreground">No invitation has arrived for {user.email ?? "this account"} yet.</p>}
-            </div>
-          )}
+          <div className="mt-6 rounded-xl border bg-muted/40 p-4">
+            <p className="text-sm font-semibold">Were you invited to someone else&apos;s shop?</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Use the invitation code you were given instead of creating a shop: an account can only work in one.
+            </p>
+            <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => { setError(null); setStep("join"); }}>
+              <KeyRound />
+              I have an invitation code
+            </Button>
+          </div>
         </>
       )}
 
@@ -251,13 +245,6 @@ export function Onboarding({
             </div>
           </form>
         </>
-      )}
-
-      {step === "invites" && error && (
-        <Alert variant="destructive" className="mt-4">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
       )}
 
       <p className="mt-8 text-center text-xs text-muted-foreground">

@@ -5,6 +5,7 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 import { Button, canManageShop, Card, CardContent, CardDescription, CardHeader, CardTitle, configureMoney, Logo, type ShopRole } from "@pos/shared";
 import { Onboarding } from "@/features/onboarding";
 import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/browser";
+import { redeemInviteCode } from "@/lib/invite";
 import { isDeadSessionError } from "@/lib/supabase/auth-errors";
 
 type Client = ReturnType<typeof createSupabaseBrowserClient>;
@@ -26,15 +27,6 @@ export type Shop = {
 
 export type WorkspaceUser = { id: string; name: string; email: string | null };
 
-export type PendingInvite = {
-  invite_id: string;
-  shop_id: string;
-  shop_name: string;
-  role: ShopRole;
-  invited_by_name: string | null;
-  expires_at: string;
-};
-
 export type Workspace = {
   supabase: Client;
   user: WorkspaceUser;
@@ -51,7 +43,8 @@ export type Workspace = {
 type State =
   | { status: "loading" }
   | { status: "signed-out" }
-  | { status: "needs-shop"; user: WorkspaceUser; invites: PendingInvite[] }
+  /** No shop yet: set one up, or join one with an invitation code. `joinError` is set when a code given at sign-up did not work. */
+  | { status: "needs-shop"; user: WorkspaceUser; joinError?: string; code?: string }
   | { status: "ready"; user: WorkspaceUser; shop: Shop; role: ShopRole }
   | { status: "error"; message: string };
 
@@ -79,7 +72,7 @@ function describeLoadError(error: { code?: string; message: string; hint?: strin
   return error.message;
 }
 
-async function loadWorkspace(supabase: Client): Promise<State> {
+async function loadWorkspace(supabase: Client, joinedByCode = false): Promise<State> {
   const { data, error } = await supabase.auth.getUser();
   if (error && isDeadSessionError(error)) {
     await supabase.auth.signOut({ scope: "local" });
@@ -110,8 +103,17 @@ async function loadWorkspace(supabase: Client): Promise<State> {
     return readyState;
   }
 
-  const invites = await supabase.rpc("my_invites");
-  return { status: "needs-shop", user, invites: invites.error ? [] : ((invites.data ?? []) as PendingInvite[]) };
+  // An invitation code typed at sign-up travels with the new account and is used here, the first time they open
+  // the app (which may be after they confirmed their email, possibly on another device).
+  const carried = authUser.user_metadata?.invite_code;
+  if (typeof carried === "string" && carried && !joinedByCode) {
+    const joined = await redeemInviteCode(supabase, carried);
+    // The code has done its job, or failed for good: stop carrying it either way.
+    await supabase.auth.updateUser({ data: { invite_code: null } });
+    if (joined.ok) return loadWorkspace(supabase, true);
+    return { status: "needs-shop", user, joinError: joined.message, code: carried };
+  }
+  return { status: "needs-shop", user };
 }
 
 function loadWorkspaceOnce(supabase: Client, force = false): Promise<State> {
@@ -219,7 +221,7 @@ export function WorkspaceGate({ children, signedOut }: { children: ReactNode; si
   }
 
   if (state.status === "needs-shop" && supabase) {
-    return <Onboarding supabase={supabase} user={state.user} invites={state.invites} onDone={refresh} onSignOut={signOut} />;
+    return <Onboarding supabase={supabase} user={state.user} joinError={state.joinError} code={state.code} onDone={refresh} onSignOut={signOut} />;
   }
 
   if (state.status === "ready" && workspace) {

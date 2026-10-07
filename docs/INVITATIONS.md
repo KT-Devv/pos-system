@@ -1,57 +1,46 @@
 # Inviting staff
 
-Settings > Team > **Invite someone** adds a person to a shop as a cashier or admin.
+People join a shop with an **invitation code**.
 
-## What happens
+- **Someone who was invited** types the code when they sign up (there is an "Invitation code" box on the sign-up form,
+  filled in for them if they use the sign-up link from the message). As soon as they sign in for the first time they
+  are in that shop, with the role the code was made for.
+- **Someone who was not invited** leaves the box empty, signs up, and sets up their own shop.
+- **Someone who is already signed in without a shop** sees "I have an invitation code" on the shop set-up screen.
 
-1. The invitation is saved (`invite_member` in the database, which also decides who is allowed to invite whom).
-   An invitation is **not** an account: nothing appears under Authentication > Users in Supabase until the
-   invited person signs up.
-2. The app then asks the `invite-member` Edge Function to **email** them. The email contains a link that
-   confirms their address and lets them choose a password.
-3. When they sign in with that email address, their invitation is waiting on the first screen. They press
-   **Join**. (An invitation only works for the exact address it was sent to, which Supabase has verified.)
+## Making a code
 
-If the email can't be sent (the function isn't deployed yet, the address already has an account, or the email
-service refused), the invitation is **still saved** and the app shows a ready-made message to copy, or send by
-email or WhatsApp. **Pending invitations** has a share button to show that message again.
+Settings > Team > **Invite someone**: optionally write who it is for, choose the role (owners can invite admins and
+cashiers, admins can invite cashiers), and press **Create code**. The code appears big enough to read out, with a
+message to copy or send by email or WhatsApp. Under **Invitation codes** each unused code can be copied, shared again or
+cancelled.
 
-Someone who already has an account does not get an email: they just sign in with the invited address. An account
-works in **one** shop only, so an address that already runs its own shop can't be invited; use another address.
+A code works **once** and **expires 24 hours** after it was made. After it is used, or has expired, or has been
+cancelled, it is dead: a new person needs a new code. A shop can have up to 25 unused codes at a time.
 
-## Switch on invitation emails
+## Why it is safe
 
-Without this, the app still works but you pass the message on yourself.
+- A code is 10 letters and digits (no 0, O, 1, I or L, which look alike), about 8 x 10^14 possibilities, made by the
+  database. A wrong code, an expired one and a used one all give the same answer.
+- Ten wrong codes in an hour lock that account out of trying for the rest of the hour.
+- Only owners and admins can see a shop's codes. Nobody can write the invitations table directly: codes are made by
+  `create_invite` and used by `redeem_invite`, both checked in the database (`database/schema.v2.sql`).
+- Using a code is one step in the database, so two people typing the same code at once cannot both get in.
+- An account works in **one** shop. Someone who already has a shop cannot use a code.
 
-1. **Deploy the function** (once, and again if `supabase/functions/invite-member` changes). From the repo root:
+## Details worth knowing
 
-   ```bash
-   npx supabase login
-   npx supabase functions deploy invite-member --project-ref YOUR-PROJECT-REF
-   ```
-
-   The project reference is the part of your Supabase URL before `.supabase.co`. Leave "Verify JWT" on (the default);
-   it keeps the function to signed-in people. It needs no secrets: Supabase gives every function the keys it needs.
-
-2. **Set up email sending.** Supabase's built-in email sender is only for trying things out: it sends to the
-   addresses of your own Supabase team members and at most a couple of emails an hour, so invitations (and
-   sign-up confirmations) to anyone else silently don't arrive. For real use add your own SMTP service under
-   Authentication > Emails > SMTP Settings (Resend, Brevo, Mailgun, Gmail with an app password, ...).
-
-3. **Tell Supabase your web address.** Authentication > URL Configuration: set **Site URL** to your shop's web address
-   (for example `https://your-shop.onrender.com`) and add `https://your-shop.onrender.com/**` under Redirect URLs.
-
-4. **Desktop app:** its window has no public address of its own, so set `NEXT_PUBLIC_SITE_URL=https://your-shop.onrender.com`
-   in `apps/web/.env.local` before running `npm run build:tauri`. The website works the address out by itself.
-
-Optional: Authentication > Emails > Templates > "Invite user" lets you reword the email.
-
-## How it is built
-
-- `supabase/functions/invite-member/handler.ts` holds the logic and is tested with `npm run test:functions`
-  (plain Node, no Supabase needed). It saves the invitation **as the caller** using their own sign-in token, so
-  the database's rules decide who may invite; only after that succeeds does it use the service-role key to send
-  the email. The service-role key lives only on Supabase and never reaches the app.
-- `apps/web/src/features/team.tsx` calls the function and falls back to saving the invitation directly (and showing
-  the message to share) when the function isn't there.
-- The message text is `invitationMessage` in `packages/shared`.
+- A code typed at sign-up travels with the new account (in its sign-up details) and is used the first time they open
+  the app, which may be after they confirm their email, possibly on another device. If it no longer works by then, they
+  are shown the code screen with the reason and can correct it or set up their own shop.
+- Codes do not depend on email, so nothing here needs an email service. Signing up itself may: if Supabase's
+  Authentication > Providers > Email has "Confirm email" switched on, a new person must click the confirmation link first.
+  Supabase's built-in email sender only reaches your own Supabase team members and only a couple of emails an hour, so
+  for real use either add your own SMTP service (Authentication > Emails > SMTP Settings) or switch "Confirm email" off;
+  with codes, joining a shop no longer relies on a verified address.
+- `NEXT_PUBLIC_SITE_URL` (in `apps/web/.env.local`, needed for the desktop app) is the public web address put in the
+  message's sign-up link. The website works its own address out.
+- Upgrading from email invitations: run `database/migrations/011_invitation_codes.sql` once (after 010) before deploying
+  this version. Invitations that were still waiting are deleted by it (they were tied to an email address); people who
+  already joined are not affected. The `invite-member` Edge Function from the email version is no longer used and can be
+  removed: `npx supabase functions delete invite-member --project-ref YOUR-PROJECT-REF`.

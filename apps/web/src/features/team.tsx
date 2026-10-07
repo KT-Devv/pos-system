@@ -18,65 +18,39 @@ import {
   DialogHeader,
   DialogTitle,
   EmptyState,
-  formatDate,
+  formatInviteCode,
   Input,
   invitableRoles,
   ROLE_DESCRIPTIONS,
   ROLE_LABELS,
   type ShopRole,
 } from "@pos/shared";
-import { MailPlus, Share2, Trash2, UserMinus, Users } from "lucide-react";
-import { siteUrl } from "@/lib/site-url";
+import { Copy, KeyRound, Share2, Trash2, UserMinus, Users } from "lucide-react";
 import { useWorkspace } from "@/lib/workspace";
-import { type Client, type Feedback, Field, fail, MenuSelect } from "./common";
-import { InviteShareDialog, type ShareInvite, type ShareReason } from "./invite-share";
+import { type Feedback, Field, fail, MenuSelect } from "./common";
+import { copyText, expiresIn, InviteCodeDialog, type InviteToShow } from "./invite-code-dialog";
 
 type Member = { user_id: string; role: ShopRole; created_at: string; profiles: { name: string; email: string | null } | null };
-type Invite = { id: string; email: string; role: ShopRole; created_at: string; expires_at: string };
-
-/**
- * Saves an invitation and, where the server can, emails it. The `invite-member` Edge Function does both (see
- * docs/INVITATIONS.md). If it has not been deployed, or cannot be reached, the invitation is saved directly and
- * the person sending it is shown a message to pass on themselves, so an invitation is never lost.
- */
-async function sendInvitation(supabase: Client, args: { shopId: string; email: string; role: ShopRole }): Promise<{ emailed: true } | { emailed: false; reason: ShareReason; detail?: string }> {
-  const base = siteUrl();
-  const { data, error } = await supabase.functions.invoke("invite-member", {
-    body: { shopId: args.shopId, email: args.email, role: args.role, redirectTo: base ? `${base}/reset-password` : undefined },
-  });
-  if (!error) {
-    const result = data as { emailed?: boolean; reason?: "existing-account" | "email-failed"; detail?: string } | null;
-    return result?.emailed ? { emailed: true } : { emailed: false, reason: result?.reason ?? "email-failed", detail: result?.detail };
-  }
-  const response = (error as { context?: Response }).context;
-  if (response && response.status !== 404) {
-    // The function ran and refused (not allowed, bad address, ...): say what it said.
-    const body = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(body?.error ?? error.message);
-  }
-  // Not deployed (404) or unreachable: save the invitation without an email.
-  const { error: saveError } = await supabase.rpc("invite_member", { p_shop_id: args.shopId, p_email: args.email, p_role: args.role });
-  if (saveError) throw saveError;
-  return { emailed: false, reason: "no-email-service" };
-}
+type Invite = { id: string; code: string; label: string | null; role: ShopRole; created_at: string; expires_at: string; used_at: string | null };
 
 export function Team({ onError, onNotice }: Feedback) {
   const { supabase, shop, user, role, isOwner } = useWorkspace();
   const [members, setMembers] = useState<Member[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [email, setEmail] = useState("");
+  const [label, setLabel] = useState("");
   const [inviteRole, setInviteRole] = useState<ShopRole>("cashier");
   const [sending, setSending] = useState(false);
   const [removing, setRemoving] = useState<Member | null>(null);
-  const [sharing, setSharing] = useState<ShareInvite | null>(null);
+  const [sharing, setSharing] = useState<InviteToShow | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const roles = invitableRoles(role);
 
   const load = useCallback(async () => {
     const [memberRes, inviteRes] = await Promise.all([
       supabase.from("shop_members").select("user_id, role, created_at, profiles(name, email)").eq("shop_id", shop.id).order("created_at"),
-      supabase.from("shop_invites").select("id, email, role, created_at, expires_at").eq("shop_id", shop.id).order("created_at", { ascending: false }),
+      supabase.from("shop_invites").select("id, code, label, role, created_at, expires_at, used_at").eq("shop_id", shop.id).order("created_at", { ascending: false }),
     ]);
     if (memberRes.error) fail(onError, memberRes.error); else setMembers((memberRes.data ?? []) as unknown as Member[]);
     if (inviteRes.error) fail(onError, inviteRes.error); else setInvites((inviteRes.data ?? []) as Invite[]);
@@ -85,22 +59,22 @@ export function Team({ onError, onNotice }: Feedback) {
 
   useEffect(() => { void load(); }, [load]);
 
-  const invite = async (event: FormEvent) => {
+  const createInvite = async (event: FormEvent) => {
     event.preventDefault();
-    const address = email.trim();
-    if (!address) { onError("Enter an email address."); return; }
     setSending(true);
-    try {
-      const result = await sendInvitation(supabase, { shopId: shop.id, email: address, role: inviteRole });
-      setEmail("");
-      if (result.emailed) onNotice(`Invitation emailed to ${address}. They choose a password from the email, then join ${shop.name}.`);
-      else setSharing({ email: address.toLowerCase(), role: inviteRole, reason: result.reason, detail: result.detail });
-      await load();
-    } catch (cause) {
-      fail(onError, cause);
-    } finally {
-      setSending(false);
-    }
+    const { data, error } = await supabase.rpc("create_invite", { p_shop_id: shop.id, p_role: inviteRole, p_label: label.trim() || null });
+    setSending(false);
+    if (error) { fail(onError, error); return; }
+    const made = data as { code: string; role: ShopRole; label: string | null; expires_at: string };
+    setLabel("");
+    setSharing({ code: made.code, role: made.role, label: made.label, expiresAt: made.expires_at, created: true });
+    await load();
+  };
+
+  const copyCode = async (invitation: Invite) => {
+    if (!(await copyText(formatInviteCode(invitation.code)))) { onError("Couldn't copy. Open the invitation and copy the code from there."); return; }
+    setCopiedId(invitation.id);
+    window.setTimeout(() => setCopiedId((current) => (current === invitation.id ? null : current)), 2000);
   };
 
   const changeRole = async (member: Member, next: ShopRole) => {
@@ -123,7 +97,7 @@ export function Team({ onError, onNotice }: Feedback) {
   const revoke = async (invitation: Invite) => {
     const { error } = await supabase.rpc("revoke_invite", { p_invite_id: invitation.id });
     if (error) { fail(onError, error); return; }
-    onNotice(`Invitation for ${invitation.email} cancelled.`);
+    onNotice(`Invitation code ${formatInviteCode(invitation.code)} cancelled.`);
     await load();
   };
 
@@ -133,13 +107,13 @@ export function Team({ onError, onNotice }: Feedback) {
         <CardHeader>
           <CardTitle>Invite someone</CardTitle>
           <CardDescription>
-            Add staff to {shop.name}. We email them an invitation; if that can&apos;t be done you&apos;ll get a message to send them instead. They join with the email address you enter here.
+            Create an invitation code for {shop.name} and give it to the person. They type it in when they sign up and join straight away. A code works once and expires after 24 hours.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={invite} className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_180px_auto] sm:items-end">
-            <Field label="Email address" htmlFor="invite-email">
-              <Input id="invite-email" type="email" required placeholder="name@example.com" value={email} onChange={(event) => setEmail(event.target.value)} />
+          <form onSubmit={createInvite} className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_180px_auto] sm:items-end">
+            <Field label="Who is it for? (optional)" htmlFor="invite-label">
+              <Input id="invite-label" maxLength={60} placeholder="e.g. Kofi, evening cashier" value={label} onChange={(event) => setLabel(event.target.value)} />
             </Field>
             <Field label="Role">
               <MenuSelect
@@ -149,8 +123,8 @@ export function Team({ onError, onNotice }: Feedback) {
               />
             </Field>
             <Button type="submit" disabled={sending}>
-              <MailPlus />
-              {sending ? "Saving…" : "Invite"}
+              <KeyRound />
+              {sending ? "Creating…" : "Create code"}
             </Button>
           </form>
           <p className="mt-3 text-xs text-muted-foreground">
@@ -209,35 +183,50 @@ export function Team({ onError, onNotice }: Feedback) {
         </CardContent>
       </Card>
 
-      {invites.length > 0 && (
+      {invites.some((invitation) => !invitation.used_at) && (
         <Card>
           <CardHeader>
-            <CardTitle>Pending invitations</CardTitle>
-            <CardDescription>People who haven&apos;t joined yet.</CardDescription>
+            <CardTitle>Invitation codes</CardTitle>
+            <CardDescription>Codes that haven&apos;t been used yet. Each works once.</CardDescription>
           </CardHeader>
           <CardContent className="px-0 pb-2">
             <ul className="divide-y border-t">
-              {invites.map((invitation) => (
-                <li key={invitation.id} className="flex flex-wrap items-center gap-3 px-5 py-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-semibold">{invitation.email}</p>
-                    <p className="text-xs text-muted-foreground">Expires {formatDate(invitation.expires_at)}</p>
-                  </div>
-                  <Badge variant="secondary">{ROLE_LABELS[invitation.role]}</Badge>
-                  <Button variant="ghost" size="icon-sm" aria-label={`Share the invitation for ${invitation.email}`} title="Send the invitation message again" onClick={() => setSharing({ email: invitation.email, role: invitation.role, reason: "again" })}>
-                    <Share2 />
-                  </Button>
-                  <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive" aria-label={`Cancel invitation for ${invitation.email}`} title="Cancel invitation" onClick={() => void revoke(invitation)}>
-                    <Trash2 />
-                  </Button>
-                </li>
-              ))}
+              {invites.filter((invitation) => !invitation.used_at).map((invitation) => {
+                const left = expiresIn(invitation.expires_at);
+                const expired = left === "expired";
+                return (
+                  <li key={invitation.id} className="flex flex-wrap items-center gap-3 px-5 py-3">
+                    <div className="min-w-0 flex-1">
+                      <p className={expired ? "font-mono text-lg font-bold tracking-widest text-muted-foreground line-through" : "font-mono text-lg font-bold tracking-widest"}>
+                        {formatInviteCode(invitation.code)}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {invitation.label ? `${invitation.label} · ` : ""}{expired ? "Expired" : `Expires ${left}`}
+                      </p>
+                    </div>
+                    <Badge variant="secondary">{ROLE_LABELS[invitation.role]}</Badge>
+                    {!expired && (
+                      <>
+                        <Button variant="ghost" size="icon-sm" aria-label={`Copy invitation code ${formatInviteCode(invitation.code)}`} title="Copy the code" onClick={() => void copyCode(invitation)}>
+                          {copiedId === invitation.id ? <span className="text-xs font-semibold text-success">Copied</span> : <Copy />}
+                        </Button>
+                        <Button variant="ghost" size="icon-sm" aria-label={`Share invitation code ${formatInviteCode(invitation.code)}`} title="Show the message to send" onClick={() => setSharing({ code: invitation.code, role: invitation.role, label: invitation.label, expiresAt: invitation.expires_at, created: false })}>
+                          <Share2 />
+                        </Button>
+                      </>
+                    )}
+                    <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive" aria-label={`Cancel invitation code ${formatInviteCode(invitation.code)}`} title={expired ? "Remove" : "Cancel this code"} onClick={() => void revoke(invitation)}>
+                      <Trash2 />
+                    </Button>
+                  </li>
+                );
+              })}
             </ul>
           </CardContent>
         </Card>
       )}
 
-      <InviteShareDialog invite={sharing} shopName={shop.name} onClose={() => setSharing(null)} />
+      <InviteCodeDialog invite={sharing} shopName={shop.name} onClose={() => setSharing(null)} />
 
       <Dialog open={Boolean(removing)} onOpenChange={(open) => { if (!open) setRemoving(null); }}>
         <DialogContent className="max-w-sm">

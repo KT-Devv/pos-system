@@ -270,9 +270,9 @@ number of those items at its own price ("Pack of 12" for 40.00, "Box of 48" for
 
 ## Inviting staff
 
-Settings > Team > Invite someone saves an invitation and, once the `invite-member` function is deployed and email sending is
-set up, emails it. Otherwise the app gives you a message to send them yourself. See `docs/INVITATIONS.md` for how it works and
-the one-time setup (deploying the function, SMTP, redirect URLs, and `NEXT_PUBLIC_SITE_URL` for the desktop app).
+Settings > Team > Invite someone creates an **invitation code**: give it to the person, who types it in when they sign up and
+joins the shop straight away. A code works once and expires after 24 hours. Someone with no code just signs up and sets up their
+own shop. See `docs/INVITATIONS.md`.
 
 ## Wholesale prices
 

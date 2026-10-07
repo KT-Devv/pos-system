@@ -4,9 +4,12 @@ import { COUNTRIES, CURRENCIES, currencyForCountry, isSupportedCurrency } from "
 import {
   canManageShop,
   canRemoveMember,
+  formatInviteCode,
   invitableRoles,
   invitationMessage,
+  looksLikeInviteCode,
   loyaltyPointsFor,
+  normalizeInviteCode,
   stockLevel,
   validateShopInput,
   type ShopInput,
@@ -163,17 +166,29 @@ describe("currency catalogue", () => {
   });
 });
 
-describe("invitationMessage", () => {
-  test("names the shop, the role, the address to use and where to go", () => {
-    const text = invitationMessage({ shopName: "Grandma's Corner", role: "cashier", email: "ama@example.com", siteUrl: "https://shop.example" });
-    assert.match(text, /join Grandma's Corner on KT POS System as a cashier/);
-    assert.match(text, /Open https:\/\/shop\.example and sign up \(or sign in/);
-    assert.match(text, /with this email address: ama@example\.com/);
+describe("invitation codes", () => {
+  test("a code is read leniently and shown in two halves", () => {
+    assert.strictEqual(normalizeInviteCode(" 7kq4m-x9htp \n"), "7KQ4MX9HTP");
+    assert.strictEqual(formatInviteCode("7kq4mx9htp"), "7KQ4M-X9HTP");
+    assert.strictEqual(formatInviteCode("7KQ"), "7KQ");
+    assert.strictEqual(looksLikeInviteCode("7KQ4M-X9HTP"), true);
+    assert.strictEqual(looksLikeInviteCode("7KQ4M"), false);
+    assert.strictEqual(looksLikeInviteCode(""), false);
   });
-  test("uses 'an' before admin and leaves the web address out when there is none", () => {
-    const text = invitationMessage({ shopName: "Shop", role: "admin", email: "a@b.co", siteUrl: null });
+});
+
+describe("invitationMessage", () => {
+  test("names the shop, the role and the code, with a sign-up link that carries the code", () => {
+    const text = invitationMessage({ shopName: "Grandma's Corner", role: "cashier", code: "7KQ4MX9HTP", siteUrl: "https://shop.example" });
+    assert.match(text, /join Grandma's Corner on KT POS System as a cashier\./);
+    assert.match(text, /Sign up here: https:\/\/shop\.example\/login\?tab=signup&code=7KQ4MX9HTP/);
+    assert.match(text, /invitation code .*: 7KQ4M-X9HTP/);
+    assert.match(text, /works once and expires in 24 hours/);
+  });
+  test("uses 'an' before admin, and without a web address just asks for the code", () => {
+    const text = invitationMessage({ shopName: "Shop", role: "admin", code: "AAAAABBBBB", siteUrl: null });
     assert.match(text, /as an admin\./);
     assert.ok(!/https?:/.test(text));
-    assert.match(text, /^You've been invited to join Shop on KT POS System as an admin\. Sign up/);
+    assert.match(text, /type this invitation code when it asks for one: AAAAA-BBBBB/);
   });
 });
