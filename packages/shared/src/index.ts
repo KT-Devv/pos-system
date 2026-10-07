@@ -205,6 +205,7 @@ export {
   canManageTeam,
   canRemoveMember,
   invitableRoles,
+  invitationMessage,
   loyaltyPointsFor,
   ROLE_DESCRIPTIONS,
   ROLE_LABELS,

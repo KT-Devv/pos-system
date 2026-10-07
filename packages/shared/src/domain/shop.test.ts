@@ -5,6 +5,7 @@ import {
   canManageShop,
   canRemoveMember,
   invitableRoles,
+  invitationMessage,
   loyaltyPointsFor,
   stockLevel,
   validateShopInput,
@@ -159,5 +160,20 @@ describe("currency catalogue", () => {
     assert.strictEqual(currencyForCountry("FR"), "EUR");
     assert.strictEqual(currencyForCountry("ZZ"), undefined);
     assert.strictEqual(currencyForCountry(null), undefined);
+  });
+});
+
+describe("invitationMessage", () => {
+  test("names the shop, the role, the address to use and where to go", () => {
+    const text = invitationMessage({ shopName: "Grandma's Corner", role: "cashier", email: "ama@example.com", siteUrl: "https://shop.example" });
+    assert.match(text, /join Grandma's Corner on KT POS System as a cashier/);
+    assert.match(text, /Open https:\/\/shop\.example and sign up \(or sign in/);
+    assert.match(text, /with this email address: ama@example\.com/);
+  });
+  test("uses 'an' before admin and leaves the web address out when there is none", () => {
+    const text = invitationMessage({ shopName: "Shop", role: "admin", email: "a@b.co", siteUrl: null });
+    assert.match(text, /as an admin\./);
+    assert.ok(!/https?:/.test(text));
+    assert.match(text, /^You've been invited to join Shop on KT POS System as an admin\. Sign up/);
   });
 });

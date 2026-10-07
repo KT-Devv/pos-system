@@ -8,8 +8,12 @@ import { AuthShell } from "@/components/auth-shell";
 import { PasswordInput } from "@/components/password-input";
 import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/browser";
 import { describeAuthError, isDeadSessionError, readUrlAuthError } from "@/lib/supabase/auth-errors";
+import { siteUrl } from "@/lib/site-url";
 
 type AuthMode = "login" | "signup" | "forgot";
+
+/** Where an email link should lead. Undefined (desktop without a configured web address) lets Supabase use its Site URL. */
+const redirectUrl = (path: string) => (siteUrl() ? `${siteUrl()}${path}` : undefined);
 
 const MIN_PASSWORD_LENGTH = 6;
 
@@ -111,7 +115,7 @@ export default function LoginPage() {
       password,
       options: {
         data: { display_name: name.trim() },
-        emailRedirectTo: `${window.location.origin}/login`,
+        emailRedirectTo: redirectUrl("/login"),
       },
     });
     if (signUpError) throw signUpError;
@@ -134,7 +138,7 @@ export default function LoginPage() {
 
   const sendReset = (address: string) => run(async () => {
     const { error: resetError } = await createSupabaseBrowserClient().auth.resetPasswordForEmail(address, {
-      redirectTo: `${window.location.origin}/reset-password`,
+      redirectTo: redirectUrl("/reset-password"),
     });
     if (resetError) throw resetError;
     setNotice("Password reset email sent. Check your inbox for the reset link.");
@@ -146,7 +150,7 @@ export default function LoginPage() {
     const { error: resendError } = await createSupabaseBrowserClient().auth.resend({
       type: "signup",
       email: address,
-      options: { emailRedirectTo: `${window.location.origin}/login` },
+      options: { emailRedirectTo: redirectUrl("/login") },
     });
     if (resendError) throw resendError;
     setNotice(`Confirmation email sent to ${address}.`);

@@ -268,6 +268,12 @@ number of those items at its own price ("Pack of 12" for 40.00, "Box of 48" for
 - Receipts name the pack on the line ("Milk 1L (Pack of 6)"), reports count single
   items sold, and a pack sale queued offline in the desktop app keeps its pack size.
 
+## Inviting staff
+
+Settings > Team > Invite someone saves an invitation and, once the `invite-member` function is deployed and email sending is
+set up, emails it. Otherwise the app gives you a message to send them yourself. See `docs/INVITATIONS.md` for how it works and
+the one-time setup (deploying the function, SMTP, redirect URLs, and `NEXT_PUBLIC_SITE_URL` for the desktop app).
+
 ## Wholesale prices
 
 A product has its regular **Selling price** and an optional **Wholesale price** (set in the product form,

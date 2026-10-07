@@ -54,6 +54,21 @@ export function Onboarding({
 
   const firstName = user.name.trim().split(" ")[0] || "there";
 
+  // An invitation can arrive while this screen is open: when one does, show it instead of shop set-up.
+  const [seenInvites, setSeenInvites] = useState(invites.length);
+  const [checkedNone, setCheckedNone] = useState(false);
+  if (invites.length > seenInvites) {
+    setSeenInvites(invites.length);
+    if (step === "basics") setStep("invites");
+  }
+  const check = async () => {
+    setBusy(true);
+    setCheckedNone(false);
+    await onDone();
+    setBusy(false);
+    setCheckedNone(true);
+  };
+
   const accept = async (invite: Invite) => {
     setBusy(true);
     setError(null);
@@ -189,6 +204,18 @@ export function Onboarding({
               </Button>
             </div>
           </form>
+          {invites.length === 0 && (
+            <div className="mt-6 rounded-xl border bg-muted/40 p-4">
+              <p className="text-sm font-semibold">Waiting to be invited to someone else&apos;s shop?</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Don&apos;t create a shop: an account can only work in one. Ask them to invite {user.email ?? "your email address"}, then check again.
+              </p>
+              <Button type="button" variant="outline" size="sm" className="mt-3" disabled={busy} onClick={() => void check()}>
+                {busy ? "Checking…" : "Check for invitations"}
+              </Button>
+              {checkedNone && <p className="mt-2 text-sm text-muted-foreground">No invitation has arrived for {user.email ?? "this account"} yet.</p>}
+            </div>
+          )}
         </>
       )}
 

@@ -25,12 +25,40 @@ import {
   ROLE_LABELS,
   type ShopRole,
 } from "@pos/shared";
-import { MailPlus, Trash2, UserMinus, Users } from "lucide-react";
+import { MailPlus, Share2, Trash2, UserMinus, Users } from "lucide-react";
+import { siteUrl } from "@/lib/site-url";
 import { useWorkspace } from "@/lib/workspace";
-import { type Feedback, Field, fail, MenuSelect } from "./common";
+import { type Client, type Feedback, Field, fail, MenuSelect } from "./common";
+import { InviteShareDialog, type ShareInvite, type ShareReason } from "./invite-share";
 
 type Member = { user_id: string; role: ShopRole; created_at: string; profiles: { name: string; email: string | null } | null };
 type Invite = { id: string; email: string; role: ShopRole; created_at: string; expires_at: string };
+
+/**
+ * Saves an invitation and, where the server can, emails it. The `invite-member` Edge Function does both (see
+ * docs/INVITATIONS.md). If it has not been deployed, or cannot be reached, the invitation is saved directly and
+ * the person sending it is shown a message to pass on themselves, so an invitation is never lost.
+ */
+async function sendInvitation(supabase: Client, args: { shopId: string; email: string; role: ShopRole }): Promise<{ emailed: true } | { emailed: false; reason: ShareReason; detail?: string }> {
+  const base = siteUrl();
+  const { data, error } = await supabase.functions.invoke("invite-member", {
+    body: { shopId: args.shopId, email: args.email, role: args.role, redirectTo: base ? `${base}/reset-password` : undefined },
+  });
+  if (!error) {
+    const result = data as { emailed?: boolean; reason?: "existing-account" | "email-failed"; detail?: string } | null;
+    return result?.emailed ? { emailed: true } : { emailed: false, reason: result?.reason ?? "email-failed", detail: result?.detail };
+  }
+  const response = (error as { context?: Response }).context;
+  if (response && response.status !== 404) {
+    // The function ran and refused (not allowed, bad address, ...): say what it said.
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? error.message);
+  }
+  // Not deployed (404) or unreachable: save the invitation without an email.
+  const { error: saveError } = await supabase.rpc("invite_member", { p_shop_id: args.shopId, p_email: args.email, p_role: args.role });
+  if (saveError) throw saveError;
+  return { emailed: false, reason: "no-email-service" };
+}
 
 export function Team({ onError, onNotice }: Feedback) {
   const { supabase, shop, user, role, isOwner } = useWorkspace();
@@ -41,6 +69,7 @@ export function Team({ onError, onNotice }: Feedback) {
   const [inviteRole, setInviteRole] = useState<ShopRole>("cashier");
   const [sending, setSending] = useState(false);
   const [removing, setRemoving] = useState<Member | null>(null);
+  const [sharing, setSharing] = useState<ShareInvite | null>(null);
 
   const roles = invitableRoles(role);
 
@@ -61,12 +90,17 @@ export function Team({ onError, onNotice }: Feedback) {
     const address = email.trim();
     if (!address) { onError("Enter an email address."); return; }
     setSending(true);
-    const { error } = await supabase.rpc("invite_member", { p_shop_id: shop.id, p_email: address, p_role: inviteRole });
-    setSending(false);
-    if (error) { fail(onError, error); return; }
-    setEmail("");
-    onNotice(`Invitation saved. Ask ${address} to sign up or sign in with that email to join ${shop.name}.`);
-    await load();
+    try {
+      const result = await sendInvitation(supabase, { shopId: shop.id, email: address, role: inviteRole });
+      setEmail("");
+      if (result.emailed) onNotice(`Invitation emailed to ${address}. They choose a password from the email, then join ${shop.name}.`);
+      else setSharing({ email: address.toLowerCase(), role: inviteRole, reason: result.reason, detail: result.detail });
+      await load();
+    } catch (cause) {
+      fail(onError, cause);
+    } finally {
+      setSending(false);
+    }
   };
 
   const changeRole = async (member: Member, next: ShopRole) => {
@@ -99,7 +133,7 @@ export function Team({ onError, onNotice }: Feedback) {
         <CardHeader>
           <CardTitle>Invite someone</CardTitle>
           <CardDescription>
-            Add staff to {shop.name}. They join by signing up (or signing in) with the email address you enter here.
+            Add staff to {shop.name}. We email them an invitation; if that can&apos;t be done you&apos;ll get a message to send them instead. They join with the email address you enter here.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -190,6 +224,9 @@ export function Team({ onError, onNotice }: Feedback) {
                     <p className="text-xs text-muted-foreground">Expires {formatDate(invitation.expires_at)}</p>
                   </div>
                   <Badge variant="secondary">{ROLE_LABELS[invitation.role]}</Badge>
+                  <Button variant="ghost" size="icon-sm" aria-label={`Share the invitation for ${invitation.email}`} title="Send the invitation message again" onClick={() => setSharing({ email: invitation.email, role: invitation.role, reason: "again" })}>
+                    <Share2 />
+                  </Button>
                   <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive" aria-label={`Cancel invitation for ${invitation.email}`} title="Cancel invitation" onClick={() => void revoke(invitation)}>
                     <Trash2 />
                   </Button>
@@ -199,6 +236,8 @@ export function Team({ onError, onNotice }: Feedback) {
           </CardContent>
         </Card>
       )}
+
+      <InviteShareDialog invite={sharing} shopName={shop.name} onClose={() => setSharing(null)} />
 
       <Dialog open={Boolean(removing)} onOpenChange={(open) => { if (!open) setRemoving(null); }}>
         <DialogContent className="max-w-sm">

@@ -71,6 +71,17 @@ export function invitableRoles(actor: ShopRole | null | undefined): ShopRole[] {
   return [];
 }
 
+/**
+ * The message an owner or admin passes on when an invitation email cannot be sent (or is not enough): who is
+ * inviting them to what, where to go and which email address to use, since the invitation is tied to it.
+ */
+export function invitationMessage(input: { shopName: string; role: ShopRole; email: string; siteUrl?: string | null }): string {
+  const role = ROLE_LABELS[input.role].toLowerCase();
+  const article = /^[aeiou]/.test(role) ? "an" : "a";
+  const where = input.siteUrl ? `Open ${input.siteUrl} and sign up` : "Sign up";
+  return `You've been invited to join ${input.shopName} on KT POS System as ${article} ${role}. ${where} (or sign in, if you already have an account) with this email address: ${input.email}. Your invitation will be waiting for you.`;
+}
+
 /** Whether `actor` may remove a member holding `target`. Nobody removes the owner. */
 export function canRemoveMember(actor: ShopRole | null | undefined, target: ShopRole): boolean {
   if (target === "owner") return false;

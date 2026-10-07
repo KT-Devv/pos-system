@@ -11,9 +11,10 @@
     "build:web": "npm run build --workspace=apps/web",
     "build:tauri": "npm run tauri:build --workspace=apps/desktop",
     "build:shared": "npm run build --workspace=packages/shared",
-    "test": "npm run test:shared && npm run test:db",
+    "test": "npm run test:shared && npm run test:db && npm run test:functions",
     "test:shared": "npm test --workspace=packages/shared",
-    "test:db": "node database/tests/run.mjs"
+    "test:db": "node database/tests/run.mjs",
+    "test:functions": "node --test supabase/functions/invite-member/handler.test.ts"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8"
