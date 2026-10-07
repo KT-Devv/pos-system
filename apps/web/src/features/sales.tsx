@@ -23,7 +23,7 @@ import {
   stockLevel,
   unitPriceForTier,
   unitsAvailable,
-  usesRetailPrice,
+  usesWholesalePrice,
   validateSaleInput,
 } from "@pos/shared";
 import { Camera, Check, Minus, PackageSearch, Plus, Receipt, ReceiptText, ShoppingCart, Trash2 } from "lucide-react";
@@ -55,8 +55,8 @@ type CartLine = Product & { quantity: number; pack: PackSizeRow | null };
 
 /** Single items one unit of this line takes out of stock. */
 const sizeOf = (line: Pick<CartLine, "pack">) => line.pack?.quantity ?? 1;
-/** What one unit of the line is charged: a pack its own price, a single the retail price on a retail sale when it has one. */
-const priceOf = (line: CartLine, tier: PriceTier) => line.pack?.selling_price ?? unitPriceForTier(line.selling_price, line.retail_price, tier);
+/** What one unit of the line is charged: a pack its own price, a single the wholesale price on a wholesale sale when it has one. */
+const priceOf = (line: CartLine, tier: PriceTier) => line.pack?.selling_price ?? unitPriceForTier(line.selling_price, line.wholesale_price, tier);
 const NO_PACKS: PackSizeRow[] = [];
 const costOf = (line: CartLine) => line.cost_price * sizeOf(line);
 const keyOf = (line: Pick<CartLine, "id" | "pack">) => `${line.id}:${line.pack?.id ?? "single"}`;
@@ -82,8 +82,8 @@ const ProductTile = memo(function ProductTile({ product, packs, category, remain
   tier: PriceTier;
   onAdd: (product: Product, pack?: PackSizeRow | null) => void;
 }) {
-  const retail = usesRetailPrice(product.retail_price, tier);
-  const price = unitPriceForTier(product.selling_price, product.retail_price, tier);
+  const wholesale = usesWholesalePrice(product.wholesale_price, tier);
+  const price = unitPriceForTier(product.selling_price, product.wholesale_price, tier);
   return (
     <div
       className={cn(
@@ -100,7 +100,7 @@ const ProductTile = memo(function ProductTile({ product, packs, category, remain
         type="button"
         onClick={() => onAdd(product)}
         disabled={remaining < 1}
-        aria-label={`Add ${product.name}, ${formatCurrency(price)}${retail ? " retail" : ""}${units ? `, ${units} in cart` : ""}`}
+        aria-label={`Add ${product.name}, ${formatCurrency(price)}${wholesale ? " wholesale" : ""}${units ? `, ${units} in cart` : ""}`}
         className="flex flex-1 flex-col justify-between gap-2 rounded-xl p-3.5 text-left active:bg-accent disabled:opacity-60"
       >
         <div className="min-w-0">
@@ -110,7 +110,7 @@ const ProductTile = memo(function ProductTile({ product, packs, category, remain
         <div className="flex items-end justify-between gap-2">
           <span className="min-w-0 text-base font-extrabold tracking-tight">
             {formatCurrency(price)}
-            {retail && <span className="ml-1 text-xs font-semibold text-primary">Retail</span>}
+            {wholesale && <span className="ml-1 text-xs font-semibold text-primary">Wholesale</span>}
           </span>
           <span className={cn("shrink-0 whitespace-nowrap text-xs font-semibold", stockLevel(remaining, lowAt) === "low" ? "text-warning" : "text-muted-foreground")}>
             {remaining} left
@@ -160,7 +160,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
 
   const load = useCallback(async () => {
     const [{ data: catalog, error: catalogError }, { data: sales, error: salesError }, { data: customerRows, error: customerError }, { data: catRows }, packRes] = await Promise.all([
-      supabase.from("products").select("id,name,category_id,cost_price,selling_price,retail_price,stock,barcode").gt("stock", 0).order("name"),
+      supabase.from("products").select("id,name,category_id,cost_price,selling_price,wholesale_price,stock,barcode").gt("stock", 0).order("name"),
       supabase.from("sales").select("id,total,payment_method,created_at").order("created_at", { ascending: false }).limit(8),
       supabase.from("customers").select("id,name,phone,email,loyalty_points").order("name"),
       supabase.from("categories").select("id,name").order("name"),
@@ -199,7 +199,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
     return [...found.filter(p => p.name.toLowerCase().startsWith(term)), ...found.filter(p => !p.name.toLowerCase().startsWith(term))];
   }, [products, term, searchText]);
   const results = useProgressiveList(matches, 12, term);
-  const hasRetail = useMemo(() => products.some(p => p.retail_price != null), [products]);
+  const hasWholesale = useMemo(() => products.some(p => p.wholesale_price != null), [products]);
 
   const selectedCustomer = customers.find(c => c.id === customerId);
 
@@ -383,16 +383,16 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
             </Button>
           </div>
 
-          {hasRetail && (
+          {hasWholesale && (
             <div className="flex items-center gap-3">
               <span className="text-sm font-semibold text-muted-foreground">Price</span>
               <SegmentedControl
                 aria-label="Price for this sale"
                 value={tier}
                 onValueChange={setTier}
-                options={[{ value: "regular", label: "Regular" }, { value: "retail", label: "Retail" }]}
+                options={[{ value: "regular", label: "Regular" }, { value: "wholesale", label: "Wholesale" }]}
               />
-              {tier === "retail" && <span className="text-xs text-muted-foreground">Items without a retail price stay at the regular price.</span>}
+              {tier === "wholesale" && <span className="text-xs text-muted-foreground">Items without a wholesale price stay at the regular price.</span>}
             </div>
           )}
 
@@ -507,7 +507,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
                           <p className="truncate text-sm font-semibold">{item.name}</p>
                           <p className="text-xs text-muted-foreground">
                             {item.pack && <span className="font-semibold text-foreground">{packLabel(item.pack.name, item.pack.quantity)} · </span>}
-                            {formatCurrency(priceOf(item, tier))} each{!item.pack && usesRetailPrice(item.retail_price, tier) && <span className="font-semibold text-primary"> · Retail</span>}
+                            {formatCurrency(priceOf(item, tier))} each{!item.pack && usesWholesalePrice(item.wholesale_price, tier) && <span className="font-semibold text-primary"> · Wholesale</span>}
                           </p>
                         </div>
                         <p className="text-sm font-bold tabular-nums">{formatCurrency(priceOf(item, tier) * item.quantity)}</p>

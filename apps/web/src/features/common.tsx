@@ -33,8 +33,8 @@ export type Product = {
   category_id: string | null;
   cost_price: number;
   selling_price: number;
-  /** Optional second price for retail sales; null when the product has only one price. */
-  retail_price?: number | null;
+  /** Optional second price for wholesale sales; null when the product has only one price. */
+  wholesale_price?: number | null;
   stock: number;
   barcode: string | null;
   categories?: { name: string } | null;

@@ -4,7 +4,7 @@ import {
   calculateSaleTotal,
   roundCurrency,
   unitPriceForTier,
-  usesRetailPrice,
+  usesWholesalePrice,
   validateProductInput,
   validateSaleInput,
 } from "./index.js";
@@ -107,31 +107,31 @@ describe("domain business logic", () => {
   });
 });
 
-describe("retail prices", () => {
-  test("a retail sale is charged the retail price only where the product has one", () => {
-    assert.strictEqual(unitPriceForTier(4, 6, "retail"), 6);
-    assert.strictEqual(unitPriceForTier(4, null, "retail"), 4);
-    assert.strictEqual(unitPriceForTier(4, undefined, "retail"), 4);
+describe("wholesale prices", () => {
+  test("a wholesale sale is charged the wholesale price only where the product has one", () => {
+    assert.strictEqual(unitPriceForTier(4, 6, "wholesale"), 6);
+    assert.strictEqual(unitPriceForTier(4, null, "wholesale"), 4);
+    assert.strictEqual(unitPriceForTier(4, undefined, "wholesale"), 4);
     assert.strictEqual(unitPriceForTier(4, 6, "regular"), 4);
-    assert.strictEqual(usesRetailPrice(6, "retail"), true);
-    assert.strictEqual(usesRetailPrice(null, "retail"), false);
-    assert.strictEqual(usesRetailPrice(6, "regular"), false);
+    assert.strictEqual(usesWholesalePrice(6, "wholesale"), true);
+    assert.strictEqual(usesWholesalePrice(null, "wholesale"), false);
+    assert.strictEqual(usesWholesalePrice(6, "regular"), false);
   });
 
-  test("a retail price is optional but must be above zero when given", () => {
+  test("a wholesale price is optional but must be above zero when given", () => {
     const base = { name: "Milk", costPrice: 1, sellingPrice: 2 };
     assert.deepStrictEqual(validateProductInput({ ...base }), []);
-    assert.deepStrictEqual(validateProductInput({ ...base, retailPrice: null }), []);
-    assert.deepStrictEqual(validateProductInput({ ...base, retailPrice: 3 }), []);
-    assert.match(validateProductInput({ ...base, retailPrice: 0 })[0], /Retail price/);
-    assert.match(validateProductInput({ ...base, retailPrice: Number.NaN })[0], /Retail price/);
+    assert.deepStrictEqual(validateProductInput({ ...base, wholesalePrice: null }), []);
+    assert.deepStrictEqual(validateProductInput({ ...base, wholesalePrice: 3 }), []);
+    assert.match(validateProductInput({ ...base, wholesalePrice: 0 })[0], /Wholesale price/);
+    assert.match(validateProductInput({ ...base, wholesalePrice: Number.NaN })[0], /Wholesale price/);
   });
 
   test("a sale line can only name a known price tier", () => {
     const line = { productId: "p", quantity: 1, unitPrice: 2, unitCost: 1 };
-    const sale = (priceTier?: string) => validateSaleInput({ cashierId: "c", paymentMethod: "cash", lines: [{ ...line, priceTier: priceTier as "retail" }] });
-    assert.deepStrictEqual(sale("retail"), []);
+    const sale = (priceTier?: string) => validateSaleInput({ cashierId: "c", paymentMethod: "cash", lines: [{ ...line, priceTier: priceTier as "wholesale" }] });
+    assert.deepStrictEqual(sale("wholesale"), []);
     assert.deepStrictEqual(sale(undefined), []);
-    assert.deepStrictEqual(sale("wholesale"), ["Unknown price tier"]);
+    assert.deepStrictEqual(sale("retail"), ["Unknown price tier"]);
   });
 });

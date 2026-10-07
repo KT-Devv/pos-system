@@ -139,12 +139,13 @@ must also run `database/migrations/006_product_units.sql` once in the SQL editor
 the new pack size columns. It changes nothing about existing products, prices,
 stock or sales. Fresh installs get it from `schema.v2.sql`.
 
-### Adding retail prices to a database that already has shops
+### Adding wholesale prices to a database that already has shops
 
-Run `database/migrations/009_retail_price.sql` once in the SQL editor (after 008) **before**
-deploying the app that has the Retail switch: Sales and Products read the new `retail_price` and
-`price_tier` columns. It changes no existing price, stock or sale. Fresh installs get it from
-`schema.v2.sql`.
+Run `database/migrations/009_retail_price.sql` and then `database/migrations/010_wholesale_price.sql` once each in the
+SQL editor (after 008) **before** deploying the app that has the Wholesale switch: Sales and Products read the new
+`wholesale_price` and `price_tier` columns. 009 first added the second price under the name "retail" and 010 renames
+it to wholesale, so run both in order even if 009 is already done (010 does nothing it has already done, and
+neither changes any existing price, stock or sale). Fresh installs get all of it from `schema.v2.sql`.
 
 ### Adding bulk import to a database that already has shops
 
@@ -267,18 +268,18 @@ number of those items at its own price ("Pack of 12" for 40.00, "Box of 48" for
 - Receipts name the pack on the line ("Milk 1L (Pack of 6)"), reports count single
   items sold, and a pack sale queued offline in the desktop app keeps its pack size.
 
-## Retail prices
+## Wholesale prices
 
-A product has its regular **Selling price** and an optional **Retail price** (set in the product form,
-or in the Retail price column of the import template). Once any product has one, the Sales screen shows
-a **Regular / Retail** switch above the products.
+A product has its regular **Selling price** and an optional **Wholesale price** (set in the product form,
+or in the Wholesale price column of the import template). Once any product has one, the Sales screen shows
+a **Regular / Wholesale** switch above the products.
 
-- The switch applies to the whole sale. On Retail, each product that has a retail price is charged it and
-  every other product stays at its regular price. The cart shows which lines are at Retail.
+- The switch applies to the whole sale. On Wholesale, each product that has a wholesale price is charged it and
+  every other product stays at its regular price. The cart shows which lines are at Wholesale.
 - Pack sizes always use their own prices, whichever side of the switch is chosen.
 - The server applies the price, as it does for every sale: a cashier can only choose between the two
   prices an admin set. Each sale line records which price it was charged (`price_tier`).
-- The switch goes back to Regular after every sale, so a retail sale is never repeated by accident.
+- The switch goes back to Regular after every sale, so a wholesale sale is never repeated by accident.
   A sale rung up offline in the desktop app keeps its price choice when it synchronises.
 - Labels, stock valuation and profit use the regular price and the product's cost, as before; reports
   use the price each line was actually charged.

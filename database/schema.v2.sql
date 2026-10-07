@@ -78,8 +78,8 @@ create table public.products (
   category_id uuid,
   cost_price numeric(12,2) not null check (cost_price >= 0),
   selling_price numeric(12,2) not null check (selling_price > 0),
-  -- Optional second price, charged when the cashier sells at Retail. Null means the regular price applies.
-  retail_price numeric(12,2) check (retail_price is null or retail_price > 0),
+  -- Optional second price, charged when the cashier sells at Wholesale. Null means the regular price applies.
+  wholesale_price numeric(12,2) check (wholesale_price is null or wholesale_price > 0),
   stock integer not null default 0 check (stock >= 0),
   barcode text,
   image_url text,
@@ -158,8 +158,8 @@ create table public.sale_lines (
   unit_id uuid,
   unit_name text,
   unit_quantity integer not null default 1 check (unit_quantity >= 1),
-  -- Which price the line was charged at. A pack, or a product with no retail price, is always 'regular'.
-  price_tier text not null default 'regular' check (price_tier in ('regular', 'retail')),
+  -- Which price the line was charged at. A pack, or a product with no wholesale price, is always 'regular'.
+  price_tier text not null default 'regular' check (price_tier in ('regular', 'wholesale')),
   foreign key (sale_id, shop_id) references public.sales(id, shop_id) on delete cascade,
   foreign key (product_id, shop_id) references public.products(id, shop_id) on delete restrict,
   foreign key (unit_id, shop_id) references public.product_units(id, shop_id) on delete set null (unit_id)
@@ -583,14 +583,14 @@ begin
 
     if not found then raise exception 'Product not found'; end if;
 
-    -- Retail is a second price on the product. A line asks for a tier; a product without a retail price,
+    -- Wholesale is a second price on the product. A line asks for a tier; a product without a wholesale price,
     -- and every pack size (which has its own price), is simply charged its regular price.
     tier := coalesce(nullif(btrim(line ->> 'price_tier'), ''), 'regular');
-    if tier not in ('regular', 'retail') then raise exception 'Unknown price tier %', tier; end if;
+    if tier not in ('regular', 'wholesale') then raise exception 'Unknown price tier %', tier; end if;
 
     if nullif(line ->> 'unit_id', '') is null then
       unit_size := 1;
-      unit_price := case when tier = 'retail' and product_row.retail_price is not null then product_row.retail_price else product_row.selling_price end;
+      unit_price := case when tier = 'wholesale' and product_row.wholesale_price is not null then product_row.wholesale_price else product_row.selling_price end;
     else
       select * into unit_row
       from public.product_units
@@ -628,9 +628,9 @@ begin
     line_tier := 'regular';
     if nullif(line ->> 'unit_id', '') is null then
       unit_size := 1;
-      if tier = 'retail' and product_row.retail_price is not null then
-        unit_price := product_row.retail_price;
-        line_tier := 'retail';
+      if tier = 'wholesale' and product_row.wholesale_price is not null then
+        unit_price := product_row.wholesale_price;
+        line_tier := 'wholesale';
       else
         unit_price := product_row.selling_price;
       end if;
@@ -716,7 +716,7 @@ end;
 $$;
 
 -- Creates products (and their categories and pack sizes) from rows like
---   {"name": "Milk 1L", "category": "Groceries", "cost_price": 8, "selling_price": 12.5, "retail_price": 14, "stock": 20,
+--   {"name": "Milk 1L", "category": "Groceries", "cost_price": 8, "selling_price": 12.5, "wholesale_price": 14, "stock": 20,
 --    "barcode": "5901234123457", "packs": [{"name": "Pack", "quantity": 6, "selling_price": 70, "barcode": null}]}
 -- A product whose name is already in the shop (ignoring case) is skipped, so uploading the same file twice
 -- does not duplicate anything. Admins and the owner only, like the product form.
@@ -775,14 +775,14 @@ begin
         end if;
       end if;
 
-      insert into public.products (shop_id, name, category_id, cost_price, selling_price, retail_price, stock, barcode)
+      insert into public.products (shop_id, name, category_id, cost_price, selling_price, wholesale_price, stock, barcode)
       values (
         p_shop_id,
         prod_name,
         cat_id,
         (r ->> 'cost_price')::numeric,
         (r ->> 'selling_price')::numeric,
-        nullif(r ->> 'retail_price', '')::numeric,
+        nullif(r ->> 'wholesale_price', '')::numeric,
         coalesce((r ->> 'stock')::integer, 0),
         nullif(btrim(r ->> 'barcode'), '')
       )

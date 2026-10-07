@@ -2,7 +2,7 @@ export type UserRole = "admin" | "cashier";
 export type PaymentMethod = "cash" | "momo" | "card";
 export type StockMovementType = "in" | "out" | "adjustment";
 /** Which of a product's two prices a sale line is charged. */
-export type PriceTier = "regular" | "retail";
+export type PriceTier = "regular" | "wholesale";
 
 export interface User {
   id: string;
@@ -24,8 +24,8 @@ export interface Product {
   categoryId: string | null;
   costPrice: number;
   sellingPrice: number;
-  /** Optional second price for retail sales. Null or absent means only the regular price exists. */
-  retailPrice?: number | null;
+  /** Optional second price for wholesale sales. Null or absent means only the regular price exists. */
+  wholesalePrice?: number | null;
   stock: number;
   barcode: string | null;
   imageUrl: string | null;
@@ -61,7 +61,7 @@ export interface SaleLine {
   unitId?: string | null;
   /** Single items in one unit; absent or 1 for singles. */
   unitQuantity?: number;
-  /** The price the line is asked to be charged at; the server applies it only where a retail price exists. */
+  /** The price the line is asked to be charged at; the server applies it only where a wholesale price exists. */
   priceTier?: PriceTier;
 }
 
@@ -100,7 +100,7 @@ export interface ProductInput {
   categoryId?: string | null;
   costPrice: number;
   sellingPrice: number;
-  retailPrice?: number | null;
+  wholesalePrice?: number | null;
   stock?: number;
   barcode?: string | null;
   imageUrl?: string | null;
@@ -124,14 +124,14 @@ export function calculateSaleTotal(
   };
 }
 
-/** Whether a sale at this tier is charged the retail price: only when the product has one. */
-export function usesRetailPrice(retailPrice: number | null | undefined, tier: PriceTier): boolean {
-  return tier === "retail" && retailPrice !== null && retailPrice !== undefined && retailPrice > 0;
+/** Whether a sale at this tier is charged the wholesale price: only when the product has one. */
+export function usesWholesalePrice(wholesalePrice: number | null | undefined, tier: PriceTier): boolean {
+  return tier === "wholesale" && wholesalePrice !== null && wholesalePrice !== undefined && wholesalePrice > 0;
 }
 
-/** The price one single item is charged: the retail price on a retail sale when the product has one, else the regular price. */
-export function unitPriceForTier(regularPrice: number, retailPrice: number | null | undefined, tier: PriceTier): number {
-  return usesRetailPrice(retailPrice, tier) ? (retailPrice as number) : regularPrice;
+/** The price one single item is charged: the wholesale price on a wholesale sale when the product has one, else the regular price. */
+export function unitPriceForTier(regularPrice: number, wholesalePrice: number | null | undefined, tier: PriceTier): number {
+  return usesWholesalePrice(wholesalePrice, tier) ? (wholesalePrice as number) : regularPrice;
 }
 
 export function roundCurrency(value: number): number {
@@ -148,8 +148,8 @@ export function validateProductInput(input: ProductInput): string[] {
   if (!Number.isFinite(input.sellingPrice) || input.sellingPrice <= 0) {
     errors.push("Selling price must be greater than zero");
   }
-  if (input.retailPrice !== undefined && input.retailPrice !== null && (!Number.isFinite(input.retailPrice) || input.retailPrice <= 0)) {
-    errors.push("Retail price must be greater than zero, or left empty");
+  if (input.wholesalePrice !== undefined && input.wholesalePrice !== null && (!Number.isFinite(input.wholesalePrice) || input.wholesalePrice <= 0)) {
+    errors.push("Wholesale price must be greater than zero, or left empty");
   }
   if (
     input.stock !== undefined &&
@@ -172,7 +172,7 @@ export function validateSaleInput(input: CreateSaleInput): string[] {
   if (input.lines.some((line) => !Number.isFinite(line.unitPrice) || line.unitPrice < 0)) {
     errors.push("Sale prices must be zero or greater");
   }
-  if (input.lines.some((line) => line.priceTier !== undefined && line.priceTier !== "regular" && line.priceTier !== "retail")) {
+  if (input.lines.some((line) => line.priceTier !== undefined && line.priceTier !== "regular" && line.priceTier !== "wholesale")) {
     errors.push("Unknown price tier");
   }
   if (input.discount !== undefined && (!Number.isFinite(input.discount) || input.discount < 0)) {

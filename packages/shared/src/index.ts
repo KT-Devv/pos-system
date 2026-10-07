@@ -137,7 +137,7 @@ export {
   calculateSaleTotal,
   roundCurrency,
   unitPriceForTier,
-  usesRetailPrice,
+  usesWholesalePrice,
   validateProductInput,
   validateSaleInput,
 } from "./domain";

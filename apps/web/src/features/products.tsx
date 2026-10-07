@@ -54,7 +54,7 @@ import { BulkImportDialog } from "./bulk-import";
 import { BarcodeScannerDialog, type ScanResult } from "./scanner";
 import { draftErrors, draftsFrom, type PackDraft, PackSizesEditor, savePackSizes } from "./pack-sizes";
 
-const emptyForm = { name: "", category_id: "", cost: "", price: "", retail: "", stock: "", barcode: "" };
+const emptyForm = { name: "", category_id: "", cost: "", price: "", wholesale: "", stock: "", barcode: "" };
 
 function margin(product: Product) {
   if (!product.selling_price) return "—";
@@ -85,7 +85,7 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
 
   const load = useCallback(async () => {
     const [{ data: prodRows, error: prodError }, { data: catRows, error: catError }, packRes] = await Promise.all([
-      supabase.from("products").select("id,name,category_id,cost_price,selling_price,retail_price,stock,barcode,categories(name)").order("name"),
+      supabase.from("products").select("id,name,category_id,cost_price,selling_price,wholesale_price,stock,barcode,categories(name)").order("name"),
       supabase.from("categories").select("id,name").order("name"),
       loadPackSizes(supabase),
     ]);
@@ -111,7 +111,7 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
       category_id: product.category_id ?? "",
       cost: String(product.cost_price),
       price: String(product.selling_price),
-      retail: product.retail_price != null ? String(product.retail_price) : "",
+      wholesale: product.wholesale_price != null ? String(product.wholesale_price) : "",
       stock: String(product.stock),
       barcode: product.barcode ?? "",
     });
@@ -127,7 +127,7 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
       category_id: form.category_id || null,
       cost_price: Number(form.cost),
       selling_price: Number(form.price),
-      retail_price: form.retail.trim() ? Number(form.retail) : null,
+      wholesale_price: form.wholesale.trim() ? Number(form.wholesale) : null,
       stock: Number(form.stock || 0),
       barcode: form.barcode.trim() || null,
     };
@@ -135,7 +135,7 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
       name: payload.name,
       costPrice: payload.cost_price,
       sellingPrice: payload.selling_price,
-      retailPrice: payload.retail_price,
+      wholesalePrice: payload.wholesale_price,
       stock: payload.stock,
     });
     if (validationErrors.length > 0) {
@@ -280,7 +280,7 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
                           {product.barcode && <span className="font-mono"> · {product.barcode}</span>}
                         </p>
                       </div>
-                      <p className="shrink-0 text-right font-bold tabular-nums">{formatCurrency(product.selling_price)}{product.retail_price != null && <span className="block text-xs font-semibold text-muted-foreground">Retail {formatCurrency(product.retail_price)}</span>}</p>
+                      <p className="shrink-0 text-right font-bold tabular-nums">{formatCurrency(product.selling_price)}{product.wholesale_price != null && <span className="block text-xs font-semibold text-muted-foreground">Wholesale {formatCurrency(product.wholesale_price)}</span>}</p>
                     </div>
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                       <StockBadge stock={product.stock} threshold={lowAt} />
@@ -341,7 +341,7 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
                       )}
                     </TableCell>
                     {isAdmin && <TableCell className="hidden text-right tabular-nums text-muted-foreground md:table-cell">{formatCurrency(product.cost_price)}</TableCell>}
-                    <TableCell className="text-right font-bold tabular-nums">{formatCurrency(product.selling_price)}{product.retail_price != null && <span className="block text-xs font-semibold text-muted-foreground">Retail {formatCurrency(product.retail_price)}</span>}</TableCell>
+                    <TableCell className="text-right font-bold tabular-nums">{formatCurrency(product.selling_price)}{product.wholesale_price != null && <span className="block text-xs font-semibold text-muted-foreground">Wholesale {formatCurrency(product.wholesale_price)}</span>}</TableCell>
                     {isAdmin && <TableCell className="hidden text-right tabular-nums text-muted-foreground lg:table-cell">{margin(product)}</TableCell>}
                     <TableCell>
                       <StockBadge stock={product.stock} threshold={lowAt} />
@@ -429,8 +429,8 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
             <Field label="Selling price" htmlFor="product-price">
               <MoneyInput id="product-price" required min="0.01" value={form.price} onChange={v => setForm({ ...form, price: v })} />
             </Field>
-            <Field label="Retail price" htmlFor="product-retail" hint="Optional. A second price, used when you sell at Retail on the Sales screen. Leave empty if it only has one price.">
-              <MoneyInput id="product-retail" min="0.01" value={form.retail} onChange={v => setForm({ ...form, retail: v })} />
+            <Field label="Wholesale price" htmlFor="product-wholesale" hint="Optional. A second price, used when you sell at Wholesale on the Sales screen. Leave empty if it only has one price.">
+              <MoneyInput id="product-wholesale" min="0.01" value={form.wholesale} onChange={v => setForm({ ...form, wholesale: v })} />
             </Field>
             <Field label={editing ? "Stock on hand" : "Opening stock"} htmlFor="product-stock">
               <Input id="product-stock" type="number" inputMode="numeric" min="0" step="1" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} />

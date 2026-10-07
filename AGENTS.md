@@ -42,10 +42,10 @@ table grants, 006 adds pack sizes, and 007 removes direct write access to `sales
 and stops a cashier from recording a sale under a coworker's name. Every database created
 before 007 existed must run it. 008 adds `bulk_import_products` and `bulk_record_stock`, the
 all-or-nothing functions behind the Import buttons (spreadsheet parsing and row checks live in
-`packages/shared/src/domain/bulk-import.ts`; the database re-checks every row). 009 adds the optional
-`products.retail_price` and `sale_lines.price_tier`: `create_sale` charges a line's `price_tier` (regular
-or retail) only where the product has a retail price, and pack sizes always use their own price. Run
-009 before deploying the Retail switch.
+`packages/shared/src/domain/bulk-import.ts`; the database re-checks every row). 009 adds an optional second
+product price and `sale_lines.price_tier`, and 010 renames it to wholesale (`products.wholesale_price`, tier
+`regular` or `wholesale`): `create_sale` charges a line's `price_tier` only where the product has a wholesale price,
+and pack sizes always use their own price. Run 009 then 010 before deploying the Wholesale switch.
 Checkout uses the shop-scoped `create_sale(p_shop_id, ...)`; inventory uses
 `record_stock_movement`. Stock is always counted in single items: a pack size
 (`product_units`) sells a fixed number of them, and `create_sale` takes

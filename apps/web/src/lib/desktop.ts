@@ -37,7 +37,7 @@ type SyncSale = {
   customerId: string | null;
   paymentMethod: "cash" | "momo" | "card";
   discount: number;
-  lines: { productId: string; quantity: number; unitPrice: number; unitCost: number; unitId: string | null; priceTier: "regular" | "retail" }[];
+  lines: { productId: string; quantity: number; unitPrice: number; unitCost: number; unitId: string | null; priceTier: "regular" | "wholesale" }[];
 };
 
 /** Maximum attempts before a sale the server keeps rejecting is dropped from the queue. */
@@ -88,7 +88,8 @@ async function runSync(shopId: string, createSale: (sale: SyncSale) => Promise<v
         customer_id: string | null;
         payment_method: "cash" | "momo" | "card";
         discount: number;
-        lines: { product_id: string; quantity: number; unit_id?: string | null; price_tier?: "regular" | "retail" }[];
+        // "retail" is what sales queued by the version before the second price was called wholesale carry.
+        lines: { product_id: string; quantity: number; unit_id?: string | null; price_tier?: "regular" | "wholesale" | "retail" }[];
       };
       // Sales queued before shops existed have no shop_id; they belong to the shop that was migrated.
       if (payload.shop_id && payload.shop_id !== shopId) continue;
@@ -104,7 +105,7 @@ async function runSync(shopId: string, createSale: (sale: SyncSale) => Promise<v
           unitPrice: 0,
           unitCost: 0,
           unitId: line.unit_id ?? null,
-          priceTier: line.price_tier === "retail" ? "retail" : "regular",
+          priceTier: line.price_tier === "wholesale" || line.price_tier === "retail" ? "wholesale" : "regular",
         })),
       });
       await invoke("remove_operation", { id: operation.id });

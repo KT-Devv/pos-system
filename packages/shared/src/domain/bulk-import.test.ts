@@ -17,7 +17,7 @@ import {
 } from "./bulk-import.js";
 
 const BLANK = {
-  name: "", category: "", costPrice: "", sellingPrice: "", retailPrice: "", stock: "", barcode: "", packName: "", packSize: "", packPrice: "", packBarcode: "",
+  name: "", category: "", costPrice: "", sellingPrice: "", wholesalePrice: "", stock: "", barcode: "", packName: "", packSize: "", packPrice: "", packBarcode: "",
   product: "", quantity: "", type: "", supplier: "", notes: "",
 };
 const record = (rowNumber: number, values: Partial<Record<keyof typeof BLANK, string>>): ImportRecord => ({ rowNumber, values: { ...BLANK, ...values } });
@@ -169,19 +169,19 @@ describe("planProductImport", () => {
     assert.match(plan.issues.find((i) => i.rowNumber === 5)!.message, /already used .* in your shop/);
   });
 
-  test("reads an optional retail price and rejects a bad one", () => {
+  test("reads an optional wholesale price and rejects a bad one", () => {
     const plan = planProductImport(
       [
-        record(2, { name: "A", costPrice: "1", sellingPrice: "4", retailPrice: "6" }),
+        record(2, { name: "A", costPrice: "1", sellingPrice: "4", wholesalePrice: "6" }),
         record(3, { name: "B", costPrice: "1", sellingPrice: "4" }),
-        record(4, { name: "C", costPrice: "1", sellingPrice: "4", retailPrice: "0" }),
-        record(5, { name: "D", costPrice: "1", sellingPrice: "4", retailPrice: "lots" }),
+        record(4, { name: "C", costPrice: "1", sellingPrice: "4", wholesalePrice: "0" }),
+        record(5, { name: "D", costPrice: "1", sellingPrice: "4", wholesalePrice: "lots" }),
       ],
       empty,
     );
-    assert.deepStrictEqual(plan.rows.map((r) => [r.name, r.retailPrice]), [["A", 6], ["B", null]]);
-    assert.match(plan.issues.find((i) => i.rowNumber === 4)!.message, /Retail price must be above zero/);
-    assert.match(plan.issues.find((i) => i.rowNumber === 5)!.message, /Retail price "lots" is not a number/);
+    assert.deepStrictEqual(plan.rows.map((r) => [r.name, r.wholesalePrice]), [["A", 6], ["B", null]]);
+    assert.match(plan.issues.find((i) => i.rowNumber === 4)!.message, /Wholesale price must be above zero/);
+    assert.match(plan.issues.find((i) => i.rowNumber === 5)!.message, /Wholesale price "lots" is not a number/);
   });
 
   test("reads a pack size from the product's row and extra ones from follow-up rows", () => {
