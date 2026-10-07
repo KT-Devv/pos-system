@@ -26,6 +26,7 @@ export default function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [canResend, setCanResend] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -74,6 +75,7 @@ export default function LoginPage() {
 
   const resetFeedback = () => {
     setError(null);
+    setErrorDetail(null);
     setNotice(null);
     setCanResend(false);
   };
@@ -94,6 +96,7 @@ export default function LoginPage() {
     } catch (cause) {
       const failure = describeAuthError(cause);
       setError(failure.message);
+      setErrorDetail(failure.detail ?? null);
       setCanResend(failure.code === "email_not_confirmed");
     } finally {
       setBusy(false);
@@ -308,7 +311,10 @@ export default function LoginPage() {
         {error && (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
+            <AlertDescription>
+              {error}
+              {errorDetail && <span className="mt-1 block font-mono text-xs opacity-80">Details: {errorDetail}</span>}
+            </AlertDescription>
           </Alert>
         )}
 
