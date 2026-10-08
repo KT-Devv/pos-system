@@ -18,7 +18,7 @@ import {
 import { Printer } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { PrintArea, printPage } from "@/components/print-area";
-import { isSafari, RECEIPT_PAPER_MM, type ReceiptPaperMm, readReceiptPaper, receiptWidthMm, saveReceiptPaper, setReceiptPageSize } from "@/lib/receipt-paper";
+import { RECEIPT_PAPER_MM, type ReceiptPaperMm, readReceiptPaper, receiptWidthMm, saveReceiptPaper, setReceiptPageSize } from "@/lib/receipt-paper";
 import type { Shop } from "@/lib/workspace";
 import { type Client, paymentLabel } from "./common";
 
@@ -113,8 +113,8 @@ const rule = "my-2.5 border-t border-dashed border-black/60";
 
 /**
  * The paper itself: 72 mm wide on an 80 mm roll (48 mm on a 58 mm one), black on white in both themes (it represents a
- * printed receipt, so it deliberately ignores the app's dark mode). The same element is previewed and printed. The space
- * below the last line is where the printer's cutter sits, so the cut never lands on the text.
+ * printed receipt, so it deliberately ignores the app's dark mode). The same element is previewed and printed. A little space
+ * is left below the last line; most receipt printers feed the paper on to the cutter themselves.
  */
 export function ReceiptPaper({ receipt, paper = 80 }: { receipt: Receipt; paper?: ReceiptPaperMm }) {
   const { shop } = receipt;
@@ -123,7 +123,7 @@ export function ReceiptPaper({ receipt, paper = 80 }: { receipt: Receipt; paper?
     <article
       aria-label={`Receipt ${receipt.reference}`}
       style={{ width: `${receiptWidthMm(paper)}mm` }}
-      className="max-w-full bg-white px-[3mm] pb-[12mm] pt-5 text-[12px] leading-snug text-black"
+      className="max-w-full bg-white px-[3mm] pb-[6mm] pt-5 text-[12px] leading-snug text-black"
     >
       {/* A div, not <header>: printing hides every <header> to drop the app's own chrome. */}
       <div className="text-center">
@@ -245,11 +245,6 @@ export function ReceiptDialog({
                   options={RECEIPT_PAPER_MM.map((mm) => ({ value: String(mm) as "58" | "80", label: `${mm} mm` }))}
                 />
               </div>
-              {isSafari() && (
-                <p className="text-xs text-muted-foreground">
-                  Printing from Safari? Safari can&apos;t set the paper size for you. In the print window choose your receipt printer, set Paper Size to its roll (for example {paper} mm), and turn Headers and Footers off. To make the printer cut, switch on its cut option under Printer Options.
-                </p>
-              )}
             </div>
           )}
           <DialogFooter>

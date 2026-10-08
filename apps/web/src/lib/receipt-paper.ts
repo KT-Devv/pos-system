@@ -4,8 +4,7 @@
  *
  * Browsers that obey CSS (Chrome, Edge and the desktop app) take the page size from an `@page` rule. The receipt's height
  * is only known once it is laid out, so the rule is written at print time, into a constructable stylesheet: that is
- * allowed under the desktop app's content-security policy, which refuses an inline <style>. Safari ignores `@page size`
- * altogether, so there the paper size has to be chosen in the print window (the receipt dialog says so).
+ * allowed under the desktop app's content-security policy, which refuses an inline <style>.
  */
 
 export const RECEIPT_PAPER_MM = [58, 80] as const;
@@ -42,16 +41,15 @@ export function setReceiptPageSize(paper: ReceiptPaperMm, heightMm: number): boo
   if (typeof CSSStyleSheet === "undefined" || !("adoptedStyleSheets" in document)) return false;
   try {
     pageSheet ??= new CSSStyleSheet();
-    pageSheet.replaceSync(`@page receipt { size: ${paper}mm ${Math.max(40, Math.ceil(heightMm))}mm; margin: 0; }`);
-    if (!document.adoptedStyleSheets.includes(pageSheet)) document.adoptedStyleSheets = [...document.adoptedStyleSheets, pageSheet];
+    const size = `${paper}mm ${Math.max(40, Math.ceil(heightMm))}mm`;
+    // The named page is the precise one; the plain @page is for browsers that predate named pages (older Firefox). Nothing else
+    // is on paper while a receipt prints, and the sheet is dropped again afterwards so it never touches another print.
+    pageSheet.replaceSync(`@page receipt { size: ${size}; margin: 0; } @page { size: ${size}; margin: 0; }`);
+    const sheet = pageSheet;
+    if (!document.adoptedStyleSheets.includes(sheet)) document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    window.addEventListener("afterprint", () => { document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sheet); }, { once: true });
     return true;
   } catch {
     return false;
   }
-}
-
-/** Safari (not Chrome, Edge or another browser that merely says "Safari" too) cannot be told a paper size. */
-export function isSafari(): boolean {
-  if (typeof navigator === "undefined") return false;
-  return /Safari\//.test(navigator.userAgent) && !/Chrome|Chromium|CriOS|FxiOS|Edg|OPR|Android/.test(navigator.userAgent);
 }
