@@ -11,7 +11,7 @@ import { createPortal } from "react-dom";
  * `page` picks a named paper size defined in globals.css (label rolls). The size is deliberately
  * not written into an inline <style>: the desktop app's content-security policy blocks those.
  */
-export type PrintPage = "label-small" | "label-standard" | "label-large";
+export type PrintPage = "receipt" | "label-small" | "label-standard" | "label-large";
 
 export function PrintArea({ children, page }: { children: ReactNode; page?: PrintPage }) {
   const [host, setHost] = useState<HTMLElement | null>(null);

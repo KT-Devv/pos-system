@@ -386,6 +386,11 @@ body[data-scroll-locked] {
   display: none;
 }
 
+/* The receipt page. Its size is written at print time to match the receipt's length (lib/receipt-paper.ts). */
+@page receipt {
+  margin: 0;
+}
+
 /* One named page per label stock (keep in step with LABEL_SIZES in features/barcode-label.tsx). */
 @page label-small {
   size: 40mm 25mm;
@@ -429,6 +434,17 @@ body[data-scroll-locked] {
   .print-root nav,
   .print-root aside {
     display: block !important;
+  }
+  .print-page-receipt {
+    page: receipt;
+  }
+  .print-page-receipt > article {
+    margin-inline: auto;
+    break-inside: avoid;
+  }
+  body:has(.print-root) {
+    margin: 0;
+    min-height: 0;
   }
   .print-page-label-small {
     page: label-small;

@@ -13,10 +13,12 @@ import {
   packLabel,
   type PaymentMethod,
   type Receipt,
+  SegmentedControl,
 } from "@pos/shared";
 import { Printer } from "lucide-react";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PrintArea, printPage } from "@/components/print-area";
+import { isSafari, RECEIPT_PAPER_MM, type ReceiptPaperMm, readReceiptPaper, receiptWidthMm, saveReceiptPaper, setReceiptPageSize } from "@/lib/receipt-paper";
 import type { Shop } from "@/lib/workspace";
 import { type Client, paymentLabel } from "./common";
 
@@ -110,14 +112,19 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
 const rule = "my-2.5 border-t border-dashed border-black/60";
 
 /**
- * The paper itself: 72 mm wide, black on white in both themes (it represents a printed receipt, so
- * it deliberately ignores the app's dark mode). The same element is previewed and printed.
+ * The paper itself: 72 mm wide on an 80 mm roll (48 mm on a 58 mm one), black on white in both themes (it represents a
+ * printed receipt, so it deliberately ignores the app's dark mode). The same element is previewed and printed. The space
+ * below the last line is where the printer's cutter sits, so the cut never lands on the text.
  */
-export function ReceiptPaper({ receipt }: { receipt: Receipt }) {
+export function ReceiptPaper({ receipt, paper = 80 }: { receipt: Receipt; paper?: ReceiptPaperMm }) {
   const { shop } = receipt;
   const when = new Date(receipt.issuedAt);
   return (
-    <article aria-label={`Receipt ${receipt.reference}`} className="w-[72mm] max-w-full bg-white px-4 py-5 text-[12px] leading-snug text-black">
+    <article
+      aria-label={`Receipt ${receipt.reference}`}
+      style={{ width: `${receiptWidthMm(paper)}mm` }}
+      className="max-w-full bg-white px-[3mm] pb-[12mm] pt-5 text-[12px] leading-snug text-black"
+    >
       {/* A div, not <header>: printing hides every <header> to drop the app's own chrome. */}
       <div className="text-center">
         <h2 className="text-[17px] font-extrabold leading-tight">{shop.name}</h2>
@@ -186,6 +193,22 @@ export function ReceiptDialog({
   onClose: () => void;
 }) {
   const done = useRef<HTMLButtonElement>(null);
+  const [paper, setPaper] = useState<ReceiptPaperMm>(80);
+  useEffect(() => { setPaper(readReceiptPaper()); }, []);
+
+  const choosePaper = (next: ReceiptPaperMm) => {
+    setPaper(next);
+    saveReceiptPaper(next);
+  };
+
+  // Make the page exactly as long as the receipt on screen (the print copy is the same element at the same width), plus a
+  // little spare so rounding can never push the last line onto a second page.
+  const print = () => {
+    const shown = document.querySelector<HTMLElement>('[role="dialog"] article');
+    if (shown) setReceiptPageSize(paper, (shown.getBoundingClientRect().height * 25.4) / 96 + 3);
+    printPage();
+  };
+
   return (
     <>
       <Dialog open={receipt !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -207,13 +230,31 @@ export function ReceiptDialog({
           {receipt && (
             <div className="max-h-[52vh] overflow-y-auto rounded-xl border bg-muted p-3">
               <div className="mx-auto w-fit shadow-sm">
-                <ReceiptPaper receipt={receipt} />
+                <ReceiptPaper receipt={receipt} paper={paper} />
               </div>
+            </div>
+          )}
+          {receipt && (
+            <div className="grid gap-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold text-muted-foreground">Paper roll</span>
+                <SegmentedControl
+                  aria-label="Receipt paper width"
+                  value={String(paper) as "58" | "80"}
+                  onValueChange={(value) => choosePaper(Number(value) as ReceiptPaperMm)}
+                  options={RECEIPT_PAPER_MM.map((mm) => ({ value: String(mm) as "58" | "80", label: `${mm} mm` }))}
+                />
+              </div>
+              {isSafari() && (
+                <p className="text-xs text-muted-foreground">
+                  Printing from Safari? Safari can&apos;t set the paper size for you. In the print window choose your receipt printer, set Paper Size to its roll (for example {paper} mm), and turn Headers and Footers off. To make the printer cut, switch on its cut option under Printer Options.
+                </p>
+              )}
             </div>
           )}
           <DialogFooter>
             <Button ref={done} type="button" variant="outline" onClick={onClose}>Done</Button>
-            <Button type="button" onClick={printPage}>
+            <Button type="button" onClick={print}>
               <Printer />
               Print receipt
             </Button>
@@ -221,8 +262,8 @@ export function ReceiptDialog({
         </DialogContent>
       </Dialog>
       {receipt && (
-        <PrintArea>
-          <ReceiptPaper receipt={receipt} />
+        <PrintArea page="receipt">
+          <ReceiptPaper receipt={receipt} paper={paper} />
         </PrintArea>
       )}
     </>
