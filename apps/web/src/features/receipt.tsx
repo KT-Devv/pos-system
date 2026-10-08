@@ -17,8 +17,15 @@ import {
 } from "@pos/shared";
 import { Printer } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { PrintArea, printPage } from "@/components/print-area";
-import { RECEIPT_PAPER_MM, type ReceiptPaperMm, readReceiptPaper, receiptWidthMm, saveReceiptPaper, setReceiptPageSize } from "@/lib/receipt-paper";
+import { PrintArea } from "@/components/print-area";
+import {
+  printReceipt,
+  RECEIPT_PAPER_MM,
+  type ReceiptPaperMm,
+  readReceiptPaper,
+  receiptWidthMm,
+  saveReceiptPaper,
+} from "@/lib/receipt-print";
 import type { Shop } from "@/lib/workspace";
 import { type Client, paymentLabel } from "./common";
 
@@ -112,9 +119,9 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
 const rule = "my-2.5 border-t border-dashed border-black/60";
 
 /**
- * The paper itself: 72 mm wide on an 80 mm roll (48 mm on a 58 mm one), black on white in both themes (it represents a
- * printed receipt, so it deliberately ignores the app's dark mode). The same element is previewed and printed. A little space
- * is left below the last line; most receipt printers feed the paper on to the cutter themselves.
+ * The paper itself: 72 mm wide on an 80 mm roll (50 mm on a 58 mm one), black on white in both themes (it represents a
+ * printed receipt, so it deliberately ignores the app's dark mode). The same element is previewed and printed. The space
+ * under the last line is where the cutter sits, so the cut never lands on the text.
  */
 export function ReceiptPaper({ receipt, paper = 80 }: { receipt: Receipt; paper?: ReceiptPaperMm }) {
   const { shop } = receipt;
@@ -123,7 +130,7 @@ export function ReceiptPaper({ receipt, paper = 80 }: { receipt: Receipt; paper?
     <article
       aria-label={`Receipt ${receipt.reference}`}
       style={{ width: `${receiptWidthMm(paper)}mm` }}
-      className="max-w-full bg-white px-[3mm] pb-[6mm] pt-5 text-[12px] leading-snug text-black"
+      className="max-w-full bg-white px-[3mm] pb-[8mm] pt-5 text-[12px] leading-snug text-black"
     >
       {/* A div, not <header>: printing hides every <header> to drop the app's own chrome. */}
       <div className="text-center">
@@ -193,6 +200,7 @@ export function ReceiptDialog({
   onClose: () => void;
 }) {
   const done = useRef<HTMLButtonElement>(null);
+  const preview = useRef<HTMLDivElement>(null);
   const [paper, setPaper] = useState<ReceiptPaperMm>(80);
   useEffect(() => { setPaper(readReceiptPaper()); }, []);
 
@@ -201,19 +209,11 @@ export function ReceiptDialog({
     saveReceiptPaper(next);
   };
 
-  // Make the page exactly as long as the receipt on screen (the print copy is the same element at the same width), plus a
-  // little spare so rounding can never push the last line onto a second page.
-  const print = () => {
-    const shown = document.querySelector<HTMLElement>('[role="dialog"] article');
-    if (shown) setReceiptPageSize(paper, (shown.getBoundingClientRect().height * 25.4) / 96 + 3);
-    printPage();
-  };
-
   return (
     <>
       <Dialog open={receipt !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
         {/* Focus lands on Done, so a busy cashier can dismiss the receipt with Enter. */}
-        <DialogContent className="max-w-md" onOpenAutoFocus={(event) => { event.preventDefault(); done.current?.focus(); }}>
+        <DialogContent className="max-w-lg" onOpenAutoFocus={(event) => { event.preventDefault(); done.current?.focus(); }}>
           <DialogHeader>
             <DialogTitle>{heading}</DialogTitle>
             <DialogDescription>
@@ -229,27 +229,25 @@ export function ReceiptDialog({
           </DialogHeader>
           {receipt && (
             <div className="max-h-[52vh] overflow-y-auto rounded-xl border bg-muted p-3">
-              <div className="mx-auto w-fit shadow-sm">
+              <div ref={preview} className="mx-auto w-fit shadow-sm">
                 <ReceiptPaper receipt={receipt} paper={paper} />
               </div>
             </div>
           )}
           {receipt && (
-            <div className="grid gap-2">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-semibold text-muted-foreground">Paper roll</span>
-                <SegmentedControl
-                  aria-label="Receipt paper width"
-                  value={String(paper) as "58" | "80"}
-                  onValueChange={(value) => choosePaper(Number(value) as ReceiptPaperMm)}
-                  options={RECEIPT_PAPER_MM.map((mm) => ({ value: String(mm) as "58" | "80", label: `${mm} mm` }))}
-                />
-              </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-muted-foreground">Paper roll</span>
+              <SegmentedControl
+                aria-label="Receipt paper width"
+                value={String(paper) as "58" | "80"}
+                onValueChange={(value) => choosePaper(Number(value) as ReceiptPaperMm)}
+                options={RECEIPT_PAPER_MM.map((mm) => ({ value: String(mm) as "58" | "80", label: `${mm} mm` }))}
+              />
             </div>
           )}
           <DialogFooter>
             <Button ref={done} type="button" variant="outline" onClick={onClose}>Done</Button>
-            <Button type="button" onClick={print}>
+            <Button type="button" onClick={() => printReceipt(paper, preview.current?.firstElementChild as HTMLElement | null)}>
               <Printer />
               Print receipt
             </Button>
@@ -257,7 +255,7 @@ export function ReceiptDialog({
         </DialogContent>
       </Dialog>
       {receipt && (
-        <PrintArea page="receipt">
+        <PrintArea>
           <ReceiptPaper receipt={receipt} paper={paper} />
         </PrintArea>
       )}

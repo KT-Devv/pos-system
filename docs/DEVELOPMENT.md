@@ -89,6 +89,12 @@ Two rules learned from testing in the desktop window:
   `label-large`), chosen with `<PrintArea page="label-standard">`. Never write an inline
   `<style>` for print: the desktop app's content-security policy blocks it and the page size
   is silently ignored (labels came out on a full Letter page).
+- Receipts print on a roll, so their page is as long as the receipt. `printReceipt`
+  (`apps/web/src/lib/receipt-print.ts`) measures the receipt shown in the dialog and writes
+  `@page { size: <roll> x <length> }` into a constructable stylesheet just before
+  `window.print()` (allowed by the CSP; removed on `afterprint`). Use the element's layout
+  height, not `getBoundingClientRect()`: the dialog scales while it opens. The roll width
+  (58 or 80 mm) is chosen in the dialog and remembered per device. Safari ignores `@page size`.
 - Printing hides every `<header>`, `<nav>` and `<aside>` to drop the app's own chrome. The
   `.print-root` rules restore them inside the paper, but prefer plain `<div>`s there: a receipt
   header once printed without the shop's name because of this.
