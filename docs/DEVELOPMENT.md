@@ -72,6 +72,18 @@ suite, which runs against an in-memory Postgres:
 npm run test:db
 ```
 
+## Working offline (desktop app)
+
+The desktop app opens and sells with no internet. `lib/workspace.tsx` saves the signed-in user, shop and role after every
+successful load (`lib/offline-cache.ts`, in `localStorage`, desktop only) and falls back to that copy when the server
+cannot be reached or `navigator.onLine` is false. `features/sales.tsx` saves its catalog the same way, queues a sale in
+SQLite when the server is unreachable (`isUnreachable`: no response at all, never a timeout, which might have been
+recorded), and shows stock minus the queued sales so nothing is sold twice. `lib/use-offline-sync.ts` sends the queue when
+a screen opens and when the connection returns, then fires `kt:sales-synced`. Every other screen shows `OfflineScreen`
+while offline. Signing out clears the saved copy; a session the server rejects clears it too. The queue keeps a sale
+when only the sign-in has lapsed. To test it, run the desktop exe with a mock server, stop the server, and use
+`Network.emulateNetworkConditions` for the real offline state.
+
 ## Printing
 
 Receipts and labels print through `PrintArea` (`apps/web/src/components/print-area.tsx`).

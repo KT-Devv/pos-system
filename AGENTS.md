@@ -55,7 +55,11 @@ Checkout uses the shop-scoped `create_sale(p_shop_id, ...)`; inventory uses
 `quantity x pack size` out of stock. Any code that counts stock or units sold must use
 single items (`quantity * unit_quantity` on sale lines), never the raw line quantity. The Tauri
 client stores pending sales in `sqlite:pos.db` and synchronizes them through
-Supabase when connectivity returns.
+Supabase when connectivity returns. The desktop app also works with no internet at all: it keeps the signed-in
+user, the shop and the Sales catalog in `localStorage` (`lib/offline-cache.ts`, desktop only, cleared on sign-out),
+opens from that copy when the server cannot be reached, subtracts queued sales from the stock it shows
+(`withQueuedSales`), and replaces every screen except Sales with an "needs a connection" notice while offline.
+Screens that show stock reload on the `kt:sales-synced` event; new offline-capable screens must follow that pattern.
 
 ## Change guidance
 

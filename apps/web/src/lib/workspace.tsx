@@ -7,6 +7,8 @@ import { Onboarding } from "@/features/onboarding";
 import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/browser";
 import { redeemInviteCode } from "@/lib/invite";
 import { isDeadSessionError } from "@/lib/supabase/auth-errors";
+import { isTauri, isUnreachable } from "@/lib/desktop";
+import { cacheClear, cacheRead, cacheWrite } from "@/lib/offline-cache";
 
 type Client = ReturnType<typeof createSupabaseBrowserClient>;
 
@@ -35,6 +37,8 @@ export type Workspace = {
   /** Owner or admin: may change the catalog, shop settings and team. */
   isAdmin: boolean;
   isOwner: boolean;
+  /** The desktop app opened this from its saved copy because the server could not be reached. */
+  offline: boolean;
   /** Reload the shop (after settings change) and re-apply its currency. */
   refresh: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -45,7 +49,7 @@ type State =
   | { status: "signed-out" }
   /** No shop yet: set one up, or join one with an invitation code. `joinError` is set when a code given at sign-up did not work. */
   | { status: "needs-shop"; user: WorkspaceUser; joinError?: string; code?: string }
-  | { status: "ready"; user: WorkspaceUser; shop: Shop; role: ShopRole }
+  | { status: "ready"; user: WorkspaceUser; shop: Shop; role: ShopRole; offline?: boolean }
   | { status: "error"; message: string };
 
 const WorkspaceContext = createContext<Workspace | null>(null);
@@ -72,21 +76,52 @@ function describeLoadError(error: { code?: string; message: string; hint?: strin
   return error.message;
 }
 
+const WORKSPACE_CACHE = "workspace";
+
+/**
+ * The desktop app's saved copy of who is signed in and which shop they work in, used when the server cannot be reached.
+ * It is only ever written from a successful online load, and removed on sign-out.
+ */
+function savedWorkspace(): Extract<State, { status: "ready" }> | null {
+  const saved = cacheRead<{ user: WorkspaceUser; shop: Shop; role: ShopRole }>(WORKSPACE_CACHE);
+  if (!saved) return null;
+  configureMoney({ currency: saved.value.shop.currency });
+  return { status: "ready", ...saved.value, offline: true };
+}
+
 async function loadWorkspace(supabase: Client, joinedByCode = false): Promise<State> {
+  if (isTauri() && !navigator.onLine) {
+    const saved = savedWorkspace();
+    if (saved) return saved;
+  }
   const { data, error } = await supabase.auth.getUser();
+  if (error && isUnreachable(error)) {
+    const saved = savedWorkspace();
+    if (saved) return saved;
+  }
   if (error && isDeadSessionError(error)) {
     await supabase.auth.signOut({ scope: "local" });
+    cacheClear();
     return { status: "signed-out" };
   }
   if (error && error.name !== "AuthSessionMissingError") return { status: "error", message: error.message };
-  if (!data.user) return { status: "signed-out" };
+  if (!data.user) {
+    cacheClear();
+    return { status: "signed-out" };
+  }
 
   const authUser = data.user;
   const [profile, membership] = await Promise.all([
     supabase.from("profiles").select("name,email").eq("id", authUser.id).maybeSingle(),
     supabase.from("shop_members").select("role, shops(*)").eq("user_id", authUser.id).maybeSingle(),
   ]);
-  if (membership.error) return { status: "error", message: describeLoadError(membership.error) };
+  if (membership.error) {
+    if (isUnreachable(membership.error)) {
+      const saved = savedWorkspace();
+      if (saved) return saved;
+    }
+    return { status: "error", message: describeLoadError(membership.error) };
+  }
 
   const user: WorkspaceUser = {
     id: authUser.id,
@@ -100,6 +135,7 @@ async function loadWorkspace(supabase: Client, joinedByCode = false): Promise<St
     configureMoney({ currency: shop.currency });
     const readyState = { status: "ready" as const, user, shop, role: (membership.data as unknown as { role: ShopRole }).role };
     cachedReadyState = readyState;
+    cacheWrite(WORKSPACE_CACHE, { user, shop, role: readyState.role });
     return readyState;
   }
 
@@ -158,10 +194,21 @@ export function WorkspaceGate({ children, signedOut }: { children: ReactNode; si
   }, [supabase]);
 
   const signOut = useCallback(async () => {
+    cacheClear();
     await supabase?.auth.signOut();
     cachedReadyState = null;
     window.location.href = "/";
   }, [supabase]);
+
+  // Opened from the saved copy: check it against the server as soon as the connection is back (the person may have been
+  // removed from the shop, or signed out elsewhere), and switch to the live data.
+  const offline = state.status === "ready" && state.offline === true;
+  useEffect(() => {
+    if (!offline) return;
+    const back = () => { void refresh(); };
+    window.addEventListener("online", back);
+    return () => window.removeEventListener("online", back);
+  }, [offline, refresh]);
 
   const redirecting = state.status === "signed-out" && !signedOut;
   useEffect(() => {
@@ -177,6 +224,7 @@ export function WorkspaceGate({ children, signedOut }: { children: ReactNode; si
       role: state.role,
       isAdmin: canManageShop(state.role),
       isOwner: state.role === "owner",
+      offline: state.offline === true,
       refresh,
       signOut,
     };

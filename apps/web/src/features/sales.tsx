@@ -26,8 +26,10 @@ import {
   usesWholesalePrice,
   validateSaleInput,
 } from "@pos/shared";
-import { Camera, Check, Minus, PackageSearch, Plus, Receipt, ReceiptText, ShoppingCart, Trash2 } from "lucide-react";
-import { isTauri, queueDesktopSale } from "@/lib/desktop";
+import { Camera, Check, Minus, PackageSearch, Plus, Receipt, ReceiptText, ShoppingCart, Trash2, WifiOff } from "lucide-react";
+import { useOnline } from "@/components/online-status";
+import { isTauri, isUnreachable, queueDesktopSale, type QueuedLine, queuedSales, withQueuedSales } from "@/lib/desktop";
+import { cacheRead, cacheWrite } from "@/lib/offline-cache";
 import { useProgressiveList } from "@/lib/use-progressive-list";
 import { useWorkspace } from "@/lib/workspace";
 import {
@@ -65,6 +67,9 @@ const nameOf = (line: CartLine) => (line.pack ? `${line.name} (${packLabel(line.
 const claimedBy = (cart: readonly CartLine[], productId: string, exceptKey?: string) =>
   cart.filter(line => line.id === productId && keyOf(line) !== exceptKey).reduce((sum, line) => sum + line.quantity * sizeOf(line), 0);
 type RecentSale = { id: string; total: number; payment_method: string; created_at: string };
+/** What the desktop app keeps of this screen's data, to sell from when the server cannot be reached. */
+type SavedSales = { products: Product[]; recent: RecentSale[]; customers: Customer[]; categories: Category[]; packs: [string, PackSizeRow[]][] };
+const NO_QUEUED: { sales: number; lines: QueuedLine[] } = { sales: 0, lines: [] };
 
 const WALK_IN = "walk-in";
 
@@ -139,7 +144,7 @@ const ProductTile = memo(function ProductTile({ product, packs, category, remain
 
 export function Sales({ supabase, userId, onError, onNotice }: { supabase: Client; userId: string } & Feedback) {
   const { shop, user } = useWorkspace();
-  const [products, setProducts] = useState<Product[]>([]);
+  const [catalog, setCatalog] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -157,24 +162,74 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
   const [packs, setPacks] = useState<Map<string, PackSizeRow[]>>(new Map());
   /** Which of a product's two prices this sale is rung up at. */
   const [tier, setTier] = useState<PriceTier>("regular");
+  /** Sales rung up offline and not yet sent: the stock they used is taken off the catalog so it is never sold twice. */
+  const [queued, setQueued] = useState(NO_QUEUED);
+  /** When the data on screen was saved, if it is the desktop app's saved copy rather than the server's. */
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const online = useOnline();
+  const cacheKey = `sales:${shop.id}`;
+
+  const refreshQueued = useCallback(async () => {
+    try { setQueued(await queuedSales(shop.id)); } catch { /* the queue is only read on the desktop app */ }
+  }, [shop.id]);
 
   const load = useCallback(async () => {
-    const [{ data: catalog, error: catalogError }, { data: sales, error: salesError }, { data: customerRows, error: customerError }, { data: catRows }, packRes] = await Promise.all([
+    await refreshQueued();
+    const showSaved = () => {
+      const saved = cacheRead<SavedSales>(cacheKey);
+      if (!saved) return false;
+      setCatalog(saved.value.products);
+      setRecent(saved.value.recent);
+      setCustomers(saved.value.customers);
+      setCategories(saved.value.categories);
+      setPacks(new Map(saved.value.packs));
+      setSavedAt(saved.savedAt);
+      setLoaded(true);
+      return true;
+    };
+    if (isTauri() && !navigator.onLine && showSaved()) return;
+    const [{ data: products, error: catalogError }, { data: sales, error: salesError }, { data: customerRows, error: customerError }, { data: catRows }, packRes] = await Promise.all([
       supabase.from("products").select("id,name,category_id,cost_price,selling_price,wholesale_price,stock,barcode").gt("stock", 0).order("name"),
       supabase.from("sales").select("id,total,payment_method,created_at").order("created_at", { ascending: false }).limit(8),
       supabase.from("customers").select("id,name,phone,email,loyalty_points").order("name"),
       supabase.from("categories").select("id,name").order("name"),
       loadPackSizes(supabase),
     ]);
-    if (catalogError) fail(onError, catalogError); else setProducts((catalog ?? []) as Product[]);
+    if (isTauri() && [catalogError, salesError, customerError, packRes.error].some(error => error && isUnreachable(error)) && showSaved()) return;
+    if (catalogError) fail(onError, catalogError); else setCatalog((products ?? []) as Product[]);
     if (salesError) fail(onError, salesError); else setRecent((sales ?? []) as RecentSale[]);
     if (customerError) fail(onError, customerError); else setCustomers((customerRows ?? []) as Customer[]);
     if (catRows) setCategories((catRows ?? []) as Category[]);
     if (packRes.error) fail(onError, packRes.error); else setPacks(packRes.data);
+    if (!catalogError && !salesError && !customerError && catRows && !packRes.error) {
+      const saved: SavedSales = {
+        products: (products ?? []) as Product[],
+        recent: (sales ?? []) as RecentSale[],
+        customers: (customerRows ?? []) as Customer[],
+        categories: catRows as Category[],
+        packs: [...packRes.data],
+      };
+      cacheWrite(cacheKey, saved);
+    }
+    setSavedAt(null);
     setLoaded(true);
-  }, [supabase, onError]);
+  }, [supabase, onError, refreshQueued, cacheKey]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Reload with live data the moment the connection returns, and once the offline sales have been sent.
+  useEffect(() => {
+    const reload = () => { void load(); };
+    window.addEventListener("online", reload);
+    window.addEventListener("kt:sales-synced", reload);
+    return () => {
+      window.removeEventListener("online", reload);
+      window.removeEventListener("kt:sales-synced", reload);
+    };
+  }, [load]);
+
+  const products = useMemo(() => withQueuedSales(catalog, queued.lines, (productId, unitId) =>
+    packs.get(productId)?.find(pack => pack.id === unitId)?.quantity ?? 1), [catalog, queued.lines, packs]);
 
   const categoryName = useMemo(() => new Map(categories.map(c => [c.id, c.name])), [categories]);
   /** Single items each product's cart lines take from stock, so tiles show what is really left. */
@@ -274,6 +329,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
   }, []);
 
   const reprint = async (saleId: string) => {
+    if (!navigator.onLine) { onError("Reprinting an earlier receipt needs an internet connection."); return; }
     setReprinting(saleId);
     try {
       setReceipt({ data: await loadSaleReceipt(supabase, saleId, shop), heading: "Receipt" });
@@ -328,14 +384,20 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
       return;
     }
 
+    // Offline, the desktop app keeps the sale on this computer and sends it when the connection returns.
+    const saveOffline = async () => {
+      await queueDesktopSale({ ...input, id, shopId: shop.id });
+      onNotice("Sale saved on this computer. It will be sent when the connection returns.");
+      setReceipt({ data: localReceipt(id, true), heading: "Sale saved offline" });
+      resetSale();
+      await refreshQueued();
+    };
+
     setCharging(true);
     try {
       if (!navigator.onLine) {
         if (isTauri()) {
-          await queueDesktopSale({ ...input, id, shopId: shop.id });
-          onNotice("Sale queued for desktop synchronization when online.");
-          setReceipt({ data: localReceipt(id, true), heading: "Sale saved offline" });
-          resetSale();
+          await saveOffline();
           return;
         } else {
           onError("Offline sales checkout is only supported in the desktop app. Please reconnect to complete your purchase.");
@@ -358,13 +420,28 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
       setReceipt({ data, heading: "Sale complete" });
       resetSale();
       await load();
-    } catch (error) { fail(onError, error); }
-    finally { setCharging(false); }
+    } catch (error) {
+      // Connected to a network but not to the server: nothing was recorded, so it is safe to keep the sale for later.
+      if (isTauri() && isUnreachable(error)) {
+        try { await saveOffline(); } catch (queueError) { fail(onError, queueError); }
+      } else fail(onError, error);
+    } finally { setCharging(false); }
   };
 
   return (
     <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_400px]">
       <div className="grid gap-6">
+        {isTauri() && (!online || savedAt !== null || queued.sales > 0) && (
+          <div role="status" className="flex items-start gap-3 rounded-xl border border-warning/40 bg-warning-soft p-3.5 text-sm text-warning">
+            <WifiOff className="mt-0.5 h-4 w-4 shrink-0" />
+            <p className="font-medium">
+              {!online || savedAt !== null
+                ? `Working offline. Sales are saved on this computer and sent when the connection returns.${savedAt !== null ? ` Prices and stock are as they were on ${new Date(savedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}.` : ""}`
+                : "Connected again."}
+              {queued.sales > 0 && ` ${queued.sales} ${queued.sales === 1 ? "sale is" : "sales are"} waiting to be sent.`}
+            </p>
+          </div>
+        )}
         <section aria-label="Find products" className="grid gap-4">
           <div className="flex gap-2">
             <SearchInput

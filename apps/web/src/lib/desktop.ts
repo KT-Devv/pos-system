@@ -40,6 +40,57 @@ type SyncSale = {
   lines: { productId: string; quantity: number; unitPrice: number; unitCost: number; unitId: string | null; priceTier: "regular" | "wholesale" }[];
 };
 
+/**
+ * The server could not be reached at all, so nothing can have been recorded there. Unlike a timeout, which may have
+ * happened after the server saved the sale, this is safe to answer by queueing the sale to send later.
+ */
+export function isUnreachable(cause: unknown) {
+  if (typeof navigator !== "undefined" && !navigator.onLine) return true;
+  const details = (typeof cause === "object" && cause !== null ? cause : {}) as { code?: unknown; message?: unknown; name?: unknown; status?: unknown };
+  if (details.name === "AuthRetryableFetchError" && details.status === 0) return true;
+  const code = typeof details.code === "string" ? details.code : "";
+  const message = typeof details.message === "string" ? details.message : String(cause);
+  return code === "" && /failed to fetch|networkerror|load failed|network request failed|err_internet_disconnected|err_name_not_resolved/i.test(message);
+}
+
+/** What a queued sale takes out of stock: the product, how many, and which pack size (if any). */
+export type QueuedLine = { productId: string; quantity: number; unitId: string | null };
+
+/** The sales of `shopId` waiting on this computer to be sent, as stock they will use. */
+export async function queuedSales(shopId: string, invokeImpl?: Invoke): Promise<{ sales: number; lines: QueuedLine[] }> {
+  if (!isTauri()) return { sales: 0, lines: [] };
+  const invoke: Invoke = invokeImpl ?? (await import("@tauri-apps/api/core")).invoke;
+  const operations = await invoke<{ payload: string }[]>("pending_operations");
+  const lines: QueuedLine[] = [];
+  let sales = 0;
+  for (const operation of operations) {
+    try {
+      const payload = JSON.parse(operation.payload) as { shop_id?: string; lines: { product_id: string; quantity: number; unit_id?: string | null }[] };
+      if (payload.shop_id && payload.shop_id !== shopId) continue;
+      sales += 1;
+      for (const line of payload.lines) lines.push({ productId: line.product_id, quantity: line.quantity, unitId: line.unit_id ?? null });
+    } catch {
+      // A queue entry that cannot be read is left for the sync to deal with.
+    }
+  }
+  return { sales, lines };
+}
+
+/**
+ * `catalog` with the stock that queued sales have already used taken off, so the till never offers what it has sold.
+ * Products that run out are dropped, as the server's own list (only products in stock) would. `packSize` says how many
+ * single items one unit of a pack size holds.
+ */
+export function withQueuedSales<T extends { id: string; stock: number }>(catalog: T[], lines: QueuedLine[], packSize: (productId: string, unitId: string) => number): T[] {
+  if (lines.length === 0) return catalog;
+  const used = new Map<string, number>();
+  for (const line of lines) {
+    const items = line.quantity * (line.unitId ? packSize(line.productId, line.unitId) : 1);
+    used.set(line.productId, (used.get(line.productId) ?? 0) + items);
+  }
+  return catalog.map((product) => ({ ...product, stock: product.stock - (used.get(product.id) ?? 0) })).filter((product) => product.stock > 0);
+}
+
 /** Maximum attempts before a sale the server keeps rejecting is dropped from the queue. */
 const MAX_ATTEMPTS = 3;
 
@@ -52,6 +103,8 @@ export function isTransientSyncError(cause: unknown) {
   const details = (typeof cause === "object" && cause !== null ? cause : {}) as { code?: unknown; message?: unknown };
   const code = typeof details.code === "string" ? details.code : "";
   const message = typeof details.message === "string" ? details.message : String(cause);
+  // The sign-in lapsed while offline: the sale is fine, it just cannot be sent until the person signs in again.
+  if (code === "PGRST301" || /jwt|not authenticated|refresh token/i.test(message)) return true;
   return code === "" && /fetch|network|timeout|timed out|load failed|connection/i.test(message);
 }
 

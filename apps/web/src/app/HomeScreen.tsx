@@ -35,8 +35,12 @@ import {
   Users,
 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
+import { OfflineScreen } from "@/components/offline-screen";
+import { useOnline } from "@/components/online-status";
 import { ThemeToggle } from "@/components/theme";
 import { paymentLabel, StockBadge } from "@/features/common";
+import { isTauri } from "@/lib/desktop";
+import { useOfflineSync } from "@/lib/use-offline-sync";
 import { useWorkspace, WorkspaceGate } from "@/lib/workspace";
 
 type RecentSale = { id: string; total: number; payment_method: string; created_at: string };
@@ -79,8 +83,14 @@ function Dashboard() {
   const [recent, setRecent] = useState<RecentSale[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
+  const online = useOnline();
+  const offlineDesktop = isTauri() && !online;
+
+  // Sales saved while offline are sent as soon as there is a connection, whichever screen is open.
+  useOfflineSync(() => {}, setError);
 
   useEffect(() => {
+    if (offlineDesktop) return;
     let active = true;
     const start = new Date();
     start.setHours(0, 0, 0, 0);
@@ -123,26 +133,42 @@ function Dashboard() {
     return () => {
       active = false;
     };
-  }, [supabase, lowAt]);
+  }, [supabase, lowAt, offlineDesktop]);
 
   const firstName = user.name.trim().split(" ")[0] || "there";
+
+  const header = (
+    <PageHeader
+      eyebrow={new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
+      title={`${greeting()}, ${firstName}`}
+      description={`Here's how ${shop.name} is doing today.`}
+      actions={
+        <Button asChild size="lg">
+          <Link href="/sales">
+            <ShoppingCart />
+            Start a sale
+          </Link>
+        </Button>
+      }
+    />
+  );
+
+  // Offline, the figures below cannot be loaded, and zeros would read as "no sales today".
+  if (offlineDesktop) {
+    return (
+      <AppShell section="home" user={{ id: user.id, name: user.name, role }} shopName={shop.name} onSignOut={() => void signOut()}>
+        <div className="grid gap-6">
+          {header}
+          <OfflineScreen title="The overview" />
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell section="home" user={{ id: user.id, name: user.name, role }} shopName={shop.name} onSignOut={() => void signOut()}>
       <div className="grid gap-6">
-        <PageHeader
-          eyebrow={new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
-          title={`${greeting()}, ${firstName}`}
-          description={`Here's how ${shop.name} is doing today.`}
-          actions={
-            <Button asChild size="lg">
-              <Link href="/sales">
-                <ShoppingCart />
-                Start a sale
-              </Link>
-            </Button>
-          }
-        />
+        {header}
 
         {error && (
           <Alert variant="destructive">
