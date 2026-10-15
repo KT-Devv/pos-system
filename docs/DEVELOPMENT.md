@@ -29,7 +29,7 @@ npm run build:shared
 
 The Tauri development command starts the Next.js dev server through
 `src-tauri/tauri.conf.json`. The production command exports Next.js, compiles
-Rust, and creates MSI and NSIS installers.
+Rust, and creates MSI and NSIS installers on Windows, or a `.app` and `.dmg` on macOS.
 
 ## Architecture
 
@@ -150,4 +150,43 @@ Tauri installers are written to:
 ```text
 apps/desktop/src-tauri/target/release/bundle/msi/
 apps/desktop/src-tauri/target/release/bundle/nsis/
+apps/desktop/src-tauri/target/release/bundle/macos/   (KT POS System.app)
+apps/desktop/src-tauri/target/release/bundle/dmg/     (KT POS System_<version>_<arch>.dmg)
 ```
+
+## macOS desktop build
+
+Needs the Xcode Command Line Tools (`xcode-select --install`), Rust (`rustup`), and Node.js.
+`apps/web/.env.local` must hold the Supabase URL and anon key, because they are compiled into the app.
+
+```sh
+npm install
+npm run build:mac
+```
+
+`build:mac` is `build:tauri` with `CI=true`, which makes Tauri skip the Finder script that arranges the
+`.dmg` window. That script needs the terminal (or VS Code) to be allowed to control Finder; without that
+permission `bundle_dmg.sh` fails and leaves a half-built image mounted (unmount it with `hdiutil detach`).
+The `.dmg` still holds the app and the Applications link.
+
+The `.dmg` is built for the Mac you build on (Intel or Apple silicon). For one that runs on both:
+
+```sh
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+CI=true npm run tauri:build --workspace=apps/desktop -- --target universal-apple-darwin
+```
+
+The output is then under `target/universal-apple-darwin/release/bundle/`.
+
+Two things are different on macOS:
+
+- The window runs at `tauri://localhost`, where WKWebView keeps no cookies, so the Supabase
+  session is stored in `localStorage` there (`lib/supabase/browser.ts`). Without that, every
+  sign-in returns to the login page.
+- Tauri routes `window.print()` through its webview print command on macOS, which needs
+  `core:webview:allow-print` in `src-tauri/capabilities/default.json`. The print dialog sets the
+  paper size there (WKWebView ignores `@page size`), so pick the receipt roll in the dialog.
+
+An unsigned build is blocked by Gatekeeper the first time it opens: right-click the app,
+choose Open, then Open again (or allow it in System Settings > Privacy & Security). Shipping it
+to other Macs without that step needs an Apple Developer ID signature and notarization.

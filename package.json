@@ -10,6 +10,7 @@
     "dev:tauri": "npm run tauri:dev --workspace=apps/desktop",
     "build:web": "npm run build --workspace=apps/web",
     "build:tauri": "npm run tauri:build --workspace=apps/desktop",
+    "build:mac": "CI=true npm run tauri:build --workspace=apps/desktop",
     "build:shared": "npm run build --workspace=packages/shared",
     "test": "npm run test:shared && npm run test:db",
     "test:shared": "npm test --workspace=packages/shared",

@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissions for the main window. On macOS Tauri routes window.print() through the webview print command, so receipts and labels need core:webview:allow-print there.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:webview:allow-print"
+  ]
+}

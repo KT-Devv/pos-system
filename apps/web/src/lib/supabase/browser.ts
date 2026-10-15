@@ -1,7 +1,7 @@
 "use client";
 
 import { createBrowserClient } from "@supabase/ssr";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 let browserClient: SupabaseClient | null = null;
 
@@ -45,6 +45,25 @@ export function createSupabaseBrowserClient() {
   if (!url || !key) {
     throw new Error("NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are required");
   }
-  browserClient = createBrowserClient(url, key, { global: { fetch: rememberServerFailures } });
+  // The macOS desktop app runs at tauri://localhost, where WKWebView keeps no cookies: a cookie-stored session vanishes
+  // and every sign-in lands back on the login page. There the session is kept in localStorage instead.
+  browserClient = cookiesWork()
+    ? createBrowserClient(url, key, { global: { fetch: rememberServerFailures } })
+    : createClient(url, key, {
+      global: { fetch: rememberServerFailures },
+      auth: { flowType: "pkce", persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storage: window.localStorage },
+    });
   return browserClient;
+}
+
+function cookiesWork() {
+  if (typeof document === "undefined") return true;
+  try {
+    document.cookie = "kt-cookie-check=1; path=/; SameSite=Lax";
+    const stored = document.cookie.includes("kt-cookie-check=1");
+    document.cookie = "kt-cookie-check=; path=/; max-age=0";
+    return stored;
+  } catch {
+    return false;
+  }
 }
