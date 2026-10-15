@@ -28,7 +28,7 @@ import {
 } from "@pos/shared";
 import { Camera, Check, Minus, PackageSearch, Plus, Receipt, ReceiptText, ShoppingCart, Trash2, WifiOff } from "lucide-react";
 import { useOnline } from "@/components/online-status";
-import { isTauri, isUnreachable, queueDesktopSale, type QueuedLine, queuedSales, withQueuedSales } from "@/lib/desktop";
+import { after, isTauri, isUnreachable, queueDesktopSale, type QueuedLine, queuedSales, SERVER_WAIT_MS, withQueuedSales } from "@/lib/desktop";
 import { cacheRead, cacheWrite } from "@/lib/offline-cache";
 import { useProgressiveList } from "@/lib/use-progressive-list";
 import { useWorkspace } from "@/lib/workspace";
@@ -175,27 +175,34 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
 
   const load = useCallback(async () => {
     await refreshQueued();
-    const showSaved = () => {
-      const saved = cacheRead<SavedSales>(cacheKey);
+    const saved = cacheRead<SavedSales>(cacheKey);
+    // `stale`: the server did not answer, so say the data is the saved copy. Otherwise it is shown as it is while the
+    // server is asked, and replaced by what it says.
+    const showSaved = (stale: boolean) => {
       if (!saved) return false;
       setCatalog(saved.value.products);
       setRecent(saved.value.recent);
       setCustomers(saved.value.customers);
       setCategories(saved.value.categories);
       setPacks(new Map(saved.value.packs));
-      setSavedAt(saved.savedAt);
+      if (stale) setSavedAt(saved.savedAt);
       setLoaded(true);
       return true;
     };
-    if (isTauri() && !navigator.onLine && showSaved()) return;
-    const [{ data: products, error: catalogError }, { data: sales, error: salesError }, { data: customerRows, error: customerError }, { data: catRows }, packRes] = await Promise.all([
+    if (isTauri() && !navigator.onLine && showSaved(true)) return;
+    // A till must not sit on "Loading products" while a slow connection decides: start from the saved copy.
+    if (isTauri()) showSaved(false);
+    const request = Promise.all([
       supabase.from("products").select("id,name,category_id,cost_price,selling_price,wholesale_price,stock,barcode").gt("stock", 0).order("name"),
       supabase.from("sales").select("id,total,payment_method,created_at").order("created_at", { ascending: false }).limit(8),
       supabase.from("customers").select("id,name,phone,email,loyalty_points").order("name"),
       supabase.from("categories").select("id,name").order("name"),
       loadPackSizes(supabase),
     ]);
-    if (isTauri() && [catalogError, salesError, customerError, packRes.error].some(error => error && isUnreachable(error)) && showSaved()) return;
+    const answer = saved && isTauri() ? await Promise.race([request, after(SERVER_WAIT_MS)]) : await request;
+    if (!answer) { showSaved(true); return; }
+    const [{ data: products, error: catalogError }, { data: sales, error: salesError }, { data: customerRows, error: customerError }, { data: catRows }, packRes] = answer;
+    if (isTauri() && [catalogError, salesError, customerError, packRes.error].some(error => error && isUnreachable(error)) && showSaved(true)) return;
     if (catalogError) fail(onError, catalogError); else setCatalog((products ?? []) as Product[]);
     if (salesError) fail(onError, salesError); else setRecent((sales ?? []) as RecentSale[]);
     if (customerError) fail(onError, customerError); else setCustomers((customerRows ?? []) as Customer[]);
@@ -216,6 +223,13 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
   }, [supabase, onError, refreshQueued, cacheKey]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Showing the saved copy: keep asking the server, so the till goes live again by itself when it answers.
+  useEffect(() => {
+    if (savedAt === null) return;
+    const retry = window.setInterval(() => { void load(); }, 20000);
+    return () => window.clearInterval(retry);
+  }, [savedAt, load]);
 
   // Reload with live data the moment the connection returns, and once the offline sales have been sent.
   useEffect(() => {
@@ -404,6 +418,13 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
           return;
         }
       }
+      // The desktop app does not wait on a server that is not answering: the till is saved to send later instead.
+      if (isTauri() && savedAt !== null) {
+        await saveOffline();
+        return;
+      }
+      const abort = new AbortController();
+      const stopWaiting = isTauri() ? window.setTimeout(() => abort.abort(), 4 * SERVER_WAIT_MS) : undefined;
       const { data: saleId, error } = await supabase.rpc("create_sale", {
         p_shop_id: shop.id,
         p_cashier_id: userId,
@@ -411,7 +432,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
         p_payment_method: payment,
         p_discount: totals.discount,
         p_lines: cart.map(line => ({ product_id: line.id, quantity: line.quantity, unit_id: line.pack?.id ?? null, price_tier: line.pack ? "regular" : tier })),
-      });
+      }).abortSignal(abort.signal).then(result => { window.clearTimeout(stopWaiting); return result; });
       if (error) throw error;
       // Read the sale back so the receipt shows what the server charged (prices may have changed since
       // the catalog loaded). The sale is already recorded, so a failed read falls back to the local copy.

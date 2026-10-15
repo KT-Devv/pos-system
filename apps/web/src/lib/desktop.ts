@@ -50,8 +50,18 @@ export function isUnreachable(cause: unknown) {
   if (details.name === "AuthRetryableFetchError" && details.status === 0) return true;
   const code = typeof details.code === "string" ? details.code : "";
   const message = typeof details.message === "string" ? details.message : String(cause);
-  return code === "" && /failed to fetch|networkerror|load failed|network request failed|err_internet_disconnected|err_name_not_resolved/i.test(message);
+  return code === "" && /failed to fetch|networkerror|load failed|network request failed|err_internet_disconnected|err_name_not_resolved|aborterror|signal is aborted/i.test(message);
 }
+
+/**
+ * How long the desktop app waits for the server before it goes on with its saved copy. A network that is connected but
+ * has no internet (Wi-Fi without data) never refuses a request: it just never answers, and without this the till would
+ * wait for minutes.
+ */
+export const SERVER_WAIT_MS = 5000;
+
+/** Resolves to `null` after `ms`, to race against a request: `await Promise.race([request, after(ms)])`. */
+export const after = (ms: number) => new Promise<null>((resolve) => { setTimeout(() => resolve(null), ms); });
 
 /** What a queued sale takes out of stock: the product, how many, and which pack size (if any). */
 export type QueuedLine = { productId: string; quantity: number; unitId: string | null };

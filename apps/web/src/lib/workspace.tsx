@@ -7,7 +7,7 @@ import { Onboarding } from "@/features/onboarding";
 import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/browser";
 import { redeemInviteCode } from "@/lib/invite";
 import { isDeadSessionError } from "@/lib/supabase/auth-errors";
-import { isTauri, isUnreachable } from "@/lib/desktop";
+import { after, isTauri, isUnreachable, SERVER_WAIT_MS } from "@/lib/desktop";
 import { cacheClear, cacheRead, cacheWrite } from "@/lib/offline-cache";
 
 type Client = ReturnType<typeof createSupabaseBrowserClient>;
@@ -90,10 +90,14 @@ function savedWorkspace(): Extract<State, { status: "ready" }> | null {
 }
 
 async function loadWorkspace(supabase: Client, joinedByCode = false): Promise<State> {
-  if (isTauri() && !navigator.onLine) {
-    const saved = savedWorkspace();
-    if (saved) return saved;
-  }
+  const saved = isTauri() ? savedWorkspace() : null;
+  if (!saved) return loadWorkspaceLive(supabase, joinedByCode);
+  if (!navigator.onLine) return saved;
+  // Connected, but the server may never answer (Wi-Fi without internet): open from the saved copy instead of waiting.
+  return (await Promise.race([loadWorkspaceLive(supabase, joinedByCode), after(SERVER_WAIT_MS)])) ?? saved;
+}
+
+async function loadWorkspaceLive(supabase: Client, joinedByCode = false): Promise<State> {
   const { data, error } = await supabase.auth.getUser();
   if (error && isUnreachable(error)) {
     const saved = savedWorkspace();
@@ -146,7 +150,7 @@ async function loadWorkspace(supabase: Client, joinedByCode = false): Promise<St
     const joined = await redeemInviteCode(supabase, carried);
     // The code has done its job, or failed for good: stop carrying it either way.
     await supabase.auth.updateUser({ data: { invite_code: null } });
-    if (joined.ok) return loadWorkspace(supabase, true);
+    if (joined.ok) return loadWorkspaceLive(supabase, true);
     return { status: "needs-shop", user, joinError: joined.message, code: carried };
   }
   return { status: "needs-shop", user };
@@ -207,7 +211,12 @@ export function WorkspaceGate({ children, signedOut }: { children: ReactNode; si
     if (!offline) return;
     const back = () => { void refresh(); };
     window.addEventListener("online", back);
-    return () => window.removeEventListener("online", back);
+    // A connection that came back without the computer noticing (the server was just slow) is found by trying again.
+    const retry = window.setInterval(back, 20000);
+    return () => {
+      window.removeEventListener("online", back);
+      window.clearInterval(retry);
+    };
   }, [offline, refresh]);
 
   const redirecting = state.status === "signed-out" && !signedOut;

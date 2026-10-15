@@ -80,7 +80,8 @@ cannot be reached or `navigator.onLine` is false. `features/sales.tsx` saves its
 SQLite when the server is unreachable (`isUnreachable`: no response at all, never a timeout, which might have been
 recorded), and shows stock minus the queued sales so nothing is sold twice. `lib/use-offline-sync.ts` sends the queue when
 a screen opens and when the connection returns, then fires `kt:sales-synced`. Every other screen shows `OfflineScreen`
-while offline. Signing out clears the saved copy; a session the server rejects clears it too. The queue keeps a sale
+while offline. A connection that is up but never answers (Wi-Fi without internet) is handled by waiting at most
+`SERVER_WAIT_MS` before using the saved copy, and by retrying every 20 seconds; a sale never waits on such a server. Signing out clears the saved copy; a session the server rejects clears it too. The queue keeps a sale
 when only the sign-in has lapsed. To test it, run the desktop exe with a mock server, stop the server, and use
 `Network.emulateNetworkConditions` for the real offline state.
 
