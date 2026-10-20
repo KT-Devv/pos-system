@@ -37,6 +37,7 @@ import {
   Textarea,
 } from "@pos/shared";
 import { useProgressiveList } from "@/lib/use-progressive-list";
+import { useRealtimeRefresh } from "@/lib/use-realtime";
 import { useWorkspace } from "@/lib/workspace";
 import {
   ArrowDownToLine,
@@ -133,6 +134,8 @@ export function Inventory({ supabase, onError, onNotice }: { supabase: Client } 
   }, [supabase, onError]);
 
   useEffect(() => { void load(); }, [load]);
+  // Stock sold or restocked on another computer appears here by itself.
+  useRealtimeRefresh(["products", "product_units", "suppliers", "stock_movements"], load);
 
   const selected = products.find(p => p.id === productId);
   const selectedPacks = selected ? packs.get(selected.id) ?? [] : [];

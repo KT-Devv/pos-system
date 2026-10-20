@@ -24,6 +24,7 @@ import {
   TableRow,
 } from "@pos/shared";
 import { Plus, Star, Users } from "lucide-react";
+import { useRealtimeRefresh } from "@/lib/use-realtime";
 import { useWorkspace } from "@/lib/workspace";
 import { type Client, type Customer, Field, type Feedback, fail, SearchInput } from "./common";
 
@@ -45,6 +46,7 @@ export function Customers({ supabase, onError, onNotice }: { supabase: Client } 
   }, [supabase, onError]);
 
   useEffect(() => { void load(); }, [load]);
+  useRealtimeRefresh(["customers"], load);
 
   const add = async (event: FormEvent) => {
     event.preventDefault();

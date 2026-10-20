@@ -48,7 +48,9 @@ product price and `sale_lines.price_tier`, and 010 renames it to wholesale (`pro
 and pack sizes always use their own price. Run 009 then 010 before deploying the Wholesale switch.
 011 replaces email invitations with invitation codes: `create_invite` makes a single-use code that expires after a day, `redeem_invite`
 (typed at sign-up or on the shop set-up screen) joins the caller to that shop, and wrong guesses are rate-limited (see
-`docs/INVITATIONS.md`). Run 011 before deploying the code screens. Never put the service-role key in the app.
+`docs/INVITATIONS.md`). Run 011 before deploying the code screens. 012 puts the product, pack size, category, customer, supplier, sale and stock tables in the
+`supabase_realtime` publication so a change on one computer reaches the others live (screens subscribe with `useRealtimeRefresh`
+in `lib/use-realtime.ts`; run 012 before expecting live updates). Never put the service-role key in the app.
 Checkout uses the shop-scoped `create_sale(p_shop_id, ...)`; inventory uses
 `record_stock_movement`. Stock is always counted in single items: a pack size
 (`product_units`) sells a fixed number of them, and `create_sale` takes

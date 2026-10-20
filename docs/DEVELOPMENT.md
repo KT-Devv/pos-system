@@ -72,6 +72,15 @@ suite, which runs against an in-memory Postgres:
 npm run test:db
 ```
 
+## Live updates between computers
+
+Sales, Products, Inventory and Customers call `useRealtimeRefresh(tables, load)` (`lib/use-realtime.ts`). It listens to Supabase
+Realtime for changes to those tables in the shop and runs the screen's own `load` (debounced), and again when the window
+comes back into view or the live connection is re-established. Migration 012 adds the tables to the `supabase_realtime`
+publication; without it nothing arrives, and the screens still work as before. On the Sales screen a reload replaces the catalog
+in place and refreshes the prices and stock of lines already in the cart, so a sale in progress is never lost. A new screen
+that lists shop data should call the hook with the tables it reads.
+
 ## Working offline (desktop app)
 
 The desktop app opens and sells with no internet. `lib/workspace.tsx` saves the signed-in user, shop and role after every

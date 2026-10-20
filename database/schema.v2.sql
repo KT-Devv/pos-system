@@ -1088,3 +1088,23 @@ grant update on public.shops to authenticated;
 
 revoke update on public.profiles from authenticated, anon;
 grant update (name) on public.profiles to authenticated;
+
+-- Live updates between computers (migration 012): Supabase Realtime streams changes to these tables to shop members.
+do $$
+declare
+  t text;
+begin
+  if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    return;
+  end if;
+  foreach t in array array['products', 'product_units', 'categories', 'customers', 'suppliers', 'sales', 'stock_movements'] loop
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t
+    ) then
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    end if;
+    -- Lets a delete event carry the whole old row, not only its id.
+    execute format('alter table public.%I replica identity full', t);
+  end loop;
+end $$;

@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Badge,
   Button,
@@ -30,6 +30,7 @@ import { Camera, Check, Minus, PackageSearch, Plus, Receipt, ReceiptText, Shoppi
 import { useOnline } from "@/components/online-status";
 import { after, isTauri, isUnreachable, queueDesktopSale, type QueuedLine, queuedSales, SERVER_WAIT_MS, withQueuedSales } from "@/lib/desktop";
 import { cacheRead, cacheWrite } from "@/lib/offline-cache";
+import { useRealtimeRefresh } from "@/lib/use-realtime";
 import { useProgressiveList } from "@/lib/use-progressive-list";
 import { useWorkspace } from "@/lib/workspace";
 import {
@@ -168,6 +169,8 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const online = useOnline();
   const cacheKey = `sales:${shop.id}`;
+  /** Set once the screen has data of any kind, so a later reload replaces it in place instead of flashing the saved copy. */
+  const hasData = useRef(false);
 
   const refreshQueued = useCallback(async () => {
     try { setQueued(await queuedSales(shop.id)); } catch { /* the queue is only read on the desktop app */ }
@@ -187,11 +190,12 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
       setPacks(new Map(saved.value.packs));
       if (stale) setSavedAt(saved.savedAt);
       setLoaded(true);
+      hasData.current = true;
       return true;
     };
     if (isTauri() && !navigator.onLine && showSaved(true)) return;
     // A till must not sit on "Loading products" while a slow connection decides: start from the saved copy.
-    if (isTauri()) showSaved(false);
+    if (isTauri() && !hasData.current) showSaved(false);
     const request = Promise.all([
       supabase.from("products").select("id,name,category_id,cost_price,selling_price,wholesale_price,stock,barcode").gt("stock", 0).order("name"),
       supabase.from("sales").select("id,total,payment_method,created_at").order("created_at", { ascending: false }).limit(8),
@@ -220,9 +224,13 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
     }
     setSavedAt(null);
     setLoaded(true);
+    hasData.current = true;
   }, [supabase, onError, refreshQueued, cacheKey]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // A product, price or customer changed on another computer: show it here without touching the sale in progress.
+  useRealtimeRefresh(["products", "product_units", "categories", "customers", "sales"], load);
 
   // Showing the saved copy: keep asking the server, so the till goes live again by itself when it answers.
   useEffect(() => {
@@ -271,6 +279,30 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
   const hasWholesale = useMemo(() => products.some(p => p.wholesale_price != null), [products]);
 
   const selectedCustomer = customers.find(c => c.id === customerId);
+
+  // Lines already in the cart follow the catalog: another till may have sold some of the stock or changed a price, and
+  // the cart should show what checkout will really charge. A line never grows past the stock that is left.
+  const productById = useMemo(() => new Map(products.map(p => [p.id, p])), [products]);
+  useEffect(() => {
+    setCart(current => {
+      let changed = false;
+      const next = current.map(line => {
+        const fresh = productById.get(line.id);
+        if (!fresh) return line;
+        const pack = line.pack ? packs.get(line.id)?.find(p => p.id === line.pack?.id) ?? line.pack : null;
+        const room = unitsAvailable(fresh.stock, claimedBy(current, line.id, keyOf(line)), pack?.quantity ?? 1);
+        const quantity = Math.max(1, Math.min(line.quantity, room));
+        if (
+          fresh.stock === line.stock && fresh.selling_price === line.selling_price && fresh.cost_price === line.cost_price &&
+          fresh.wholesale_price === line.wholesale_price && fresh.name === line.name && quantity === line.quantity &&
+          pack?.selling_price === line.pack?.selling_price && pack?.quantity === line.pack?.quantity
+        ) return line;
+        changed = true;
+        return { ...line, ...fresh, pack, quantity };
+      });
+      return changed ? next : current;
+    });
+  }, [productById, packs]);
 
   const add = useCallback((product: Product, pack: PackSizeRow | null = null) => setCart(current => {
     const line: CartLine = { ...product, quantity: 1, pack };

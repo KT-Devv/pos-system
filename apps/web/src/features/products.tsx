@@ -34,6 +34,7 @@ import {
 import { Camera, FolderPlus, Info, Package, Pencil, Plus, ScanBarcode, Trash2, Upload, WandSparkles } from "lucide-react";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { useProgressiveList } from "@/lib/use-progressive-list";
+import { useRealtimeRefresh } from "@/lib/use-realtime";
 import { useWorkspace } from "@/lib/workspace";
 import {
   type Category,
@@ -96,6 +97,8 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
   }, [supabase, onError]);
 
   useEffect(() => { void load(); }, [load]);
+  // Products added or changed on another computer appear here by themselves.
+  useRealtimeRefresh(["products", "product_units", "categories"], load);
 
   const openCreate = () => {
     setEditing(null);
