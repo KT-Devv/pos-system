@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Avatar,
   Badge,
@@ -24,9 +24,13 @@ import {
   TableRow,
 } from "@pos/shared";
 import { Plus, Star, Users } from "lucide-react";
-import { useRealtimeRefresh } from "@/lib/use-realtime";
+import { SavedCopyNotice } from "@/components/saved-copy-notice";
+import { isUnreachable } from "@/lib/desktop";
+import { write } from "@/lib/outbox";
+import { useRealtimeRefresh, useReloadOnReconnect } from "@/lib/use-realtime";
 import { useWorkspace } from "@/lib/workspace";
 import { type Client, type Customer, Field, type Feedback, fail, SearchInput } from "./common";
+import { loadWithSavedCopy } from "./saved-data";
 
 const emptyForm = { name: "", phone: "", email: "" };
 
@@ -39,19 +43,46 @@ export function Customers({ supabase, onError, onNotice }: { supabase: Client } 
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
 
+  /** When the data on screen was saved, if it is the desktop app's saved copy rather than the server's. */
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const hasData = useRef(false);
+
   const load = useCallback(async () => {
-    const { data, error } = await supabase.from("customers").select("id,name,phone,email,loyalty_points").order("name");
-    if (error) fail(onError, error); else setCustomers((data ?? []) as Customer[]);
-    setLoaded(true);
-  }, [supabase, onError]);
+    await loadWithSavedCopy(
+      shop.id,
+      hasData,
+      (saved, stale) => {
+        setCustomers(saved.customers);
+        setSavedAt(stale ? saved.savedAt : null);
+        setLoaded(true);
+      },
+      async () => {
+        const { data, error } = await supabase.from("customers").select("id,name,phone,email,loyalty_points").order("name");
+        return {
+          unreachable: !!error && isUnreachable(error),
+          ok: !error,
+          apply: () => {
+            if (error) fail(onError, error); else setCustomers((data ?? []) as Customer[]);
+            setSavedAt(null);
+            setLoaded(true);
+          },
+        };
+      },
+    );
+  }, [supabase, onError, shop.id]);
 
   useEffect(() => { void load(); }, [load]);
+  useReloadOnReconnect(load);
   useRealtimeRefresh(["customers"], load);
 
   const add = async (event: FormEvent) => {
     event.preventDefault();
     if (!form.name.trim()) { onError("Customer name is required."); return; }
-    const { error } = await supabase.from("customers").insert({ shop_id: shop.id, name: form.name.trim(), phone: form.phone.trim() || null, email: form.email.trim() || null });
+    const { error } = await write(supabase, shop.id, {
+      type: "insert",
+      table: "customers",
+      rows: [{ id: crypto.randomUUID(), shop_id: shop.id, name: form.name.trim(), phone: form.phone.trim() || null, email: form.email.trim() || null }],
+    }, `Add customer ${form.name.trim()}`);
     if (error) { fail(onError, error); return; }
     setForm(emptyForm);
     setOpen(false);
@@ -78,6 +109,8 @@ export function Customers({ supabase, onError, onNotice }: { supabase: Client } 
           </Button>
         }
       />
+
+      <SavedCopyNotice savedAt={savedAt} />
 
       <Card>
         <div className="border-b p-4">

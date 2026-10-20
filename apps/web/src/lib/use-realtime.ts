@@ -48,3 +48,18 @@ export function useRealtimeRefresh(tables: readonly string[], reload: () => void
     };
   }, [supabase, shop.id, key]);
 }
+
+/**
+ * Reloads a screen when the desktop app's situation changes: the computer is back online, the server answers again, or
+ * the offline sales and changes have been sent.
+ */
+export function useReloadOnReconnect(reload: () => void) {
+  const latest = useRef(reload);
+  useEffect(() => { latest.current = reload; });
+  useEffect(() => {
+    const again = () => latest.current();
+    const events = ["online", "kt:sales-synced", "kt:server-back", "kt:outbox-changed"];
+    for (const event of events) window.addEventListener(event, again);
+    return () => { for (const event of events) window.removeEventListener(event, again); };
+  }, []);
+}

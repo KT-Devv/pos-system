@@ -1,6 +1,9 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { OfflineScreen } from "@/components/offline-screen";
+import { useWorkOffline, workOffline } from "@/lib/connection";
+import { useReloadOnReconnect } from "@/lib/use-realtime";
 import {
   Avatar,
   Badge,
@@ -46,8 +49,11 @@ export function Team({ onError, onNotice }: Feedback) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const roles = invitableRoles(role);
+  const offline = useWorkOffline();
 
   const load = useCallback(async () => {
+    // The team lives on the server only: offline there is nothing to read, and the screen says so.
+    if (workOffline()) { setLoaded(true); return; }
     const [memberRes, inviteRes] = await Promise.all([
       supabase.from("shop_members").select("user_id, role, created_at, profiles(name, email)").eq("shop_id", shop.id).order("created_at"),
       supabase.from("shop_invites").select("id, code, label, role, created_at, expires_at, used_at").eq("shop_id", shop.id).order("created_at", { ascending: false }),
@@ -58,6 +64,7 @@ export function Team({ onError, onNotice }: Feedback) {
   }, [supabase, shop.id, onError]);
 
   useEffect(() => { void load(); }, [load]);
+  useReloadOnReconnect(load);
 
   const createInvite = async (event: FormEvent) => {
     event.preventDefault();
@@ -100,6 +107,8 @@ export function Team({ onError, onNotice }: Feedback) {
     onNotice(`Invitation code ${formatInviteCode(invitation.code)} cancelled.`);
     await load();
   };
+
+  if (offline) return <OfflineScreen title="The team" />;
 
   return (
     <div className="grid gap-6">

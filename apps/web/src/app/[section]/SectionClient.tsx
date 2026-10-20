@@ -4,16 +4,13 @@ import { useCallback, useEffect, useState } from "react";
 import { cn } from "@pos/shared";
 import { AlertCircle, CheckCircle2, X } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
-import { OfflineScreen } from "@/components/offline-screen";
-import { useOnline } from "@/components/online-status";
 import { Customers } from "@/features/customers";
 import { Inventory } from "@/features/inventory";
 import { Products } from "@/features/products";
 import { Reports } from "@/features/reports";
 import { Sales } from "@/features/sales";
-import { SECTIONS, type Section } from "@/features/sections";
+import type { Section } from "@/features/sections";
 import { Settings } from "@/features/settings";
-import { isTauri } from "@/lib/desktop";
 import { useOfflineSync } from "@/lib/use-offline-sync";
 import { useWorkspace, WorkspaceGate } from "@/lib/workspace";
 
@@ -40,7 +37,6 @@ function Toast({ tone, children, onDismiss }: { tone: "success" | "error"; child
 
 function SectionContent({ section }: { section: Section }) {
   const { supabase, user, shop, role, isAdmin, signOut } = useWorkspace();
-  const online = useOnline();
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -62,8 +58,6 @@ function SectionContent({ section }: { section: Section }) {
   // Sales saved while offline are sent when a screen opens and the moment the connection returns.
   useOfflineSync(reportNotice, reportError);
 
-  // The desktop app can sell offline; every other screen needs the server and says so rather than failing.
-  const needsConnection = isTauri() && !online && section !== "sales";
 
   return (
     <AppShell section={section} user={{ id: user.id, name: user.name, role }} shopName={shop.name} onSignOut={() => void signOut()}>
@@ -74,13 +68,12 @@ function SectionContent({ section }: { section: Section }) {
         </div>
       )}
 
-      {needsConnection && <OfflineScreen title={SECTIONS[section].title} />}
-      {!needsConnection && section === "sales" && <Sales supabase={supabase} userId={user.id} onError={reportError} onNotice={reportNotice} />}
-      {!needsConnection && section === "products" && <Products supabase={supabase} isAdmin={isAdmin} onError={reportError} onNotice={reportNotice} />}
-      {!needsConnection && section === "inventory" && <Inventory supabase={supabase} onError={reportError} onNotice={reportNotice} />}
-      {!needsConnection && section === "customers" && <Customers supabase={supabase} onError={reportError} onNotice={reportNotice} />}
-      {!needsConnection && section === "reports" && <Reports supabase={supabase} onError={reportError} />}
-      {!needsConnection && section === "settings" && <Settings onError={reportError} onNotice={reportNotice} />}
+      {section === "sales" && <Sales supabase={supabase} userId={user.id} onError={reportError} onNotice={reportNotice} />}
+      {section === "products" && <Products supabase={supabase} isAdmin={isAdmin} onError={reportError} onNotice={reportNotice} />}
+      {section === "inventory" && <Inventory supabase={supabase} onError={reportError} onNotice={reportNotice} />}
+      {section === "customers" && <Customers supabase={supabase} onError={reportError} onNotice={reportNotice} />}
+      {section === "reports" && <Reports supabase={supabase} onError={reportError} />}
+      {section === "settings" && <Settings onError={reportError} onNotice={reportNotice} />}
     </AppShell>
   );
 }

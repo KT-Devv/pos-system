@@ -21,6 +21,8 @@ import {
 } from "@pos/shared";
 import { LogOut, Monitor, Moon, Sun } from "lucide-react";
 import { type ThemeChoice, useTheme } from "@/components/theme";
+import { workOffline } from "@/lib/connection";
+import { write } from "@/lib/outbox";
 import { useWorkspace } from "@/lib/workspace";
 import { Field, type Feedback, fail } from "./common";
 import { ShopSettings } from "./shop-settings";
@@ -36,15 +38,16 @@ function Account({ onError, onNotice }: Feedback) {
   const saveProfile = async (event: FormEvent) => {
     event.preventDefault();
     if (!name.trim()) { onError("Name is required."); return; }
-    const { error } = await supabase.from("profiles").update({ name: name.trim() }).eq("id", user.id);
+    const { error, queued } = await write(supabase, shop.id, { type: "update", table: "profiles", id: user.id, values: { name: name.trim() } }, "Change your name");
     if (error) fail(onError, error);
-    else onNotice("Profile updated.");
+    else onNotice(queued ? "Profile saved on this computer; it will be sent when the connection returns." : "Profile updated.");
   };
 
   const updatePassword = async (event: FormEvent) => {
     event.preventDefault();
     if (newPassword.length < 6) { onError("Password must be at least 6 characters."); return; }
     if (newPassword !== confirmPassword) { onError("Passwords do not match."); return; }
+    if (workOffline()) { onError("Changing your password needs an internet connection."); return; }
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     if (error) fail(onError, error);
     else {

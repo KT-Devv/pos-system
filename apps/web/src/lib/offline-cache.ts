@@ -10,12 +10,15 @@ const PREFIX = "kt-offline:";
 
 export type Cached<T> = { savedAt: number; value: T };
 
-export function cacheWrite(key: string, value: unknown): void {
-  if (!isTauri()) return;
+/** `savedAt` defaults to now; pass it to change a saved copy without changing when it was last confirmed by the server. */
+export function cacheWrite(key: string, value: unknown, savedAt: number = Date.now()): boolean {
+  if (!isTauri()) return false;
   try {
-    window.localStorage.setItem(PREFIX + key, JSON.stringify({ savedAt: Date.now(), value }));
+    window.localStorage.setItem(PREFIX + key, JSON.stringify({ savedAt, value }));
+    return true;
   } catch {
-    // Storage full or blocked: the till still works online, it just cannot start offline.
+    // Storage full or blocked: the app still works online, it just cannot start offline.
+    return false;
   }
 }
 

@@ -27,9 +27,9 @@ import {
   validateSaleInput,
 } from "@pos/shared";
 import { Camera, Check, Minus, PackageSearch, Plus, Receipt, ReceiptText, ShoppingCart, Trash2, WifiOff } from "lucide-react";
-import { useOnline } from "@/components/online-status";
 import { after, isTauri, isUnreachable, queueDesktopSale, type QueuedLine, queuedSales, SERVER_WAIT_MS, withQueuedSales } from "@/lib/desktop";
-import { cacheRead, cacheWrite } from "@/lib/offline-cache";
+import { setServerDown, useWorkOffline, workOffline } from "@/lib/connection";
+import { showSavedCopy, useOutboxCount } from "@/lib/outbox";
 import { useRealtimeRefresh } from "@/lib/use-realtime";
 import { useProgressiveList } from "@/lib/use-progressive-list";
 import { useWorkspace } from "@/lib/workspace";
@@ -50,6 +50,7 @@ import {
   type Product,
   SearchInput,
 } from "./common";
+import { savedShop } from "./saved-data";
 import { loadSaleReceipt, ReceiptDialog, receiptShop } from "./receipt";
 import { BarcodeScannerDialog, type ScanResult } from "./scanner";
 
@@ -68,8 +69,6 @@ const nameOf = (line: CartLine) => (line.pack ? `${line.name} (${packLabel(line.
 const claimedBy = (cart: readonly CartLine[], productId: string, exceptKey?: string) =>
   cart.filter(line => line.id === productId && keyOf(line) !== exceptKey).reduce((sum, line) => sum + line.quantity * sizeOf(line), 0);
 type RecentSale = { id: string; total: number; payment_method: string; created_at: string };
-/** What the desktop app keeps of this screen's data, to sell from when the server cannot be reached. */
-type SavedSales = { products: Product[]; recent: RecentSale[]; customers: Customer[]; categories: Category[]; packs: [string, PackSizeRow[]][] };
 const NO_QUEUED: { sales: number; lines: QueuedLine[] } = { sales: 0, lines: [] };
 
 const WALK_IN = "walk-in";
@@ -167,8 +166,8 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
   const [queued, setQueued] = useState(NO_QUEUED);
   /** When the data on screen was saved, if it is the desktop app's saved copy rather than the server's. */
   const [savedAt, setSavedAt] = useState<number | null>(null);
-  const online = useOnline();
-  const cacheKey = `sales:${shop.id}`;
+  const offline = useWorkOffline();
+  const waitingChanges = useOutboxCount(shop.id);
   /** Set once the screen has data of any kind, so a later reload replaces it in place instead of flashing the saved copy. */
   const hasData = useRef(false);
 
@@ -178,24 +177,25 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
 
   const load = useCallback(async () => {
     await refreshQueued();
-    const saved = cacheRead<SavedSales>(cacheKey);
-    // `stale`: the server did not answer, so say the data is the saved copy. Otherwise it is shown as it is while the
-    // server is asked, and replaced by what it says.
-    const showSaved = (stale: boolean) => {
+    // `stale`: the server cannot be reached, so say the data is the saved copy. Otherwise the copy is only shown while
+    // the server is asked, and replaced by what it says.
+    const showSaved = async (stale: boolean) => {
+      const saved = await savedShop(shop.id, false);
       if (!saved) return false;
-      setCatalog(saved.value.products);
-      setRecent(saved.value.recent);
-      setCustomers(saved.value.customers);
-      setCategories(saved.value.categories);
-      setPacks(new Map(saved.value.packs));
+      setCatalog(saved.products.filter(product => product.stock > 0));
+      setRecent(saved.sales.slice(0, 8) as RecentSale[]);
+      setCustomers(saved.customers);
+      setCategories(saved.categories);
+      setPacks(saved.packs);
       if (stale) setSavedAt(saved.savedAt);
       setLoaded(true);
       hasData.current = true;
       return true;
     };
-    if (isTauri() && !navigator.onLine && showSaved(true)) return;
+    // Offline, or with offline edits still waiting to be sent: what the server has would not show them.
+    if (showSavedCopy(shop.id) && await showSaved(true)) return;
     // A till must not sit on "Loading products" while a slow connection decides: start from the saved copy.
-    if (isTauri() && !hasData.current) showSaved(false);
+    if (isTauri() && !hasData.current) await showSaved(false);
     const request = Promise.all([
       supabase.from("products").select("id,name,category_id,cost_price,selling_price,wholesale_price,stock,barcode").gt("stock", 0).order("name"),
       supabase.from("sales").select("id,total,payment_method,created_at").order("created_at", { ascending: false }).limit(8),
@@ -203,50 +203,41 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
       supabase.from("categories").select("id,name").order("name"),
       loadPackSizes(supabase),
     ]);
-    const answer = saved && isTauri() ? await Promise.race([request, after(SERVER_WAIT_MS)]) : await request;
-    if (!answer) { showSaved(true); return; }
+    const answer = isTauri() && hasData.current ? await Promise.race([request, after(SERVER_WAIT_MS)]) : await request;
+    if (!answer) { setServerDown(true); await showSaved(true); return; }
     const [{ data: products, error: catalogError }, { data: sales, error: salesError }, { data: customerRows, error: customerError }, { data: catRows }, packRes] = answer;
-    if (isTauri() && [catalogError, salesError, customerError, packRes.error].some(error => error && isUnreachable(error)) && showSaved(true)) return;
+    if (isTauri() && [catalogError, salesError, customerError, packRes.error].some(error => error && isUnreachable(error))) {
+      setServerDown(true);
+      if (await showSaved(true)) return;
+    }
     if (catalogError) fail(onError, catalogError); else setCatalog((products ?? []) as Product[]);
     if (salesError) fail(onError, salesError); else setRecent((sales ?? []) as RecentSale[]);
     if (customerError) fail(onError, customerError); else setCustomers((customerRows ?? []) as Customer[]);
     if (catRows) setCategories((catRows ?? []) as Category[]);
     if (packRes.error) fail(onError, packRes.error); else setPacks(packRes.data);
-    if (!catalogError && !salesError && !customerError && catRows && !packRes.error) {
-      const saved: SavedSales = {
-        products: (products ?? []) as Product[],
-        recent: (sales ?? []) as RecentSale[],
-        customers: (customerRows ?? []) as Customer[],
-        categories: catRows as Category[],
-        packs: [...packRes.data],
-      };
-      cacheWrite(cacheKey, saved);
-    }
+    if (!catalogError) setServerDown(false);
     setSavedAt(null);
     setLoaded(true);
     hasData.current = true;
-  }, [supabase, onError, refreshQueued, cacheKey]);
+  }, [supabase, onError, refreshQueued, shop.id]);
 
   useEffect(() => { void load(); }, [load]);
 
   // A product, price or customer changed on another computer: show it here without touching the sale in progress.
   useRealtimeRefresh(["products", "product_units", "categories", "customers", "sales"], load);
 
-  // Showing the saved copy: keep asking the server, so the till goes live again by itself when it answers.
-  useEffect(() => {
-    if (savedAt === null) return;
-    const retry = window.setInterval(() => { void load(); }, 20000);
-    return () => window.clearInterval(retry);
-  }, [savedAt, load]);
-
   // Reload with live data the moment the connection returns, and once the offline sales have been sent.
   useEffect(() => {
     const reload = () => { void load(); };
     window.addEventListener("online", reload);
     window.addEventListener("kt:sales-synced", reload);
+    window.addEventListener("kt:server-back", reload);
+    window.addEventListener("kt:outbox-changed", reload);
     return () => {
       window.removeEventListener("online", reload);
       window.removeEventListener("kt:sales-synced", reload);
+      window.removeEventListener("kt:server-back", reload);
+      window.removeEventListener("kt:outbox-changed", reload);
     };
   }, [load]);
 
@@ -441,7 +432,7 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
 
     setCharging(true);
     try {
-      if (!navigator.onLine) {
+      if (!navigator.onLine || workOffline()) {
         if (isTauri()) {
           await saveOffline();
           return;
@@ -451,10 +442,6 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
         }
       }
       // The desktop app does not wait on a server that is not answering: the till is saved to send later instead.
-      if (isTauri() && savedAt !== null) {
-        await saveOffline();
-        return;
-      }
       const abort = new AbortController();
       const stopWaiting = isTauri() ? window.setTimeout(() => abort.abort(), 4 * SERVER_WAIT_MS) : undefined;
       const { data: saleId, error } = await supabase.rpc("create_sale", {
@@ -484,14 +471,15 @@ export function Sales({ supabase, userId, onError, onNotice }: { supabase: Clien
   return (
     <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_400px]">
       <div className="grid gap-6">
-        {isTauri() && (!online || savedAt !== null || queued.sales > 0) && (
+        {isTauri() && (offline || savedAt !== null || queued.sales > 0 || waitingChanges > 0) && (
           <div role="status" className="flex items-start gap-3 rounded-xl border border-warning/40 bg-warning-soft p-3.5 text-sm text-warning">
             <WifiOff className="mt-0.5 h-4 w-4 shrink-0" />
             <p className="font-medium">
-              {!online || savedAt !== null
+              {offline || savedAt !== null
                 ? `Working offline. Sales are saved on this computer and sent when the connection returns.${savedAt !== null ? ` Prices and stock are as they were on ${new Date(savedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}.` : ""}`
                 : "Connected again."}
               {queued.sales > 0 && ` ${queued.sales} ${queued.sales === 1 ? "sale is" : "sales are"} waiting to be sent.`}
+              {waitingChanges > 0 && ` ${waitingChanges} other ${waitingChanges === 1 ? "change is" : "changes are"} waiting to be sent.`}
             </p>
           </div>
         )}

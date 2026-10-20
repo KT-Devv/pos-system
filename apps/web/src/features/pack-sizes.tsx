@@ -2,6 +2,7 @@
 
 import { Button, formatCurrency, Input, barcodesMatch, validatePackSize } from "@pos/shared";
 import { Plus, Trash2 } from "lucide-react";
+import { write } from "@/lib/outbox";
 import { type Client, MoneyInput, type PackSizeRow } from "./common";
 
 /** A pack size as it is being edited: everything is text until it is saved. */
@@ -57,7 +58,7 @@ export async function savePackSizes(
   const kept = new Set(drafts.flatMap(draft => (draft.id ? [draft.id] : [])));
   const removed = existing.filter(row => !kept.has(row.id));
   if (removed.length > 0) {
-    const { error } = await supabase.from("product_units").delete().in("id", removed.map(row => row.id));
+    const { error } = await write(supabase, shopId, { type: "delete", table: "product_units", ids: removed.map(row => row.id) }, "Remove pack sizes");
     if (error) return error;
   }
   for (const draft of drafts) {
@@ -65,10 +66,12 @@ export async function savePackSizes(
     const before = existing.find(row => row.id === draft.id);
     const next = { name: draft.name.trim(), quantity: Number(draft.quantity), selling_price: Number(draft.price), barcode: draft.barcode.trim() || null };
     if (before && before.name === next.name && before.quantity === next.quantity && before.selling_price === next.selling_price && (before.barcode ?? null) === next.barcode) continue;
-    const { error } = await supabase.from("product_units").update(next).eq("id", draft.id);
+    const { error } = await write(supabase, shopId, { type: "update", table: "product_units", id: draft.id, values: next }, `Change pack size ${next.name}`);
     if (error) return error;
   }
   const added = drafts.filter(draft => !draft.id).map(draft => ({
+    // Its own id, so that sending it again after a lost answer changes nothing.
+    id: crypto.randomUUID(),
     shop_id: shopId,
     product_id: productId,
     name: draft.name.trim(),
@@ -77,7 +80,7 @@ export async function savePackSizes(
     barcode: draft.barcode.trim() || null,
   }));
   if (added.length > 0) {
-    const { error } = await supabase.from("product_units").insert(added);
+    const { error } = await write(supabase, shopId, { type: "insert", table: "product_units", rows: added }, "Add pack sizes");
     if (error) return error;
   }
   return null;

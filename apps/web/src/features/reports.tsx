@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Badge,
   Card,
@@ -31,6 +31,13 @@ import {
 } from "@pos/shared";
 import { BarChart3, CircleDollarSign, Receipt, TrendingDown, TrendingUp } from "lucide-react";
 import { StackedBar, type TrendPoint, TrendChart } from "@/components/charts";
+import { OfflineScreen } from "@/components/offline-screen";
+import { SavedCopyNotice } from "@/components/saved-copy-notice";
+import { setServerDown, workOffline } from "@/lib/connection";
+import { after, isTauri, isUnreachable, SERVER_WAIT_MS } from "@/lib/desktop";
+import { cacheRead, cacheWrite } from "@/lib/offline-cache";
+import { useReloadOnReconnect } from "@/lib/use-realtime";
+import { useWorkspace } from "@/lib/workspace";
 import { type Client, fail, fetchAll, PAYMENT_METHODS, type PaymentMethodValue, paymentLabel } from "./common";
 
 const RANGES: { value: ReportRange; label: string; phrase: string }[] = [
@@ -64,6 +71,10 @@ function toTrend(sales: ReportSale[], start: Date): { points: TrendPoint[]; week
 }
 
 export function Reports({ supabase, onError }: { supabase: Client; onError: (message: string) => void }) {
+  const { shop } = useWorkspace();
+  /** When the figures on screen were saved, if they are the desktop app's saved copy rather than the server's. */
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
   const [sales, setSales] = useState<ReportSale[]>([]);
   const [lines, setLines] = useState<ReportLine[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -71,9 +82,24 @@ export function Reports({ supabase, onError }: { supabase: Client; onError: (mes
   const [trendView, setTrendView] = useState<"chart" | "table">("chart");
   const [activeMethod, setActiveMethod] = useState<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    (async () => {
+  const load = useCallback(async () => {
+    const key = `reports:${shop.id}`;
+    const cached = cacheRead<{ sales: ReportSale[]; lines: ReportLine[] }>(key);
+    const showSaved = () => {
+      if (!cached) return false;
+      setSales(cached.value.sales);
+      setLines(cached.value.lines);
+      setSavedAt(cached.savedAt);
+      setUnavailable(false);
+      setLoaded(true);
+      return true;
+    };
+    // Offline, the reports are the last ones that were loaded; with none saved there is nothing to show.
+    if (workOffline()) {
+      if (!showSaved()) { setUnavailable(true); setLoaded(true); }
+      return;
+    }
+    const request = (async () => {
       const salesRes = await fetchAll<ReportSale>((from, to) =>
         supabase.from("sales").select("id,total,discount,payment_method,created_at").order("created_at", { ascending: false }).order("id").range(from, to));
       // Product names enrich "Top products"; fall back to the plain query if the embed is refused.
@@ -83,13 +109,29 @@ export function Reports({ supabase, onError }: { supabase: Client; onError: (mes
         linesRes = await fetchAll<ReportLine>((from, to) =>
           supabase.from("sale_lines").select("sale_id,quantity,unit_price,unit_cost,unit_quantity").order("id").range(from, to));
       }
-      if (!active) return;
-      if (salesRes.error) fail(onError, salesRes.error); else setSales(salesRes.data);
-      if (linesRes.error) fail(onError, linesRes.error); else setLines(linesRes.data);
-      setLoaded(true);
+      return { salesRes, linesRes };
     })();
-    return () => { active = false; };
-  }, [supabase, onError]);
+    // A server that never answers must not keep the reports waiting when there is a saved copy to show.
+    const answer = cached ? await Promise.race([request, after(SERVER_WAIT_MS)]) : await request;
+    if (isTauri() && (!answer || [answer.salesRes.error, answer.linesRes.error].some(error => error && isUnreachable(error)))) {
+      setServerDown(true);
+      if (!showSaved()) { setUnavailable(true); setLoaded(true); }
+      return;
+    }
+    const { salesRes, linesRes } = answer ?? await request;
+    if (salesRes.error) fail(onError, salesRes.error); else setSales(salesRes.data);
+    if (linesRes.error) fail(onError, linesRes.error); else setLines(linesRes.data);
+    if (!salesRes.error && !linesRes.error) {
+      cacheWrite(key, { sales: salesRes.data, lines: linesRes.data });
+      setServerDown(false);
+    }
+    setSavedAt(null);
+    setUnavailable(false);
+    setLoaded(true);
+  }, [supabase, onError, shop.id]);
+
+  useEffect(() => { void load(); }, [load]);
+  useReloadOnReconnect(load);
 
   const rangeInfo = RANGES.find(r => r.value === range)!;
 
@@ -111,6 +153,8 @@ export function Reports({ supabase, onError }: { supabase: Client; onError: (mes
   const hasSales = inRange.length > 0;
   const topMax = topProducts[0]?.revenue ?? 0;
 
+  if (unavailable) return <OfflineScreen title="Reports" />;
+
   return (
     <div className="grid gap-6">
       <PageHeader
@@ -120,6 +164,8 @@ export function Reports({ supabase, onError }: { supabase: Client; onError: (mes
           <SegmentedControl aria-label="Report period" value={range} onValueChange={setRange} options={RANGES.map(({ value, label }) => ({ value, label }))} />
         }
       />
+
+      <SavedCopyNotice savedAt={savedAt} />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard hero className="sm:col-span-2" label="Revenue" icon={CircleDollarSign} value={formatCurrency(revenue)} hint={rangeInfo.phrase} />

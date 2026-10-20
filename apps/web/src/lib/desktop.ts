@@ -91,14 +91,21 @@ export async function queuedSales(shopId: string, invokeImpl?: Invoke): Promise<
  * Products that run out are dropped, as the server's own list (only products in stock) would. `packSize` says how many
  * single items one unit of a pack size holds.
  */
-export function withQueuedSales<T extends { id: string; stock: number }>(catalog: T[], lines: QueuedLine[], packSize: (productId: string, unitId: string) => number): T[] {
+export function withQueuedSales<T extends { id: string; stock: number }>(
+  catalog: T[],
+  lines: QueuedLine[],
+  packSize: (productId: string, unitId: string) => number,
+  /** Keep products that have run out (stock lists) instead of dropping them (the till). */
+  keepEmpty = false,
+): T[] {
   if (lines.length === 0) return catalog;
   const used = new Map<string, number>();
   for (const line of lines) {
     const items = line.quantity * (line.unitId ? packSize(line.productId, line.unitId) : 1);
     used.set(line.productId, (used.get(line.productId) ?? 0) + items);
   }
-  return catalog.map((product) => ({ ...product, stock: product.stock - (used.get(product.id) ?? 0) })).filter((product) => product.stock > 0);
+  const left = catalog.map((product) => ({ ...product, stock: product.stock - (used.get(product.id) ?? 0) }));
+  return keepEmpty ? left.map((product) => ({ ...product, stock: Math.max(0, product.stock) })) : left.filter((product) => product.stock > 0);
 }
 
 /** Maximum attempts before a sale the server keeps rejecting is dropped from the queue. */
@@ -127,19 +134,29 @@ let syncInFlight: Promise<number> | null = null;
  * account signed in on this computer) stay untouched until that shop is open again.
  * `invokeImpl` exists so tests can run the sync without a Tauri runtime.
  */
-export function syncDesktopSales(shopId: string, createSale: (sale: SyncSale) => Promise<void>, invokeImpl?: Invoke): Promise<number> {
+export function syncDesktopSales(
+  shopId: string,
+  createSale: (sale: SyncSale) => Promise<void>,
+  invokeImpl?: Invoke,
+  /** Sends the other offline changes made up to this time (ms); false means the connection was lost. Sent in the order made. */
+  flushChanges?: (until: number) => Promise<boolean>,
+): Promise<number> {
   if (!isTauri() || !navigator.onLine) return Promise.resolve(0);
   if (!syncInFlight) {
-    syncInFlight = runSync(shopId, createSale, invokeImpl).finally(() => {
+    syncInFlight = runSync(shopId, createSale, invokeImpl, flushChanges).finally(() => {
       syncInFlight = null;
     });
   }
   return syncInFlight;
 }
 
-async function runSync(shopId: string, createSale: (sale: SyncSale) => Promise<void>, invokeImpl?: Invoke) {
+/** The queue stamps rows with SQLite's UTC `YYYY-MM-DD HH:MM:SS`. */
+const queuedAt = (stamp: string | undefined) => (stamp ? Date.parse(`${stamp.replace(" ", "T")}Z`) || 0 : 0);
+
+async function runSync(shopId: string, createSale: (sale: SyncSale) => Promise<void>, invokeImpl?: Invoke, flushChanges?: (until: number) => Promise<boolean>) {
   const invoke: Invoke = invokeImpl ?? (await import("@tauri-apps/api/core")).invoke;
-  const operations = await invoke<{ id: string; payload: string; attempts?: number }[]>("pending_operations");
+  const operations = await invoke<{ id: string; payload: string; attempts?: number; created_at?: string }[]>("pending_operations");
+  let blocked = false;
   let synced = 0;
   const dropped: string[] = [];
 
@@ -156,6 +173,8 @@ async function runSync(shopId: string, createSale: (sale: SyncSale) => Promise<v
       };
       // Sales queued before shops existed have no shop_id; they belong to the shop that was migrated.
       if (payload.shop_id && payload.shop_id !== shopId) continue;
+      // Changes made before this sale (a product it sells, a stock count) go first, so the server sees them in order.
+      if (flushChanges && !(await flushChanges(queuedAt(operation.created_at)))) { blocked = true; break; }
       await createSale({
         shopId,
         cashierId: payload.cashier_id,
@@ -177,6 +196,7 @@ async function runSync(shopId: string, createSale: (sale: SyncSale) => Promise<v
       console.error(`Offline operation ${operation.id} failed to sync:`, cause);
       if (isTransientSyncError(cause)) {
         // Connection trouble: keep the sale queued and untouched, and stop; the rest will fail too.
+        blocked = true;
         break;
       }
       const attempts = (operation.attempts ?? 0) + 1;
@@ -188,6 +208,9 @@ async function runSync(shopId: string, createSale: (sale: SyncSale) => Promise<v
       }
     }
   }
+
+  // Whatever was changed after the last sale (or when there are no sales at all).
+  if (flushChanges && !blocked) await flushChanges(Infinity);
 
   // Never lose a sale silently: tell the user what was discarded and why.
   if (dropped.length > 0) {

@@ -9,6 +9,7 @@ import { redeemInviteCode } from "@/lib/invite";
 import { isDeadSessionError } from "@/lib/supabase/auth-errors";
 import { after, isTauri, isUnreachable, SERVER_WAIT_MS } from "@/lib/desktop";
 import { cacheClear, cacheRead, cacheWrite } from "@/lib/offline-cache";
+import { showSavedCopy } from "@/lib/outbox";
 
 type Client = ReturnType<typeof createSupabaseBrowserClient>;
 
@@ -92,7 +93,8 @@ function savedWorkspace(): Extract<State, { status: "ready" }> | null {
 async function loadWorkspace(supabase: Client, joinedByCode = false): Promise<State> {
   const saved = isTauri() ? savedWorkspace() : null;
   if (!saved) return loadWorkspaceLive(supabase, joinedByCode);
-  if (!navigator.onLine) return saved;
+  // Offline, or with offline changes not yet sent (the server's version would not have them): the saved copy is right.
+  if (showSavedCopy(saved.shop.id)) return saved;
   // Connected, but the server may never answer (Wi-Fi without internet): open from the saved copy instead of waiting.
   return (await Promise.race([loadWorkspaceLive(supabase, joinedByCode), after(SERVER_WAIT_MS)])) ?? saved;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Badge,
   Button,
@@ -36,8 +36,12 @@ import {
   TabsTrigger,
   Textarea,
 } from "@pos/shared";
+import { SavedCopyNotice } from "@/components/saved-copy-notice";
+import { workOffline } from "@/lib/connection";
+import { isUnreachable } from "@/lib/desktop";
+import { write } from "@/lib/outbox";
 import { useProgressiveList } from "@/lib/use-progressive-list";
-import { useRealtimeRefresh } from "@/lib/use-realtime";
+import { useRealtimeRefresh, useReloadOnReconnect } from "@/lib/use-realtime";
 import { useWorkspace } from "@/lib/workspace";
 import {
   ArrowDownToLine,
@@ -52,6 +56,7 @@ import {
   Upload,
 } from "lucide-react";
 import { BulkImportDialog } from "./bulk-import";
+import { loadWithSavedCopy } from "./saved-data";
 import {
   type Client,
   Field,
@@ -96,6 +101,9 @@ export function Inventory({ supabase, onError, onNotice }: { supabase: Client } 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [movements, setMovements] = useState<StockMovementRow[]>([]);
   const [loaded, setLoaded] = useState(false);
+  /** When the data on screen was saved, if it is the desktop app's saved copy rather than the server's. */
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const hasData = useRef(false);
 
   const [productId, setProductId] = useState("");
   const [supplierId, setSupplierId] = useState("");
@@ -119,21 +127,43 @@ export function Inventory({ supabase, onError, onNotice }: { supabase: Client } 
   const [supplierForm, setSupplierForm] = useState(emptySupplier);
 
   const load = useCallback(async () => {
-    const [{ data: prodData, error: prodError }, { data: suppData, error: suppError }, packRes, movRes] = await Promise.all([
-      supabase.from("products").select("id,name,cost_price,selling_price,stock,barcode").order("name"),
-      supabase.from("suppliers").select("id,name,phone,email,address").order("name"),
-      loadPackSizes(supabase),
-      fetchAll<StockMovementRow>((from, to) =>
-        supabase.from("stock_movements").select("id,created_at,type,quantity,notes,product_id,supplier_id").order("created_at", { ascending: false }).order("id").range(from, to)),
-    ]);
-    if (prodError) fail(onError, prodError); else setProducts((prodData ?? []) as Product[]);
-    if (suppError) fail(onError, suppError); else setSuppliers((suppData ?? []) as Supplier[]);
-    if (packRes.error) fail(onError, packRes.error); else setPacks(packRes.data);
-    if (movRes.error) fail(onError, movRes.error); else setMovements(movRes.data);
-    setLoaded(true);
-  }, [supabase, onError]);
+    await loadWithSavedCopy(
+      shop.id,
+      hasData,
+      (saved, stale) => {
+        setProducts(saved.products);
+        setSuppliers(saved.suppliers);
+        setPacks(saved.packs);
+        setMovements(saved.movements);
+        setSavedAt(stale ? saved.savedAt : null);
+        setLoaded(true);
+      },
+      async () => {
+        const [{ data: prodData, error: prodError }, { data: suppData, error: suppError }, packRes, movRes] = await Promise.all([
+          supabase.from("products").select("id,name,cost_price,selling_price,stock,barcode").order("name"),
+          supabase.from("suppliers").select("id,name,phone,email,address").order("name"),
+          loadPackSizes(supabase),
+          fetchAll<StockMovementRow>((from, to) =>
+            supabase.from("stock_movements").select("id,created_at,type,quantity,notes,product_id,supplier_id").order("created_at", { ascending: false }).order("id").range(from, to)),
+        ]);
+        return {
+          unreachable: [prodError, suppError, packRes.error, movRes.error].some(error => error && isUnreachable(error)),
+          ok: !prodError,
+          apply: () => {
+            if (prodError) fail(onError, prodError); else setProducts((prodData ?? []) as Product[]);
+            if (suppError) fail(onError, suppError); else setSuppliers((suppData ?? []) as Supplier[]);
+            if (packRes.error) fail(onError, packRes.error); else setPacks(packRes.data);
+            if (movRes.error) fail(onError, movRes.error); else setMovements(movRes.data);
+            setSavedAt(null);
+            setLoaded(true);
+          },
+        };
+      },
+    );
+  }, [supabase, onError, shop.id]);
 
   useEffect(() => { void load(); }, [load]);
+  useReloadOnReconnect(load);
   // Stock sold or restocked on another computer appears here by itself.
   useRealtimeRefresh(["products", "product_units", "suppliers", "stock_movements"], load);
 
@@ -161,16 +191,19 @@ export function Inventory({ supabase, onError, onNotice }: { supabase: Client } 
       return;
     }
     setSaving(true);
-    const { error } = await supabase.rpc("record_stock_movement", {
-      p_product_id: productId,
-      p_type: type,
-      p_quantity: items,
-      p_supplier_id: type === "in" ? supplierId || null : null,
-      p_notes: notes.trim() || null,
-    });
+    const { error, queued } = await write(supabase, shop.id, {
+      type: "stock",
+      args: {
+        p_product_id: productId,
+        p_type: type,
+        p_quantity: items,
+        p_supplier_id: type === "in" ? supplierId || null : null,
+        p_notes: notes.trim() || null,
+      },
+    }, `${TYPE_COPY[type].label} ${selected?.name ?? "stock"}`);
     setSaving(false);
     if (error) { fail(onError, error); return; }
-    onNotice("Stock movement recorded.");
+    onNotice(queued ? "Stock movement saved on this computer; it will be sent when the connection returns." : "Stock movement recorded.");
     setQuantity("");
     setNotes("");
     setSupplierId("");
@@ -180,13 +213,18 @@ export function Inventory({ supabase, onError, onNotice }: { supabase: Client } 
   const addSupplier = async (event: FormEvent) => {
     event.preventDefault();
     if (!supplierForm.name.trim()) { onError("Supplier name is required."); return; }
-    const { error } = await supabase.from("suppliers").insert({
-      shop_id: shop.id,
-      name: supplierForm.name.trim(),
-      phone: supplierForm.phone.trim() || null,
-      email: supplierForm.email.trim() || null,
-      address: supplierForm.address.trim() || null,
-    });
+    const { error } = await write(supabase, shop.id, {
+      type: "insert",
+      table: "suppliers",
+      rows: [{
+        id: crypto.randomUUID(),
+        shop_id: shop.id,
+        name: supplierForm.name.trim(),
+        phone: supplierForm.phone.trim() || null,
+        email: supplierForm.email.trim() || null,
+        address: supplierForm.address.trim() || null,
+      }],
+    }, `Add supplier ${supplierForm.name.trim()}`);
     if (error) { fail(onError, error); return; }
     setSupplierForm(emptySupplier);
     setSupplierOpen(false);
@@ -248,12 +286,14 @@ export function Inventory({ supabase, onError, onNotice }: { supabase: Client } 
             Add supplier
           </Button>
         ) : (
-          <Button variant="outline" onClick={() => setImporting(true)}>
+          <Button variant="outline" onClick={() => { if (workOffline()) onError("Importing a file needs an internet connection."); else setImporting(true); }}>
             <Upload />
             Import stock
           </Button>
         )}
       />
+
+      <SavedCopyNotice savedAt={savedAt} />
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)}>
         <TabsList>

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   AlertDescription,
@@ -32,9 +32,13 @@ import {
   validateProductInput,
 } from "@pos/shared";
 import { Camera, FolderPlus, Info, Package, Pencil, Plus, ScanBarcode, Trash2, Upload, WandSparkles } from "lucide-react";
+import { SavedCopyNotice } from "@/components/saved-copy-notice";
+import { workOffline } from "@/lib/connection";
+import { isUnreachable } from "@/lib/desktop";
+import { write } from "@/lib/outbox";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { useProgressiveList } from "@/lib/use-progressive-list";
-import { useRealtimeRefresh } from "@/lib/use-realtime";
+import { useRealtimeRefresh, useReloadOnReconnect } from "@/lib/use-realtime";
 import { useWorkspace } from "@/lib/workspace";
 import {
   type Category,
@@ -53,6 +57,7 @@ import {
 import { BarcodeLabelDialog } from "./barcode-label";
 import { BulkImportDialog } from "./bulk-import";
 import { BarcodeScannerDialog, type ScanResult } from "./scanner";
+import { loadWithSavedCopy } from "./saved-data";
 import { draftErrors, draftsFrom, type PackDraft, PackSizesEditor, savePackSizes } from "./pack-sizes";
 
 const emptyForm = { name: "", category_id: "", cost: "", price: "", wholesale: "", stock: "", barcode: "" };
@@ -83,20 +88,44 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
   const [importing, setImporting] = useState(false);
   const [packs, setPacks] = useState<Map<string, PackSizeRow[]>>(new Map());
   const [drafts, setDrafts] = useState<PackDraft[]>([]);
+  /** When the data on screen was saved, if it is the desktop app's saved copy rather than the server's. */
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const hasData = useRef(false);
 
   const load = useCallback(async () => {
-    const [{ data: prodRows, error: prodError }, { data: catRows, error: catError }, packRes] = await Promise.all([
-      supabase.from("products").select("id,name,category_id,cost_price,selling_price,wholesale_price,stock,barcode,categories(name)").order("name"),
-      supabase.from("categories").select("id,name").order("name"),
-      loadPackSizes(supabase),
-    ]);
-    if (prodError) fail(onError, prodError); else setProducts((prodRows ?? []) as unknown as Product[]);
-    if (catError) fail(onError, catError); else setCategories((catRows ?? []) as Category[]);
-    if (packRes.error) fail(onError, packRes.error); else setPacks(packRes.data);
-    setLoaded(true);
-  }, [supabase, onError]);
+    await loadWithSavedCopy(
+      shop.id,
+      hasData,
+      (saved, stale) => {
+        setProducts(saved.products);
+        setCategories(saved.categories);
+        setPacks(saved.packs);
+        setSavedAt(stale ? saved.savedAt : null);
+        setLoaded(true);
+      },
+      async () => {
+        const [{ data: prodRows, error: prodError }, { data: catRows, error: catError }, packRes] = await Promise.all([
+          supabase.from("products").select("id,name,category_id,cost_price,selling_price,wholesale_price,stock,barcode,categories(name)").order("name"),
+          supabase.from("categories").select("id,name").order("name"),
+          loadPackSizes(supabase),
+        ]);
+        return {
+          unreachable: [prodError, catError, packRes.error].some(error => error && isUnreachable(error)),
+          ok: !prodError,
+          apply: () => {
+            if (prodError) fail(onError, prodError); else setProducts((prodRows ?? []) as unknown as Product[]);
+            if (catError) fail(onError, catError); else setCategories((catRows ?? []) as Category[]);
+            if (packRes.error) fail(onError, packRes.error); else setPacks(packRes.data);
+            setSavedAt(null);
+            setLoaded(true);
+          },
+        };
+      },
+    );
+  }, [supabase, onError, shop.id]);
 
   useEffect(() => { void load(); }, [load]);
+  useReloadOnReconnect(load);
   // Products added or changed on another computer appear here by themselves.
   useRealtimeRefresh(["products", "product_units", "categories"], load);
 
@@ -158,23 +187,21 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
       return;
     }
 
-    let productId = editing?.id;
-    if (editing) {
-      const { error } = await supabase.from("products").update(payload).eq("id", editing.id);
-      if (error) { fail(onError, error); return; }
-    } else {
-      const { data, error } = await supabase.from("products").insert(payload).select("id").single();
-      if (error) { fail(onError, error); return; }
-      productId = (data as { id: string }).id;
-    }
-    const packError = productId ? await savePackSizes(supabase, shop.id, productId, packs.get(productId) ?? [], drafts) : null;
+    // A new product gets its id here, so offline it can be sold, restocked and given pack sizes before it reaches the server.
+    const productId = editing?.id ?? crypto.randomUUID();
+    const saved = editing
+      ? await write(supabase, shop.id, { type: "update", table: "products", id: editing.id, values: payload }, `Update ${payload.name}`)
+      : await write(supabase, shop.id, { type: "insert", table: "products", rows: [{ id: productId, ...payload }] }, `Add ${payload.name}`);
+    if (saved.error) { fail(onError, saved.error); return; }
+    const packError = await savePackSizes(supabase, shop.id, productId, packs.get(productId) ?? [], drafts);
     setFormOpen(false);
     await load();
     if (packError) {
       fail(onError, new Error(`The product was saved, but its pack sizes were not: ${packError.message}. Edit the product to try again.`));
       return;
     }
-    onNotice(editing ? "Product updated." : "Product added.");
+    const done = editing ? "Product updated." : "Product added.";
+    onNotice(saved.queued ? `${done} Saved on this computer; it will be sent when the connection returns.` : done);
   };
 
   /** A scanned code goes into the form, unless another product already uses it. A QR link is stored as the barcode inside it. */
@@ -190,7 +217,7 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
   const addCategory = async (event: FormEvent) => {
     event.preventDefault();
     if (!newCatName.trim()) return;
-    const { error } = await supabase.from("categories").insert({ shop_id: shop.id, name: newCatName.trim() });
+    const { error } = await write(supabase, shop.id, { type: "insert", table: "categories", rows: [{ id: crypto.randomUUID(), shop_id: shop.id, name: newCatName.trim() }] }, `Add category ${newCatName.trim()}`);
     if (error) { fail(onError, error); return; }
     setNewCatName("");
     setCategoryOpen(false);
@@ -200,7 +227,7 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
 
   const confirmDelete = async () => {
     if (!deleting) return;
-    const { error } = await supabase.from("products").delete().eq("id", deleting.id);
+    const { error } = await write(supabase, shop.id, { type: "delete", table: "products", ids: [deleting.id] }, `Delete ${deleting.name}`);
     setDeleting(null);
     if (error) fail(onError, error);
     else { onNotice("Product deleted."); await load(); }
@@ -227,7 +254,7 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
         }
         actions={isAdmin && (
           <>
-            <Button variant="outline" onClick={() => setImporting(true)}>
+            <Button variant="outline" onClick={() => { if (workOffline()) onError("Importing a file needs an internet connection."); else setImporting(true); }}>
               <Upload />
               Import
             </Button>
@@ -242,6 +269,8 @@ export function Products({ supabase, isAdmin, onError, onNotice }: { supabase: C
           </>
         )}
       />
+
+      <SavedCopyNotice savedAt={savedAt} />
 
       {!isAdmin && (
         <Alert variant="info">

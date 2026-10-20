@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, validateShopInput } from "@pos/shared";
+import { write } from "@/lib/outbox";
 import { useWorkspace, type Shop } from "@/lib/workspace";
 import { type Feedback, fail } from "./common";
 import { ShopForm, type ShopFormValues, toShopInput } from "./shop-form";
@@ -63,7 +64,7 @@ export function ShopSettings({ onError, onNotice }: Feedback) {
     };
     if (values.currency !== shop.currency) update.currency = values.currency;
 
-    const { error } = await supabase.from("shops").update(update).eq("id", shop.id);
+    const { error, queued } = await write(supabase, shop.id, { type: "update", table: "shops", id: shop.id, values: update }, "Change shop settings");
     if (error) {
       setSaving(false);
       fail(onError, error);
@@ -71,7 +72,7 @@ export function ShopSettings({ onError, onNotice }: Feedback) {
     }
     await refresh();
     setSaving(false);
-    onNotice("Shop settings saved.");
+    onNotice(queued ? "Shop settings saved on this computer; they will be sent when the connection returns." : "Shop settings saved.");
   };
 
   return (
@@ -82,7 +83,7 @@ export function ShopSettings({ onError, onNotice }: Feedback) {
           <CardDescription>Your shop&apos;s name, country and currency.</CardDescription>
         </CardHeader>
         <CardContent>
-          <ShopForm part="basics" values={values} onChange={setValues} currencyLocked={hasSales === true} idPrefix="settings" />
+          <ShopForm part="basics" values={values} onChange={setValues} currencyLocked={hasSales !== false} idPrefix="settings" />
         </CardContent>
       </Card>
 
@@ -92,7 +93,7 @@ export function ShopSettings({ onError, onNotice }: Feedback) {
           <CardDescription>How stock warnings and loyalty behave.</CardDescription>
         </CardHeader>
         <CardContent>
-          <ShopForm part="preferences" values={values} onChange={setValues} currencyLocked={hasSales === true} idPrefix="settings" />
+          <ShopForm part="preferences" values={values} onChange={setValues} currencyLocked={hasSales !== false} idPrefix="settings" />
         </CardContent>
       </Card>
 

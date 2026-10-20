@@ -83,16 +83,26 @@ that lists shop data should call the hook with the tables it reads.
 
 ## Working offline (desktop app)
 
-The desktop app opens and sells with no internet. `lib/workspace.tsx` saves the signed-in user, shop and role after every
-successful load (`lib/offline-cache.ts`, in `localStorage`, desktop only) and falls back to that copy when the server
-cannot be reached or `navigator.onLine` is false. `features/sales.tsx` saves its catalog the same way, queues a sale in
-SQLite when the server is unreachable (`isUnreachable`: no response at all, never a timeout, which might have been
-recorded), and shows stock minus the queued sales so nothing is sold twice. `lib/use-offline-sync.ts` sends the queue when
-a screen opens and when the connection returns, then fires `kt:sales-synced`. Every other screen shows `OfflineScreen`
-while offline. A connection that is up but never answers (Wi-Fi without internet) is handled by waiting at most
-`SERVER_WAIT_MS` before using the saved copy, and by retrying every 20 seconds; a sale never waits on such a server. Signing out clears the saved copy; a session the server rejects clears it too. The queue keeps a sale
-when only the sign-in has lapsed. To test it, run the desktop exe with a mock server, stop the server, and use
-`Network.emulateNetworkConditions` for the real offline state.
+The whole desktop app opens and works with no internet.
+
+- **Reading.** `lib/workspace.tsx` saves the signed-in user, shop and role; `lib/replica.ts` saves the shop's products,
+  categories, pack sizes, customers, suppliers, stock movements and recent sales (`useOfflineSync` refreshes it while online,
+  and never while changes are waiting, so it cannot lose them). Screens call `loadWithSavedCopy`: offline, or with changes
+  waiting, they show the saved copy; otherwise they show it first, ask the server, and keep it if the server does not answer
+  within `SERVER_WAIT_MS`. Reports saves its own last result. `lib/connection.ts` tracks "the server is not answering"
+  (`navigator.onLine` is true on Wi-Fi without internet) and `useOfflineSync` probes until it does.
+- **Writing.** Products, categories, pack sizes, customers, suppliers, stock movements, the profile name and the shop's
+  settings go through `write()` (`lib/outbox.ts`). When the server cannot be reached (or older changes are still waiting,
+  which must go first) the change is applied to the saved copy and queued. New rows get their id on the client, so a
+  repeat after a lost answer changes nothing; a stock movement that may already have been recorded is checked against the
+  server's history before it is sent again. Sales use the SQLite queue as before.
+- **Sending.** `syncDesktopSales` replays the outbox and the sale queue together, oldest first, so a product made offline
+  exists before its first sale. A change the server refuses is dropped from the queue, reported, and kept in
+  `kt-outbox-failed:<shop>`. Signing out clears the saved copy but not the outbox or the sale queue.
+- **Needs the server:** team and invitation codes, importing a file, changing the password, reprinting old receipts.
+- **Testing.** Run the desktop exe against a mock server, stop the server for "not answering", and use
+  `Network.emulateNetworkConditions` for a real offline state. Clear the test app's data between runs: leftover queued
+  changes refer to rows a fresh mock does not have.
 
 ## Printing
 

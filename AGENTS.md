@@ -57,11 +57,14 @@ Checkout uses the shop-scoped `create_sale(p_shop_id, ...)`; inventory uses
 `quantity x pack size` out of stock. Any code that counts stock or units sold must use
 single items (`quantity * unit_quantity` on sale lines), never the raw line quantity. The Tauri
 client stores pending sales in `sqlite:pos.db` and synchronizes them through
-Supabase when connectivity returns. The desktop app also works with no internet at all: it keeps the signed-in
-user, the shop and the Sales catalog in `localStorage` (`lib/offline-cache.ts`, desktop only, cleared on sign-out),
-opens from that copy when the server cannot be reached, subtracts queued sales from the stock it shows
-(`withQueuedSales`), and replaces every screen except Sales with an "needs a connection" notice while offline.
-Screens that show stock reload on the `kt:sales-synced` event; new offline-capable screens must follow that pattern.
+Supabase when connectivity returns. The desktop app also works with no internet at all, on every screen. It keeps a saved copy of the shop's tables
+(`lib/replica.ts`, in `localStorage`, desktop only, cleared on sign-out) and opens from it when the server cannot be
+reached; screens load through `loadWithSavedCopy` (`features/saved-data.ts`). Changes made offline go through `write()`
+(`lib/outbox.ts`): applied to the saved copy at once and kept in an outbox (which survives sign-out) until sent, in the
+order made, interleaved with queued sales by `syncDesktopSales`. Inserts must carry a client-made `crypto.randomUUID()`
+id. Sales still use the SQLite queue and are taken off the stock shown (`withQueuedSales`). Things that need the server
+(team and invitation codes, importing a file, changing the password, reprinting old receipts) say so offline. A new
+screen that reads or changes shop data must follow these patterns and fire/listen to `kt:sales-synced`.
 
 ## Change guidance
 

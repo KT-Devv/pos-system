@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   AlertDescription,
@@ -35,12 +35,13 @@ import {
   Users,
 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
-import { OfflineScreen } from "@/components/offline-screen";
-import { useOnline } from "@/components/online-status";
+import { SavedCopyNotice } from "@/components/saved-copy-notice";
 import { ThemeToggle } from "@/components/theme";
 import { paymentLabel, StockBadge } from "@/features/common";
-import { isTauri } from "@/lib/desktop";
+import { loadWithSavedCopy } from "@/features/saved-data";
+import { isUnreachable } from "@/lib/desktop";
 import { useOfflineSync } from "@/lib/use-offline-sync";
+import { useReloadOnReconnect } from "@/lib/use-realtime";
 import { useWorkspace, WorkspaceGate } from "@/lib/workspace";
 
 type RecentSale = { id: string; total: number; payment_method: string; created_at: string };
@@ -73,6 +74,9 @@ const quickLinks = [
   { title: "Reports", description: "Revenue and profit", href: "/reports", Icon: BarChart3 },
 ] as const;
 
+/** The overview shows no notices of its own for sales sent in the background; the Sales screen does. */
+const ignore = () => {};
+
 function Dashboard() {
   const { supabase, user, shop, role, signOut } = useWorkspace();
   const lowAt = shop.low_stock_threshold;
@@ -83,57 +87,76 @@ function Dashboard() {
   const [recent, setRecent] = useState<RecentSale[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
-  const online = useOnline();
-  const offlineDesktop = isTauri() && !online;
+  /** When the figures on screen were saved, if they are the desktop app's saved copy rather than the server's. */
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const hasData = useRef(false);
 
-  // Sales saved while offline are sent as soon as there is a connection, whichever screen is open.
-  useOfflineSync(() => {}, setError);
+  // Offline changes and sales are sent as soon as there is a connection, whichever screen is open.
+  useOfflineSync(ignore, setError);
 
-  useEffect(() => {
-    if (offlineDesktop) return;
-    let active = true;
+  const load = useCallback(async () => {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
-    Promise.all([
-      supabase.from("sales").select("total").gte("created_at", start.toISOString()),
-      // Filter and count on the server: fetching whole tables is silently capped at 1000 rows.
-      supabase.from("products").select("id,name,stock", { count: "exact" }).lt("stock", lowAt).order("stock", { ascending: true }).limit(50),
-      supabase.from("customers").select("id", { count: "exact", head: true }),
-      supabase
-        .from("sales")
-        .select("id,total,payment_method,created_at")
-        .order("created_at", { ascending: false })
-        .limit(6),
-    ])
-      .then(([todayRes, productsRes, customersRes, recentRes]) => {
-        if (!active) return;
-        if (todayRes.error) setError(todayRes.error.message);
-        else {
-          const rows = (todayRes.data ?? []) as { total: number }[];
-          setToday({
-            count: rows.length,
-            revenue: roundCurrency(rows.reduce((sum, sale) => sum + Number(sale.total), 0)),
-          });
-        }
-        if (productsRes.error) setError(productsRes.error.message);
-        else {
-          const rows = (productsRes.data ?? []) as StockRow[];
-          setLowStock(rows);
-          setLowStockCount(productsRes.count ?? rows.length);
-        }
-        if (customersRes.error) setError(customersRes.error.message);
-        else setCustomerCount(customersRes.count ?? 0);
-        if (recentRes.error) setError(recentRes.error.message);
-        else setRecent((recentRes.data ?? []) as RecentSale[]);
+    await loadWithSavedCopy(
+      shop.id,
+      hasData,
+      (saved, stale) => {
+        const todays = saved.sales.filter((sale) => new Date(sale.created_at) >= start);
+        setToday({ count: todays.length, revenue: roundCurrency(todays.reduce((sum, sale) => sum + Number(sale.total), 0)) });
+        const low = saved.products.filter((product) => product.stock < lowAt).sort((a, b) => a.stock - b.stock);
+        setLowStock(low.slice(0, 50).map((product) => ({ id: product.id, name: product.name, stock: product.stock })));
+        setLowStockCount(low.length);
+        setCustomerCount(saved.customers.length);
+        setRecent(saved.sales.slice(0, 6) as RecentSale[]);
+        setSavedAt(stale ? saved.savedAt : null);
         setLoaded(true);
-      })
-      .catch((cause) => {
-        if (active) setError(cause instanceof Error ? cause.message : String(cause));
-      });
-    return () => {
-      active = false;
-    };
-  }, [supabase, lowAt, offlineDesktop]);
+      },
+      async () => {
+        const [todayRes, productsRes, customersRes, recentRes] = await Promise.all([
+          supabase.from("sales").select("total").gte("created_at", start.toISOString()),
+          // Filter and count on the server: fetching whole tables is silently capped at 1000 rows.
+          supabase.from("products").select("id,name,stock", { count: "exact" }).lt("stock", lowAt).order("stock", { ascending: true }).limit(50),
+          supabase.from("customers").select("id", { count: "exact", head: true }),
+          supabase
+            .from("sales")
+            .select("id,total,payment_method,created_at")
+            .order("created_at", { ascending: false })
+            .limit(6),
+        ]);
+        return {
+          unreachable: [todayRes.error, productsRes.error, customersRes.error, recentRes.error].some((error) => error && isUnreachable(error)),
+          ok: !todayRes.error,
+          apply: () => {
+            if (todayRes.error) setError(todayRes.error.message);
+            else {
+              const rows = (todayRes.data ?? []) as { total: number }[];
+              setToday({
+                count: rows.length,
+                revenue: roundCurrency(rows.reduce((sum, sale) => sum + Number(sale.total), 0)),
+              });
+            }
+            if (productsRes.error) setError(productsRes.error.message);
+            else {
+              const rows = (productsRes.data ?? []) as StockRow[];
+              setLowStock(rows);
+              setLowStockCount(productsRes.count ?? rows.length);
+            }
+            if (customersRes.error) setError(customersRes.error.message);
+            else setCustomerCount(customersRes.count ?? 0);
+            if (recentRes.error) setError(recentRes.error.message);
+            else setRecent((recentRes.data ?? []) as RecentSale[]);
+            setSavedAt(null);
+            setLoaded(true);
+          },
+        };
+      },
+    );
+  }, [supabase, lowAt, shop.id]);
+
+  useEffect(() => {
+    load().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+  }, [load]);
+  useReloadOnReconnect(load);
 
   const firstName = user.name.trim().split(" ")[0] || "there";
 
@@ -153,22 +176,12 @@ function Dashboard() {
     />
   );
 
-  // Offline, the figures below cannot be loaded, and zeros would read as "no sales today".
-  if (offlineDesktop) {
-    return (
-      <AppShell section="home" user={{ id: user.id, name: user.name, role }} shopName={shop.name} onSignOut={() => void signOut()}>
-        <div className="grid gap-6">
-          {header}
-          <OfflineScreen title="The overview" />
-        </div>
-      </AppShell>
-    );
-  }
-
   return (
     <AppShell section="home" user={{ id: user.id, name: user.name, role }} shopName={shop.name} onSignOut={() => void signOut()}>
       <div className="grid gap-6">
         {header}
+
+        <SavedCopyNotice savedAt={savedAt} />
 
         {error && (
           <Alert variant="destructive">
